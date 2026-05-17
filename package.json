@@ -1,0 +1,14 @@
+{
+  "name": "eunomia",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "concurrently -n backend,frontend -c blue,green \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:backend": "cd backend && cargo watch -x 'run -- serve --port 3001 --no-open'",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build": "npm --prefix frontend run build && cargo build --release --manifest-path backend/Cargo.toml"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}
