@@ -96,6 +96,7 @@ export default function Session() {
         nodes={nodesWithHandlers}
         edges={flow.edges}
         nodeTypes={nodeTypes}
+        colorMode="dark"
         fitView
         proOptions={{ hideAttribution: true }}
       >

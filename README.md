@@ -26,11 +26,17 @@ Vite serves the UI on `:5173` (proxying `/api` to `:3001`); the backend runs on 
 npm run build
 ```
 
-Produces `backend/target/release/eunomia`, a single binary that serves UI + API on one port. Run it from any git repo to use that repo as `REPO_ROOT`.
+Produces `target/release/eunomia` (workspace target dir, not `backend/target/`), a single binary that serves UI + API on one port. Run it from any git repo to use that repo as `REPO_ROOT`.
 
 ```bash
 cd /path/to/some/git/repo
-/path/to/eunomia/backend/target/release/eunomia serve --port 3001
+/path/to/eunomia/target/release/eunomia serve --port 3001
+```
+
+To put it on your PATH, symlink it to a directory already on `$PATH`:
+
+```bash
+ln -sf /path/to/eunomia/target/release/eunomia ~/.local/bin/eunomia
 ```
 
 State (SQLite DB + per-session synthesis worktrees) lives in `~/.eunomia/`, shared across every repo a user runs Eunomia against.
