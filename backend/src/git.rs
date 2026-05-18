@@ -23,6 +23,31 @@ pub async fn merge_base(repo: &Path, base: &str, source: &str) -> Result<String>
     run(repo, &["merge-base", base, source]).await
 }
 
+pub async fn diff_text(repo: &Path, from_tree: &str, to_tree: &str) -> Result<String> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args([
+            "diff",
+            "--no-color",
+            "--no-ext-diff",
+            "--diff-algorithm=histogram",
+            from_tree,
+            to_tree,
+        ])
+        .output()
+        .await?;
+    if !out.status.success() {
+        return Err(anyhow!(
+            "git diff {} {}: {}",
+            from_tree,
+            to_tree,
+            String::from_utf8_lossy(&out.stderr).trim().to_string()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
 pub async fn rev_parse_tree(repo: &Path, refname: &str) -> Result<String> {
     run(repo, &["rev-parse", refname]).await
 }

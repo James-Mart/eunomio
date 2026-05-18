@@ -30,7 +30,7 @@ pub struct NodeDto {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct EdgeDto {
+pub struct GraphEdgeDto {
     pub from: String,
     pub to: String,
 }
@@ -39,7 +39,15 @@ pub struct EdgeDto {
 #[serde(rename_all = "camelCase")]
 pub struct GraphDto {
     pub nodes: Vec<NodeDto>,
-    pub edges: Vec<EdgeDto>,
+    pub edges: Vec<GraphEdgeDto>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EdgeDto {
+    pub target_node_id: String,
+    pub parent_node_id: Option<String>,
+    pub diff: String,
 }
 
 #[derive(Debug, Deserialize)]

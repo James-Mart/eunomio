@@ -19,6 +19,12 @@ export type GraphEdge = { from: string; to: string };
 
 export type Graph = { nodes: GraphNode[]; edges: GraphEdge[] };
 
+export type Edge = {
+  targetNodeId: string;
+  parentNodeId: string | null;
+  diff: string;
+};
+
 export type BranchResult = { branchName: string; commitSha: string };
 
 export class ApiError extends Error {
@@ -56,6 +62,8 @@ export const api = {
   getSession: (id: string) => request<Session>("GET", `/sessions/${id}`),
   listSessions: () => request<Session[]>("GET", "/sessions"),
   getGraph: (id: string) => request<Graph>("GET", `/sessions/${id}/graph`),
+  getEdge: (sessionId: string, targetNodeId: string) =>
+    request<Edge>("GET", `/sessions/${sessionId}/edges/${targetNodeId}`),
   renameNode: (sessionId: string, nodeId: string, title: string) =>
     request<GraphNode>("PATCH", `/sessions/${sessionId}/nodes/${nodeId}`, { title }),
   branchFromNode: (sessionId: string, nodeId: string, branchName: string, force = false) =>

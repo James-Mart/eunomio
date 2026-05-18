@@ -48,6 +48,10 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/api/sessions/:id/graph", get(get_graph))
         .route(
+            "/api/sessions/:id/edges/:target_node_id",
+            get(get_edge),
+        )
+        .route(
             "/api/sessions/:id/nodes/:node_id",
             patch(rename_node),
         )
@@ -184,16 +188,82 @@ async fn get_graph(
         return Err(AppError::NotFound);
     }
 
-    let edges: Vec<EdgeDto> = nodes
+    let edges: Vec<GraphEdgeDto> = nodes
         .iter()
         .filter_map(|n| {
-            n.parent_node_id.as_ref().map(|p| EdgeDto {
+            n.parent_node_id.as_ref().map(|p| GraphEdgeDto {
                 from: p.clone(),
                 to: n.node_id.clone(),
             })
         })
         .collect();
     Ok(Json(GraphDto { nodes, edges }))
+}
+
+async fn get_edge(
+    State(state): State<AppState>,
+    Path((session_id, target_node_id)): Path<(String, String)>,
+) -> Result<Json<EdgeDto>, AppError> {
+    let repo_root = state.repo_root.to_string_lossy().to_string();
+    let session_id_for_lookup = session_id.clone();
+    let target_for_lookup = target_node_id.clone();
+    let lookup: Option<(String, Option<String>, Option<String>)> = state
+        .db
+        .call(move |conn| {
+            let mut session_stmt =
+                conn.prepare("SELECT 1 FROM sessions WHERE id = ?1 AND repo_root = ?2")?;
+            let session_present = session_stmt
+                .query(tokio_rusqlite::params![session_id_for_lookup, repo_root])?
+                .next()?
+                .is_some();
+            if !session_present {
+                return Ok(None);
+            }
+            let mut target_stmt = conn.prepare(
+                "SELECT tree_sha, parent_node_id FROM nodes WHERE session_id = ?1 AND node_id = ?2",
+            )?;
+            let mut rows = target_stmt
+                .query(tokio_rusqlite::params![session_id_for_lookup, target_for_lookup])?;
+            let Some(row) = rows.next()? else {
+                return Ok(None);
+            };
+            let target_tree: String = row.get(0)?;
+            let parent_node_id: Option<String> = row.get(1)?;
+            let parent_tree = match &parent_node_id {
+                Some(pid) => {
+                    let mut parent_stmt = conn.prepare(
+                        "SELECT tree_sha FROM nodes WHERE session_id = ?1 AND node_id = ?2",
+                    )?;
+                    let mut prows =
+                        parent_stmt.query(tokio_rusqlite::params![session_id_for_lookup, pid])?;
+                    if let Some(prow) = prows.next()? {
+                        Some(prow.get::<_, String>(0)?)
+                    } else {
+                        None
+                    }
+                }
+                None => None,
+            };
+            Ok(Some((target_tree, parent_node_id, parent_tree)))
+        })
+        .await?;
+
+    let Some((target_tree, parent_node_id, parent_tree)) = lookup else {
+        return Err(AppError::NotFound);
+    };
+
+    let diff = match (&parent_node_id, &parent_tree) {
+        (Some(_), Some(parent_tree)) => {
+            crate::git::diff_text(&state.repo_root, parent_tree, &target_tree).await?
+        }
+        _ => String::new(),
+    };
+
+    Ok(Json(EdgeDto {
+        target_node_id,
+        parent_node_id,
+        diff,
+    }))
 }
 
 async fn rename_node(

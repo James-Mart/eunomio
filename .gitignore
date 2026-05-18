@@ -2,5 +2,6 @@ target/
 node_modules/
 frontend/dist/*
 !frontend/dist/.gitkeep
+plans/
 *.log
 .DS_Store

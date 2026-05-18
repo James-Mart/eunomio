@@ -57,3 +57,10 @@
     @apply bg-background text-foreground;
   }
 }
+
+.react-flow__node.selected,
+.react-flow__node:focus,
+.react-flow__node:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
