@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import {
   Code2,
-  Construction,
   ListChecks,
   Telescope,
   Workflow,
@@ -14,6 +13,8 @@ import {
   type CursorModel,
   type HumanInTheLoopSettings,
   type PartitionSettings,
+  type PartitionSettingsPatch,
+  type SubagentSettings,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -28,6 +29,7 @@ import {
 } from "@/components/ui/select";
 
 type Category = "coordinator" | "surveyor" | "planner" | "constructor";
+type SubagentCategory = "surveyor" | "planner" | "constructor";
 
 type CategoryMeta = { label: string; icon: LucideIcon };
 
@@ -43,15 +45,14 @@ const ORDER: Category[] = ["coordinator", "surveyor", "planner", "constructor"];
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  sessionId: string;
 };
 
 type ModelsState =
   | { kind: "loading" }
   | { kind: "success"; models: CursorModel[] };
 
-export default function PartitionSettingsDialog({ open, onOpenChange, sessionId }: Props) {
-  const [active, setActive] = useState<Category>("surveyor");
+export default function PartitionSettingsDialog({ open, onOpenChange }: Props) {
+  const [active, setActive] = useState<Category>("coordinator");
   const [settings, setSettings] = useState<PartitionSettings | null>(null);
   const [models, setModels] = useState<ModelsState>({ kind: "loading" });
 
@@ -61,7 +62,7 @@ export default function PartitionSettingsDialog({ open, onOpenChange, sessionId 
     setModels({ kind: "loading" });
     let cancelled = false;
     void Promise.all([
-      api.getPartitionSettings(sessionId).catch(() => null),
+      api.getPartitionSettings().catch(() => null),
       api.listCursorModels().catch(() => null),
     ]).then(([s, m]) => {
       if (cancelled) return;
@@ -71,19 +72,26 @@ export default function PartitionSettingsDialog({ open, onOpenChange, sessionId 
     return () => {
       cancelled = true;
     };
-  }, [open, sessionId]);
+  }, [open]);
 
-  const onModelChange = async (next: string) => {
+  const onCoordinatorModelChange = async (next: string) => {
     if (!settings) return;
-    const previous = settings.surveyor.model;
-    setSettings({ ...settings, surveyor: { model: next } });
+    const previous = settings.coordinator.model;
+    const optimistic = {
+      ...settings,
+      coordinator: { ...settings.coordinator, model: next },
+    };
+    setSettings(optimistic);
     try {
-      const updated = await api.updatePartitionSettings(sessionId, {
-        surveyor: { model: next },
-      });
+      const updated = await api.updatePartitionSettings({
+        coordinator: { ...settings.coordinator, model: next },
+      } as PartitionSettingsPatch);
       setSettings(updated);
     } catch (e) {
-      setSettings({ ...settings, surveyor: { model: previous } });
+      setSettings({
+        ...settings,
+        coordinator: { ...settings.coordinator, model: previous },
+      });
       toast.error(e instanceof Error ? e.message : "Failed to save model");
     }
   };
@@ -93,19 +101,51 @@ export default function PartitionSettingsDialog({ open, onOpenChange, sessionId 
     const previous = settings.coordinator.humanInTheLoop;
     setSettings({
       ...settings,
-      coordinator: { humanInTheLoop: next },
+      coordinator: { ...settings.coordinator, humanInTheLoop: next },
     });
     try {
-      const updated = await api.updatePartitionSettings(sessionId, {
-        coordinator: { humanInTheLoop: next },
-      });
+      const updated = await api.updatePartitionSettings({
+        coordinator: { ...settings.coordinator, humanInTheLoop: next },
+      } as PartitionSettingsPatch);
       setSettings(updated);
     } catch (e) {
       setSettings({
         ...settings,
-        coordinator: { humanInTheLoop: previous },
+        coordinator: { ...settings.coordinator, humanInTheLoop: previous },
       });
       toast.error(e instanceof Error ? e.message : "Failed to save settings");
+    }
+  };
+
+  const updateRoleModel = async (role: SubagentCategory, next: string) => {
+    if (!settings) return;
+    const previous = settings[role];
+    const updatedRole: SubagentSettings = { ...previous, model: next };
+    setSettings({ ...settings, [role]: updatedRole });
+    try {
+      const fresh = await api.updatePartitionSettings(
+        { [role]: updatedRole } as unknown as PartitionSettingsPatch,
+      );
+      setSettings(fresh);
+    } catch (e) {
+      setSettings({ ...settings, [role]: previous });
+      toast.error(e instanceof Error ? e.message : "Failed to save model");
+    }
+  };
+
+  const updateRoleOverride = async (role: SubagentCategory, next: boolean) => {
+    if (!settings) return;
+    const previous = settings[role];
+    const updatedRole: SubagentSettings = { ...previous, overrideModel: next };
+    setSettings({ ...settings, [role]: updatedRole });
+    try {
+      const fresh = await api.updatePartitionSettings(
+        { [role]: updatedRole } as unknown as PartitionSettingsPatch,
+      );
+      setSettings(fresh);
+    } catch (e) {
+      setSettings({ ...settings, [role]: previous });
+      toast.error(e instanceof Error ? e.message : "Failed to save override");
     }
   };
 
@@ -113,19 +153,24 @@ export default function PartitionSettingsDialog({ open, onOpenChange, sessionId 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[640px] p-0">
         <DialogTitle className="sr-only">Partition settings</DialogTitle>
-        <div className="flex h-[420px]">
+        <div className="flex h-[460px]">
           <div className="flex-1 p-6 overflow-auto">
             <h3 className="text-lg font-medium mb-4">{CATEGORIES[active].label}</h3>
-            {active === "surveyor" ? (
-              <SurveyorPanel
+            {active === "coordinator" ? (
+              <CoordinatorPanel
                 settings={settings}
                 models={models}
-                onModelChange={onModelChange}
+                onModelChange={onCoordinatorModelChange}
+                onHitlChange={onHitlChange}
               />
-            ) : active === "coordinator" ? (
-              <CoordinatorPanel settings={settings} onHitlChange={onHitlChange} />
             ) : (
-              <PlaceholderPanel />
+              <SubagentPanel
+                role={active}
+                settings={settings}
+                models={models}
+                onModelChange={(v) => updateRoleModel(active, v)}
+                onOverrideChange={(v) => updateRoleOverride(active, v)}
+              />
             )}
           </div>
           <nav
@@ -159,62 +204,41 @@ export default function PartitionSettingsDialog({ open, onOpenChange, sessionId 
   );
 }
 
-function SurveyorPanel({
+function CoordinatorPanel({
   settings,
   models,
   onModelChange,
+  onHitlChange,
 }: {
   settings: PartitionSettings | null;
   models: ModelsState;
   onModelChange: (next: string) => void;
-}) {
-  const selected = settings?.surveyor.model ?? "composer-2";
-  const loading = models.kind === "loading";
-  const items =
-    models.kind === "success"
-      ? models.models.some((m) => m.id === selected)
-        ? models.models
-        : [{ id: selected }, ...models.models]
-      : [];
-
-  return (
-    <div className="space-y-1.5">
-      <Label htmlFor="surveyor-model">Model</Label>
-      <Select
-        value={selected}
-        onValueChange={onModelChange}
-        disabled={loading || !settings}
-      >
-        <SelectTrigger id="surveyor-model">
-          <SelectValue placeholder={loading ? "Loading models…" : selected} />
-        </SelectTrigger>
-        <SelectContent>
-          {items.map((m) => (
-            <SelectItem key={m.id} value={m.id}>
-              {m.id}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
-}
-
-function CoordinatorPanel({
-  settings,
-  onHitlChange,
-}: {
-  settings: PartitionSettings | null;
   onHitlChange: (next: HumanInTheLoopSettings) => void;
 }) {
-  const hitl = settings?.coordinator.humanInTheLoop ?? {
-    afterSurvey: false,
-    afterPlanning: false,
-  };
+  const hitl =
+    settings?.coordinator.humanInTheLoop ?? {
+      afterSurvey: true,
+      afterPlanning: true,
+      afterConstruct: true,
+    };
   const disabled = !settings;
-
+  const selected = settings?.coordinator.model ?? "composer-2";
   return (
     <div className="space-y-6">
+      <section className="space-y-1.5">
+        <Label htmlFor="coordinator-model">Default model</Label>
+        <ModelSelect
+          id="coordinator-model"
+          value={selected}
+          models={models}
+          disabled={disabled}
+          onChange={onModelChange}
+        />
+        <p className="text-xs text-muted-foreground">
+          Used for any subagent that doesn't override the model on its own tab.
+        </p>
+      </section>
+
       <section className="space-y-3">
         <h4 className="text-sm font-medium">Human-in-the-loop</h4>
         <div className="space-y-3">
@@ -224,9 +248,7 @@ function CoordinatorPanel({
             description="Wait for me to review the survey before planning."
             checked={hitl.afterSurvey}
             disabled={disabled}
-            onChange={(checked) =>
-              onHitlChange({ ...hitl, afterSurvey: checked })
-            }
+            onChange={(checked) => onHitlChange({ ...hitl, afterSurvey: checked })}
           />
           <HitlRow
             id="hitl-after-planning"
@@ -234,13 +256,107 @@ function CoordinatorPanel({
             description="Wait for me to review the plan before constructing."
             checked={hitl.afterPlanning}
             disabled={disabled}
-            onChange={(checked) =>
-              onHitlChange({ ...hitl, afterPlanning: checked })
-            }
+            onChange={(checked) => onHitlChange({ ...hitl, afterPlanning: checked })}
+          />
+          <HitlRow
+            id="hitl-after-construct"
+            label="Pause after construct"
+            description="Wait for me to accept the candidate slice before merging."
+            checked={hitl.afterConstruct}
+            disabled={disabled}
+            onChange={(checked) => onHitlChange({ ...hitl, afterConstruct: checked })}
           />
         </div>
       </section>
     </div>
+  );
+}
+
+function SubagentPanel({
+  role,
+  settings,
+  models,
+  onModelChange,
+  onOverrideChange,
+}: {
+  role: SubagentCategory;
+  settings: PartitionSettings | null;
+  models: ModelsState;
+  onModelChange: (next: string) => void;
+  onOverrideChange: (next: boolean) => void;
+}) {
+  const cur = settings?.[role];
+  const enabled = cur?.overrideModel ?? false;
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-3">
+        <Checkbox
+          id={`${role}-override`}
+          checked={enabled}
+          disabled={!settings}
+          onChange={(e) => onOverrideChange(e.target.checked)}
+          className="mt-0.5"
+        />
+        <div className="space-y-0.5">
+          <Label htmlFor={`${role}-override`} className="font-normal">
+            Override default model
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            Use a different model for the {role} role than the Coordinator default.
+          </p>
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor={`${role}-model`}>Model</Label>
+        <ModelSelect
+          id={`${role}-model`}
+          value={cur?.model ?? "composer-2"}
+          models={models}
+          disabled={!settings || !enabled}
+          onChange={onModelChange}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ModelSelect({
+  id,
+  value,
+  models,
+  disabled,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  models: ModelsState;
+  disabled: boolean;
+  onChange: (next: string) => void;
+}) {
+  const loading = models.kind === "loading";
+  const items =
+    models.kind === "success"
+      ? models.models.some((m) => m.id === value)
+        ? models.models
+        : [{ id: value }, ...models.models]
+      : [];
+  return (
+    <Select
+      value={value}
+      onValueChange={onChange}
+      disabled={disabled || loading}
+    >
+      <SelectTrigger id={id}>
+        <SelectValue placeholder={loading ? "Loading models…" : value} />
+      </SelectTrigger>
+      <SelectContent>
+        {items.map((m) => (
+          <SelectItem key={m.id} value={m.id}>
+            {m.id}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -274,15 +390,6 @@ function HitlRow({
         </Label>
         <p className="text-xs text-muted-foreground">{description}</p>
       </div>
-    </div>
-  );
-}
-
-function PlaceholderPanel() {
-  return (
-    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-      <Construction className="mr-2 h-4 w-4" aria-hidden="true" />
-      <span>No settings available.</span>
     </div>
   );
 }

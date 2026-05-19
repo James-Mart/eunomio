@@ -7,15 +7,25 @@ import BranchTab from "@/components/BranchTab";
 import InfoTab from "@/components/InfoTab";
 import PartitionSettingsDialog from "@/components/PartitionSettingsDialog";
 import PartitionTab from "@/components/PartitionTab";
+import type { Partition } from "@/lib/api";
 
 type Props = {
   sessionId: string;
   nodeId: string;
   nodeTitle: string;
+  activePartition: Partition | null;
+  onPartitionStarted: (p: Partition) => void;
   onChange?: () => void;
 };
 
-export default function ToolsPane({ sessionId, nodeId, nodeTitle, onChange }: Props) {
+export default function ToolsPane({
+  sessionId,
+  nodeId,
+  nodeTitle,
+  activePartition,
+  onPartitionStarted,
+  onChange,
+}: Props) {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
@@ -37,7 +47,12 @@ export default function ToolsPane({ sessionId, nodeId, nodeTitle, onChange }: Pr
         </Button>
       </div>
       <TabsContent value="partition" className="mt-0 flex-1 min-h-0">
-        <PartitionTab sessionId={sessionId} targetNodeId={nodeId} />
+        <PartitionTab
+          sessionId={sessionId}
+          targetNodeId={nodeId}
+          activePartition={activePartition}
+          onPartitionStarted={onPartitionStarted}
+        />
       </TabsContent>
       <TabsContent value="info" className="mt-0 flex-1 min-h-0">
         <InfoTab
@@ -54,7 +69,6 @@ export default function ToolsPane({ sessionId, nodeId, nodeTitle, onChange }: Pr
       <PartitionSettingsDialog
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
-        sessionId={sessionId}
       />
     </Tabs>
   );

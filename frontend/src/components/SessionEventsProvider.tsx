@@ -10,7 +10,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 
-import type { PartitionStrategy } from "@/lib/api";
+import { api, type Partition, type Run } from "@/lib/api";
 import {
   subscribeSessionEvents,
   type ConnectionStatus,
@@ -18,25 +18,32 @@ import {
   type SessionEvent,
 } from "@/lib/sessionEvents";
 
+export type ConstructPayload =
+  | { outcome: "ok"; candidateTreeSha: string; candidateCommitSha: string }
+  | { outcome: "blocked"; reason: string };
+
 export type Lifecycle = {
-  strategy: PartitionStrategy;
-  userConcern: string | null;
-  survey: PhaseState;
-  plan: PhaseState;
-  construct: PhaseState;
+  partitionId: number;
+  targetNodeId: string;
+  survey: PhaseState | "pending";
+  plan: PhaseState | "pending";
+  construct: PhaseState | "pending";
   surveyPayload?: unknown;
   planPayload?: unknown;
-  constructProgress: { itemId: string; status: string }[];
+  constructPayload?: ConstructPayload;
   recentMessages: unknown[];
   lastError?: { code: string; message: string };
   finishedAt?: number;
   cancelledAt?: number;
+  acceptedAt?: number;
 };
 
 const MAX_MESSAGES = 50;
 
+type ConstructListener = () => void;
+
 type Store = {
-  lifecycles: Map<string, Lifecycle>;
+  lifecycles: Map<number, Lifecycle>;
   connection: ConnectionStatus;
 };
 
@@ -50,6 +57,7 @@ class SessionStore {
     connection: "connecting",
   };
   private listeners: Listeners = new Set();
+  private constructListeners: Set<ConstructListener> = new Set();
 
   subscribe = (cb: () => void): (() => void) => {
     this.listeners.add(cb);
@@ -58,36 +66,55 @@ class SessionStore {
     };
   };
 
+  subscribeConstruct = (cb: ConstructListener): (() => void) => {
+    this.constructListeners.add(cb);
+    return () => {
+      this.constructListeners.delete(cb);
+    };
+  };
+
   getSnapshot = (): Store => this.state;
 
   applyEvent(event: SessionEvent) {
     const { lifecycles } = this.state;
     const next = new Map(lifecycles);
-    const cur = next.get(event.targetNodeId);
+    const cur = next.get(event.partitionId);
+
+    let constructChanged = false;
 
     switch (event.type) {
       case "started":
-        next.set(event.targetNodeId, {
-          strategy: event.strategy,
-          userConcern: event.userConcern,
+        if (cur) {
+          constructChanged = true;
+          break;
+        }
+        next.set(event.partitionId, {
+          partitionId: event.partitionId,
+          targetNodeId: event.targetNodeId,
           survey: "pending",
           plan: "pending",
           construct: "pending",
-          constructProgress: [],
           recentMessages: [],
         });
+        constructChanged = true;
         break;
       case "phase": {
-        const base = cur ?? blankLifecycle();
+        const base = cur ?? blankLifecycle(event.partitionId, event.targetNodeId);
         const updated: Lifecycle = {
           ...base,
+          partitionId: event.partitionId,
+          targetNodeId: event.targetNodeId,
           [event.name]: event.state,
         };
         if (event.name === "survey" && event.payload !== undefined)
           updated.surveyPayload = event.payload;
         if (event.name === "plan" && event.payload !== undefined)
           updated.planPayload = event.payload;
-        next.set(event.targetNodeId, updated);
+        if (event.name === "construct" && event.payload !== undefined) {
+          updated.constructPayload = event.payload as ConstructPayload;
+        }
+        next.set(event.partitionId, updated);
+        constructChanged = true;
         break;
       }
       case "sdkMessage": {
@@ -95,41 +122,38 @@ class SessionStore {
         const recentMessages = [...cur.recentMessages, event.message].slice(
           -MAX_MESSAGES,
         );
-        next.set(event.targetNodeId, { ...cur, recentMessages });
-        break;
-      }
-      case "loopProgress": {
-        if (!cur) break;
-        next.set(event.targetNodeId, {
-          ...cur,
-          constructProgress: [
-            ...cur.constructProgress,
-            { itemId: event.itemId, status: event.status },
-          ],
-        });
+        next.set(event.partitionId, { ...cur, recentMessages });
         break;
       }
       case "finished": {
         if (!cur) break;
-        next.set(event.targetNodeId, { ...cur, finishedAt: Date.now() });
+        next.set(event.partitionId, {
+          ...cur,
+          finishedAt: Date.now(),
+          acceptedAt: Date.now(),
+        });
+        constructChanged = true;
         break;
       }
       case "cancelled": {
         if (!cur) break;
-        next.set(event.targetNodeId, { ...cur, cancelledAt: Date.now() });
+        next.set(event.partitionId, { ...cur, cancelledAt: Date.now() });
+        constructChanged = true;
         break;
       }
       case "error": {
         if (!cur) break;
-        next.set(event.targetNodeId, {
+        next.set(event.partitionId, {
           ...cur,
           lastError: { code: event.code, message: event.message },
         });
+        constructChanged = true;
         break;
       }
     }
     this.state = { ...this.state, lifecycles: next };
     this.emit();
+    if (constructChanged) for (const l of this.constructListeners) l();
   }
 
   setConnection(connection: ConnectionStatus) {
@@ -138,12 +162,28 @@ class SessionStore {
     this.emit();
   }
 
-  resetLifecycle(targetNodeId: string) {
-    if (!this.state.lifecycles.has(targetNodeId)) return;
-    const next = new Map(this.state.lifecycles);
-    next.delete(targetNodeId);
+  hydrate(lifecycles: Lifecycle[]) {
+    const { lifecycles: cur } = this.state;
+    let inserted = 0;
+    const next = new Map(cur);
+    for (const l of lifecycles) {
+      if (next.has(l.partitionId)) continue;
+      next.set(l.partitionId, l);
+      inserted++;
+    }
+    if (inserted === 0) return;
     this.state = { ...this.state, lifecycles: next };
     this.emit();
+    for (const l of this.constructListeners) l();
+  }
+
+  resetLifecycle(partitionId: number) {
+    if (!this.state.lifecycles.has(partitionId)) return;
+    const next = new Map(this.state.lifecycles);
+    next.delete(partitionId);
+    this.state = { ...this.state, lifecycles: next };
+    this.emit();
+    for (const l of this.constructListeners) l();
   }
 
   private emit() {
@@ -151,14 +191,13 @@ class SessionStore {
   }
 }
 
-function blankLifecycle(): Lifecycle {
+function blankLifecycle(partitionId: number, targetNodeId: string): Lifecycle {
   return {
-    strategy: "semantic",
-    userConcern: null,
+    partitionId,
+    targetNodeId,
     survey: "pending",
     plan: "pending",
     construct: "pending",
-    constructProgress: [],
     recentMessages: [],
   };
 }
@@ -181,6 +220,8 @@ export function SessionEventsProvider({
   const store = storeRef.current;
 
   useEffect(() => {
+    let cancelled = false;
+
     const onConnection = (status: ConnectionStatus) => {
       store.setConnection(status);
       if (status === "closed") {
@@ -197,7 +238,28 @@ export function SessionEventsProvider({
       (e) => store.applyEvent(e),
       onConnection,
     );
+
+    void (async () => {
+      try {
+        const partitions = await api.listPartitions(sessionId);
+        if (cancelled || partitions.length === 0) return;
+        const runsByPartition = await Promise.all(
+          partitions.map((p) =>
+            api.listRuns(sessionId, p.id).catch(() => [] as Run[]),
+          ),
+        );
+        if (cancelled) return;
+        const hydrated = partitions.map((p, i) =>
+          buildLifecycleFromSnapshot(p, runsByPartition[i]),
+        );
+        store.hydrate(hydrated);
+      } catch {
+        // Hydration is best-effort; SSE still drives live updates.
+      }
+    })();
+
     return () => {
+      cancelled = true;
       unsub();
       toast.dismiss(CONNECTION_LOST_TOAST_ID);
     };
@@ -212,6 +274,44 @@ export function SessionEventsProvider({
   );
 }
 
+function buildLifecycleFromSnapshot(p: Partition, runs: Run[]): Lifecycle {
+  const lifecycle = blankLifecycle(p.id, p.targetNodeId);
+  lifecycle[p.phase] = p.phaseState;
+
+  if (p.phase === "construct" && p.phaseState === "awaiting_review") {
+    const constructRun = runs.find(
+      (r) => r.kind === "construct" && r.status === "finished",
+    );
+    const result = constructRun?.result as
+      | { outcome?: string; reason?: string }
+      | undefined;
+    if (result?.outcome === "blocked" && typeof result.reason === "string") {
+      lifecycle.constructPayload = {
+        outcome: "blocked",
+        reason: result.reason,
+      };
+    } else if (p.candidateSliceTreeSha && p.candidateSliceCommitSha) {
+      lifecycle.constructPayload = {
+        outcome: "ok",
+        candidateTreeSha: p.candidateSliceTreeSha,
+        candidateCommitSha: p.candidateSliceCommitSha,
+      };
+    }
+  }
+
+  const latestPhaseRun = runs
+    .filter((r) => r.kind === p.phase)
+    .sort((a, b) => b.startedAt - a.startedAt)[0];
+  if (latestPhaseRun?.status === "error") {
+    const message = latestPhaseRun.errorMessage ?? "Run failed";
+    const code = message === "process_restart" ? "process_restart" : "run_error";
+    lifecycle.lastError = { code, message };
+    lifecycle[p.phase] = "error";
+  }
+
+  return lifecycle;
+}
+
 function useStore(): SessionStore {
   const ctx = useContext(SessionEventsContext);
   if (!ctx)
@@ -219,25 +319,75 @@ function useStore(): SessionStore {
   return ctx.store;
 }
 
-export function usePartitionLifecycle(targetNodeId: string): Lifecycle | undefined {
+export function usePartitionLifecycle(
+  partitionId: number | null | undefined,
+): Lifecycle | undefined {
   const store = useStore();
   const subscribe = store.subscribe;
   const getSnapshot = store.getSnapshot;
   return useSyncExternalStore(
     subscribe,
     useCallback(
-      () => getSnapshot().lifecycles.get(targetNodeId),
-      [getSnapshot, targetNodeId],
+      () =>
+        partitionId == null
+          ? undefined
+          : getSnapshot().lifecycles.get(partitionId),
+      [getSnapshot, partitionId],
     ),
   );
 }
 
-export function useSessionConnectionStatus(): ConnectionStatus {
+const EMPTY_LIFECYCLES: Lifecycle[] = [];
+
+export function usePartitionLifecyclesByTarget(
+  targetNodeId: string,
+): Lifecycle[] {
   const store = useStore();
-  return useSyncExternalStore(store.subscribe, () => store.getSnapshot().connection);
+  const subscribe = store.subscribe;
+  const getSnapshot = store.getSnapshot;
+  const cacheRef = useRef<{
+    map: Map<number, Lifecycle> | null;
+    targetNodeId: string;
+    value: Lifecycle[];
+  }>({ map: null, targetNodeId: "", value: EMPTY_LIFECYCLES });
+  return useSyncExternalStore(
+    subscribe,
+    useCallback(() => {
+      const map = getSnapshot().lifecycles;
+      const stale =
+        cacheRef.current.map !== map ||
+        cacheRef.current.targetNodeId !== targetNodeId;
+      if (stale) {
+        const filtered: Lifecycle[] = [];
+        for (const l of map.values()) {
+          if (l.targetNodeId === targetNodeId) filtered.push(l);
+        }
+        filtered.sort((a, b) => a.partitionId - b.partitionId);
+        cacheRef.current = {
+          map,
+          targetNodeId,
+          value: filtered.length === 0 ? EMPTY_LIFECYCLES : filtered,
+        };
+      }
+      return cacheRef.current.value;
+    }, [getSnapshot, targetNodeId]),
+  );
 }
 
-export function useResetLifecycle(): (targetNodeId: string) => void {
+export function useResetLifecycle(): (partitionId: number) => void {
   const store = useStore();
-  return useCallback((id: string) => store.resetLifecycle(id), [store]);
+  return useCallback((id: number) => store.resetLifecycle(id), [store]);
+}
+
+export function useHydratePartition(): (p: Partition) => void {
+  const store = useStore();
+  return useCallback(
+    (p: Partition) => store.hydrate([buildLifecycleFromSnapshot(p, [])]),
+    [store],
+  );
+}
+
+export function useConstructSubscription(cb: () => void): void {
+  const store = useStore();
+  useEffect(() => store.subscribeConstruct(cb), [store, cb]);
 }

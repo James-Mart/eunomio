@@ -40,6 +40,7 @@ struct Inner {
     state: Mutex<TunnelState>,
     events: broadcast::Sender<TunnelStatusDto>,
     data_dir: PathBuf,
+    start_gate: tokio::sync::Mutex<()>,
 }
 
 enum TunnelState {
@@ -63,6 +64,7 @@ impl TunnelRegistry {
                 state: Mutex::new(TunnelState::Idle),
                 events,
                 data_dir,
+                start_gate: tokio::sync::Mutex::new(()),
             }),
         }
     }
@@ -77,6 +79,7 @@ impl TunnelRegistry {
     }
 
     pub async fn start(&self, router: Router) -> Result<TunnelStatusDto, AppError> {
+        let _gate = self.inner.start_gate.lock().await;
         {
             let state = self.inner.state.lock().unwrap();
             if matches!(*state, TunnelState::Running(_)) {

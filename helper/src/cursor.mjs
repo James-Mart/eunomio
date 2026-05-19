@@ -1,4 +1,5 @@
 import { Cursor } from "@cursor/sdk";
+import { run } from "./run.mjs";
 
 async function listModels() {
   const models = await Cursor.models.list();
@@ -17,6 +18,9 @@ async function main() {
   switch (sub) {
     case "list-models":
       await listModels();
+      return;
+    case "run":
+      await run();
       return;
     default:
       fail("usage", `unknown subcommand: ${sub}`);

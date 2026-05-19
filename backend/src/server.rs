@@ -1,8 +1,12 @@
 use crate::{
-    branching, db, embed,
+    branching,
+    coordinator::Coordinator,
+    cursor_bridge::{CursorHelperRunner, SubagentRunner},
+    db, embed,
     error::AppError,
-    mock_partition::MockRegistry,
+    partition_settings::PartitionSettingsStore,
     sessions,
+    subagents::load_subagents,
     tunnel::TunnelRegistry,
     types::*,
 };
@@ -33,7 +37,8 @@ pub struct AppStateInner {
     pub db: Connection,
     pub cursor_api_key: Option<String>,
     pub cursor_models: OnceCell<Vec<CursorModelDto>>,
-    pub mock_partitions: MockRegistry,
+    pub partition_settings: PartitionSettingsStore,
+    pub coordinator: Coordinator,
     pub tunnel: TunnelRegistry,
 }
 
@@ -49,20 +54,38 @@ pub async fn build_state(
     data_dir: PathBuf,
     cursor_api_key: Option<String>,
 ) -> Result<AppState> {
+    let runner: Arc<dyn SubagentRunner> =
+        Arc::new(CursorHelperRunner::new(cursor_api_key.clone()));
+    build_state_with_runner(repo_root, data_dir, cursor_api_key, runner).await
+}
+
+pub async fn build_state_with_runner(
+    repo_root: PathBuf,
+    data_dir: PathBuf,
+    cursor_api_key: Option<String>,
+    runner: Arc<dyn SubagentRunner>,
+) -> Result<AppState> {
     tokio::fs::create_dir_all(&data_dir)
         .await
         .with_context(|| format!("create_dir_all {}", data_dir.display()))?;
     let db = db::open(&data_dir.join("eunomia.db")).await?;
+    let settings_path = data_dir.join("settings.json");
+    let partition_settings = PartitionSettingsStore::load(settings_path).await?;
     let tunnel = TunnelRegistry::new(data_dir.clone());
-    Ok(AppState(Arc::new(AppStateInner {
+    let subagents = load_subagents()?;
+    let coordinator = Coordinator::new(subagents, runner);
+    let state = AppState(Arc::new(AppStateInner {
         repo_root,
         data_dir,
         db,
         cursor_api_key,
         cursor_models: OnceCell::new(),
-        mock_partitions: MockRegistry::new(),
+        partition_settings,
+        coordinator: coordinator.clone(),
         tunnel,
-    })))
+    }));
+    coordinator.process_startup_recovery(&state).await?;
+    Ok(state)
 }
 
 pub fn router(state: AppState) -> Router {
@@ -73,40 +96,49 @@ pub fn router(state: AppState) -> Router {
             get(get_session).delete(delete_session),
         )
         .route("/api/sessions/:id/graph", get(get_graph))
-        .route(
-            "/api/sessions/:id/edges/:target_node_id",
-            get(get_edge),
-        )
-        .route(
-            "/api/sessions/:id/nodes/:node_id",
-            patch(rename_node),
-        )
+        .route("/api/sessions/:id/edges/:target_node_id", get(get_edge))
+        .route("/api/sessions/:id/diff", get(get_diff))
+        .route("/api/sessions/:id/nodes/:node_id", patch(rename_node))
         .route(
             "/api/sessions/:id/nodes/:node_id/branch",
             post(branch_node),
         )
         .route(
-            "/api/sessions/:id/partition-settings",
+            "/api/partition-settings",
             get(get_partition_settings).patch(patch_partition_settings),
         )
         .route(
-            "/api/sessions/:id/edges/:target_node_id/mock-partition",
-            post(start_mock_partition),
+            "/api/sessions/:id/edges/:target_node_id/partition",
+            post(begin_partition),
+        )
+        .route("/api/sessions/:id/partitions", get(list_partitions))
+        .route(
+            "/api/sessions/:id/partitions/:partition_id",
+            get(get_partition),
         )
         .route(
-            "/api/sessions/:id/edges/:target_node_id/mock-partition/continue",
-            post(continue_mock_partition),
+            "/api/sessions/:id/partitions/:partition_id/runs",
+            get(list_runs).post(start_run),
         )
         .route(
-            "/api/sessions/:id/edges/:target_node_id/mock-partition/rerun",
-            post(rerun_mock_partition),
+            "/api/sessions/:id/partitions/:partition_id/survey/accept",
+            post(accept_survey),
         )
         .route(
-            "/api/sessions/:id/edges/:target_node_id/mock-partition/abandon",
-            post(abandon_mock_partition),
+            "/api/sessions/:id/partitions/:partition_id/plan/accept",
+            post(accept_plan),
+        )
+        .route(
+            "/api/sessions/:id/partitions/:partition_id/construct/accept",
+            post(accept_construct),
+        )
+        .route(
+            "/api/sessions/:id/partitions/:partition_id/abandon",
+            post(abandon_partition),
         )
         .route("/api/sessions/:id/events", get(session_events))
         .route("/api/cursor-models", get(get_cursor_models))
+        .route("/api/repo", get(get_repo_info))
         .route(
             "/api/tunnel",
             get(get_tunnel).post(start_tunnel).delete(stop_tunnel),
@@ -222,7 +254,7 @@ async fn get_graph(
                 return Ok(Vec::new());
             }
             let mut stmt = conn.prepare(
-                "SELECT node_id, parent_node_id, tree_sha, commit_sha, title, is_favorite \
+                "SELECT node_id, parent_node_id, tree_sha, commit_sha, title \
                  FROM nodes WHERE session_id = ?1 ORDER BY created_at",
             )?;
             let rows = stmt
@@ -233,7 +265,6 @@ async fn get_graph(
                         tree_sha: row.get(2)?,
                         commit_sha: row.get(3)?,
                         title: row.get(4)?,
-                        is_favorite: row.get::<_, i64>(5)? != 0,
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
@@ -323,6 +354,76 @@ async fn get_edge(
     }))
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DiffQuery {
+    from_tree: String,
+    to_tree: String,
+}
+
+async fn get_diff(
+    State(state): State<AppState>,
+    Path(session_id): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<DiffQuery>,
+) -> Result<Json<DiffDto>, AppError> {
+    let repo_root = state.repo_root.to_string_lossy().to_string();
+    let id_for_lookup = session_id.clone();
+    let from_tree_lookup = q.from_tree.clone();
+    let to_tree_lookup = q.to_tree.clone();
+    let allowed = state
+        .db
+        .call(move |conn| {
+            let mut session_stmt =
+                conn.prepare("SELECT 1 FROM sessions WHERE id = ?1 AND repo_root = ?2")?;
+            let session_present = session_stmt
+                .query(tokio_rusqlite::params![id_for_lookup, repo_root])?
+                .next()?
+                .is_some();
+            if !session_present {
+                return Ok(false);
+            }
+            for tree in [&from_tree_lookup, &to_tree_lookup] {
+                let mut found = false;
+                let mut nodes_stmt = conn.prepare(
+                    "SELECT 1 FROM nodes WHERE session_id = ?1 AND tree_sha = ?2 LIMIT 1",
+                )?;
+                if nodes_stmt
+                    .query(tokio_rusqlite::params![id_for_lookup, tree])?
+                    .next()?
+                    .is_some()
+                {
+                    found = true;
+                }
+                if !found {
+                    let mut p_stmt = conn.prepare(
+                        "SELECT 1 FROM partitions WHERE session_id = ?1 AND candidate_slice_tree_sha = ?2 LIMIT 1",
+                    )?;
+                    if p_stmt
+                        .query(tokio_rusqlite::params![id_for_lookup, tree])?
+                        .next()?
+                        .is_some()
+                    {
+                        found = true;
+                    }
+                }
+                if !found {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        })
+        .await?;
+    if !allowed {
+        return Err(AppError::NotFound);
+    }
+    let diff = crate::git::diff_text(&state.repo_root, &q.from_tree, &q.to_tree).await?;
+    Ok(Json(DiffDto {
+        from_tree: q.from_tree,
+        to_tree: q.to_tree,
+        diff,
+    }))
+}
+
 async fn rename_node(
     State(state): State<AppState>,
     Path((session_id, node_id)): Path<(String, String)>,
@@ -352,7 +453,7 @@ async fn rename_node(
                 return Ok(None);
             }
             let mut stmt = conn.prepare(
-                "SELECT node_id, parent_node_id, tree_sha, commit_sha, title, is_favorite \
+                "SELECT node_id, parent_node_id, tree_sha, commit_sha, title \
                  FROM nodes WHERE session_id = ?1 AND node_id = ?2",
             )?;
             let mut rows = stmt.query(tokio_rusqlite::params![session_id, node_id])?;
@@ -363,7 +464,6 @@ async fn rename_node(
                     tree_sha: row.get(2)?,
                     commit_sha: row.get(3)?,
                     title: row.get(4)?,
-                    is_favorite: row.get::<_, i64>(5)? != 0,
                 }))
             } else {
                 Ok(None)
@@ -389,82 +489,15 @@ async fn branch_node(
 
 async fn get_partition_settings(
     State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> Result<Json<PartitionSettingsDto>, AppError> {
-    let repo_root = state.repo_root.to_string_lossy().to_string();
-    let row: Option<String> = state
-        .db
-        .call(move |conn| {
-            let mut stmt = conn.prepare(
-                "SELECT partition_settings_json FROM sessions WHERE id = ?1 AND repo_root = ?2",
-            )?;
-            let mut rows = stmt.query(tokio_rusqlite::params![id, repo_root])?;
-            if let Some(row) = rows.next()? {
-                Ok(Some(row.get::<_, String>(0)?))
-            } else {
-                Ok(None)
-            }
-        })
-        .await?;
-    let raw = row.ok_or(AppError::NotFound)?;
-    let parsed: PartitionSettingsDto = serde_json::from_str(&raw)
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("parsing partition settings: {e}")))?;
-    Ok(Json(parsed))
+) -> Result<Json<PartitionSettings>, AppError> {
+    Ok(Json(state.partition_settings.snapshot().await))
 }
 
 async fn patch_partition_settings(
     State(state): State<AppState>,
-    Path(id): Path<String>,
-    Json(patch): Json<PartitionSettingsPatchDto>,
-) -> Result<Json<PartitionSettingsDto>, AppError> {
-    let repo_root = state.repo_root.to_string_lossy().to_string();
-    let id_for_lookup = id.clone();
-    let existing: Option<String> = state
-        .db
-        .call(move |conn| {
-            let mut stmt = conn.prepare(
-                "SELECT partition_settings_json FROM sessions WHERE id = ?1 AND repo_root = ?2",
-            )?;
-            let mut rows = stmt.query(tokio_rusqlite::params![id_for_lookup, repo_root])?;
-            if let Some(row) = rows.next()? {
-                Ok(Some(row.get::<_, String>(0)?))
-            } else {
-                Ok(None)
-            }
-        })
-        .await?;
-    let raw = existing.ok_or(AppError::NotFound)?;
-    let mut merged: PartitionSettingsDto = serde_json::from_str(&raw)
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("parsing partition settings: {e}")))?;
-    if let Some(v) = patch.coordinator {
-        merged.coordinator = v;
-    }
-    if let Some(v) = patch.surveyor {
-        merged.surveyor = v;
-    }
-    if let Some(v) = patch.planner {
-        merged.planner = v;
-    }
-    if let Some(v) = patch.constructor {
-        merged.constructor = v;
-    }
-    let serialized = serde_json::to_string(&merged)
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("serializing partition settings: {e}")))?;
-    let id_for_update = id.clone();
-    let serialized_for_db = serialized.clone();
-    let updated: usize = state
-        .db
-        .call(move |conn| {
-            let n = conn.execute(
-                "UPDATE sessions SET partition_settings_json = ?1 WHERE id = ?2",
-                tokio_rusqlite::params![serialized_for_db, id_for_update],
-            )?;
-            Ok(n)
-        })
-        .await?;
-    if updated == 0 {
-        return Err(AppError::NotFound);
-    }
+    Json(patch): Json<PartitionSettingsPatch>,
+) -> Result<Json<PartitionSettings>, AppError> {
+    let merged = state.partition_settings.apply_patch(patch).await?;
     Ok(Json(merged))
 }
 
@@ -487,77 +520,9 @@ async fn get_cursor_models(
     }))
 }
 
-async fn start_mock_partition(
-    State(state): State<AppState>,
-    Path((session_id, target_node_id)): Path<(String, String)>,
-    Json(req): Json<BeginMockPartitionRequest>,
-) -> Result<Json<MockPartitionDto>, AppError> {
-    let hitl = ensure_edge_for_mock(&state, &session_id, &target_node_id).await?;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    let dto = state.mock_partitions.start(
-        session_id,
-        target_node_id,
-        req.strategy,
-        req.user_concern,
-        hitl,
-        now,
-    )?;
-    Ok(Json(dto))
-}
-
-async fn continue_mock_partition(
-    State(state): State<AppState>,
-    Path((session_id, target_node_id)): Path<(String, String)>,
-) -> Result<StatusCode, AppError> {
-    state
-        .mock_partitions
-        .continue_(&session_id, &target_node_id)?;
-    Ok(StatusCode::NO_CONTENT)
-}
-
-async fn rerun_mock_partition(
-    State(state): State<AppState>,
-    Path((session_id, target_node_id)): Path<(String, String)>,
-    body: Option<Json<RerunMockPartitionRequest>>,
-) -> Result<StatusCode, AppError> {
-    let req = body.map(|Json(r)| r).unwrap_or_default();
-    state
-        .mock_partitions
-        .rerun(&session_id, &target_node_id, req.user_feedback)?;
-    Ok(StatusCode::NO_CONTENT)
-}
-
-async fn abandon_mock_partition(
-    State(state): State<AppState>,
-    Path((session_id, target_node_id)): Path<(String, String)>,
-) -> Result<StatusCode, AppError> {
-    state
-        .mock_partitions
-        .abandon(&session_id, &target_node_id)?;
-    Ok(StatusCode::NO_CONTENT)
-}
-
-async fn session_events(
-    State(state): State<AppState>,
-    Path(session_id): Path<String>,
-) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    let rx = state.mock_partitions.subscribe(&session_id);
-    let stream = BroadcastStream::new(rx).filter_map(|res| async move {
-        match res {
-            Ok(event) => match serde_json::to_string(&event) {
-                Ok(data) => Some(Ok(Event::default().data(data))),
-                Err(e) => {
-                    tracing::error!(error = %e, "failed to serialise SSE event");
-                    None
-                }
-            },
-            Err(_) => None,
-        }
-    });
-    Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
+async fn get_repo_info(State(state): State<AppState>) -> Result<Json<RepoInfoDto>, AppError> {
+    let current_branch = crate::git::current_branch(&state.repo_root).await?;
+    Ok(Json(RepoInfoDto { current_branch }))
 }
 
 async fn get_tunnel(State(state): State<AppState>) -> Json<TunnelStatusDto> {
@@ -602,92 +567,119 @@ async fn tunnel_events(
     Sse::new(initial.chain(updates)).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
 }
 
-async fn ensure_edge_for_mock(
-    state: &AppState,
-    session_id: &str,
-    target_node_id: &str,
-) -> Result<HumanInTheLoopDto, AppError> {
-    let repo_root = state.repo_root.to_string_lossy().to_string();
-    let session_id_owned = session_id.to_string();
-    let target_owned = target_node_id.to_string();
-    let row: Option<String> = state
-        .db
-        .call(move |conn| {
-            let mut session_stmt = conn.prepare(
-                "SELECT partition_settings_json FROM sessions \
-                 WHERE id = ?1 AND repo_root = ?2",
-            )?;
-            let mut session_rows =
-                session_stmt.query(tokio_rusqlite::params![session_id_owned, repo_root])?;
-            let Some(session_row) = session_rows.next()? else {
-                return Ok(None);
-            };
-            let settings: String = session_row.get(0)?;
-            let mut node_stmt = conn.prepare(
-                "SELECT 1 FROM nodes WHERE session_id = ?1 AND node_id = ?2",
-            )?;
-            let mut node_rows =
-                node_stmt.query(tokio_rusqlite::params![session_id_owned, target_owned])?;
-            if node_rows.next()?.is_none() {
-                return Ok(None);
-            }
-            Ok(Some(settings))
-        })
-        .await?;
-    let raw = row.ok_or(AppError::NotFound)?;
-    let parsed: PartitionSettingsDto = serde_json::from_str(&raw)
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("parsing partition settings: {e}")))?;
-    Ok(parsed.coordinator.human_in_the_loop)
-}
-
 async fn delete_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
-    let repo_root_str = state.repo_root.to_string_lossy().to_string();
-    let id_for_lookup = id.clone();
-    let worktree_path: Option<String> = state
-        .db
-        .call(move |conn| {
-            let mut stmt = conn.prepare(
-                "SELECT worktree_path FROM sessions WHERE id = ?1 AND repo_root = ?2",
-            )?;
-            let mut rows = stmt.query(tokio_rusqlite::params![id_for_lookup, repo_root_str])?;
-            if let Some(row) = rows.next()? {
-                Ok(Some(row.get::<_, String>(0)?))
-            } else {
-                Ok(None)
-            }
-        })
-        .await?;
-    let Some(worktree_path) = worktree_path else {
-        return Err(AppError::NotFound);
-    };
-
-    let wt = PathBuf::from(&worktree_path);
-    if wt.exists() {
-        if let Err(e) = crate::git::worktree_remove(&state.repo_root, &wt).await {
-            tracing::warn!(error = %e, "git worktree remove failed; cleaning up rows anyway");
-        }
-    }
-
-    let id_for_delete = id.clone();
-    state
-        .db
-        .call(move |conn| {
-            let tx = conn.transaction()?;
-            tx.execute(
-                "DELETE FROM nodes WHERE session_id = ?1",
-                tokio_rusqlite::params![id_for_delete],
-            )?;
-            tx.execute(
-                "DELETE FROM sessions WHERE id = ?1",
-                tokio_rusqlite::params![id_for_delete],
-            )?;
-            tx.commit()?;
-            Ok(())
-        })
-        .await?;
-
+    sessions::delete(&state, &id).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn begin_partition(
+    State(state): State<AppState>,
+    Path((session_id, target_node_id)): Path<(String, String)>,
+) -> Result<(StatusCode, Json<Partition>), AppError> {
+    let partition = state
+        .coordinator
+        .begin_partition(&state, &session_id, &target_node_id)
+        .await?;
+    Ok((StatusCode::CREATED, Json(partition)))
+}
+
+async fn list_partitions(
+    State(state): State<AppState>,
+    Path(session_id): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<ListPartitionsQuery>,
+) -> Result<Json<Vec<Partition>>, AppError> {
+    let partitions = state
+        .coordinator
+        .list_partitions(&state, &session_id, q.target_node_id.as_deref())
+        .await?;
+    Ok(Json(partitions))
+}
+
+#[derive(serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct ListPartitionsQuery {
+    #[serde(default)]
+    target_node_id: Option<String>,
+}
+
+async fn get_partition(
+    State(state): State<AppState>,
+    Path((_session_id, partition_id)): Path<(String, i64)>,
+) -> Result<Json<Partition>, AppError> {
+    Ok(Json(state.coordinator.get_partition(&state, partition_id).await?))
+}
+
+async fn start_run(
+    State(state): State<AppState>,
+    Path((_session_id, partition_id)): Path<(String, i64)>,
+    Json(req): Json<StartRunRequest>,
+) -> Result<(StatusCode, Json<Run>), AppError> {
+    let run = state.coordinator.start_run(&state, partition_id, req).await?;
+    Ok((StatusCode::CREATED, Json(run)))
+}
+
+async fn list_runs(
+    State(state): State<AppState>,
+    Path((_session_id, partition_id)): Path<(String, i64)>,
+) -> Result<Json<Vec<Run>>, AppError> {
+    Ok(Json(state.coordinator.list_runs(&state, partition_id).await?))
+}
+
+async fn accept_survey(
+    State(state): State<AppState>,
+    Path((_session_id, partition_id)): Path<(String, i64)>,
+    Json(req): Json<AcceptSurveyRequest>,
+) -> Result<Json<Partition>, AppError> {
+    Ok(Json(
+        state.coordinator.accept_survey(&state, partition_id, req).await?,
+    ))
+}
+
+async fn accept_plan(
+    State(state): State<AppState>,
+    Path((_session_id, partition_id)): Path<(String, i64)>,
+    Json(req): Json<AcceptPlanRequest>,
+) -> Result<Json<Partition>, AppError> {
+    Ok(Json(
+        state.coordinator.accept_plan(&state, partition_id, req).await?,
+    ))
+}
+
+async fn accept_construct(
+    State(state): State<AppState>,
+    Path((_session_id, partition_id)): Path<(String, i64)>,
+) -> Result<StatusCode, AppError> {
+    state.coordinator.accept_construct(&state, partition_id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn abandon_partition(
+    State(state): State<AppState>,
+    Path((_session_id, partition_id)): Path<(String, i64)>,
+) -> Result<StatusCode, AppError> {
+    state.coordinator.abandon_partition(&state, partition_id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn session_events(
+    State(state): State<AppState>,
+    Path(session_id): Path<String>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    let rx = state.coordinator.subscribe(&session_id);
+    let stream = BroadcastStream::new(rx).filter_map(|res| async move {
+        match res {
+            Ok(event) => match serde_json::to_string(&event) {
+                Ok(data) => Some(Ok(Event::default().data(data))),
+                Err(e) => {
+                    tracing::error!(error = %e, "failed to serialise SSE event");
+                    None
+                }
+            },
+            Err(_) => None,
+        }
+    });
+    Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
 }

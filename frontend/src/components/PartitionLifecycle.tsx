@@ -17,7 +17,8 @@ const STEPS: { name: PhaseName; label: string; icon: LucideIcon }[] = [
   { name: "construct", label: "Construct", icon: Code2 },
 ];
 
-export type LifecycleStates = Record<PhaseName, PhaseState>;
+export type LifecycleStateValue = PhaseState | "pending" | "done";
+export type LifecycleStates = Record<PhaseName, LifecycleStateValue>;
 
 export function LifecycleStepper({ states }: { states: LifecycleStates }) {
   return (
@@ -43,7 +44,7 @@ function Step({
 }: {
   label: string;
   icon: LucideIcon;
-  state: PhaseState;
+  state: LifecycleStateValue;
 }) {
   const StatusIcon = statusIconFor(state, Icon);
   const color = colorFor(state);
@@ -55,7 +56,7 @@ function Step({
   );
 }
 
-function statusIconFor(state: PhaseState, fallback: LucideIcon): LucideIcon {
+function statusIconFor(state: LifecycleStateValue, fallback: LucideIcon): LucideIcon {
   switch (state) {
     case "awaiting_review":
       return PauseCircle;
@@ -68,7 +69,7 @@ function statusIconFor(state: PhaseState, fallback: LucideIcon): LucideIcon {
   }
 }
 
-function colorFor(state: PhaseState): string {
+function colorFor(state: LifecycleStateValue): string {
   switch (state) {
     case "pending":
       return "text-muted-foreground";

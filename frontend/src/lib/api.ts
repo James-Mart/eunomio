@@ -12,7 +12,6 @@ export type GraphNode = {
   treeSha: string;
   commitSha: string;
   title: string;
-  isFavorite: boolean;
 };
 
 export type GraphEdge = { from: string; to: string };
@@ -25,40 +24,112 @@ export type Edge = {
   diff: string;
 };
 
+export type Diff = {
+  fromTree: string;
+  toTree: string;
+  diff: string;
+};
+
 export type BranchResult = { branchName: string; commitSha: string };
 
-export type SurveyorSettings = { model: string };
+export type SubagentSettings = {
+  overrideModel: boolean;
+  model: string;
+};
 
 export type HumanInTheLoopSettings = {
   afterSurvey: boolean;
   afterPlanning: boolean;
+  afterConstruct: boolean;
 };
 
 export type CoordinatorSettings = {
+  model: string;
   humanInTheLoop: HumanInTheLoopSettings;
 };
 
-export type PartitionSettings = {
+export interface PartitionSettings {
   coordinator: CoordinatorSettings;
-  surveyor: SurveyorSettings;
-  planner: unknown;
-  constructor: unknown;
-};
+  surveyor: SubagentSettings;
+  planner: SubagentSettings;
+  constructor: SubagentSettings;
+}
 
-export type PartitionSettingsPatch = Partial<PartitionSettings>;
+export interface PartitionSettingsPatch {
+  coordinator?: CoordinatorSettings;
+  surveyor?: SubagentSettings;
+  planner?: SubagentSettings;
+  constructor?: SubagentSettings;
+}
 
 export type PartitionStrategy = "semantic" | "vertical" | "horizontal";
+export type StrategyOverride = PartitionStrategy | "auto";
 
-export type MockPartition = {
+export type PhaseName = "survey" | "plan" | "construct";
+export type PhaseState = "running" | "awaiting_review" | "error";
+
+export type RunKind = "survey" | "plan" | "construct";
+export type RunStatus = "running" | "finished" | "error" | "cancelled";
+
+export type ChangeSurveyTheme = {
+  id: string;
+  title: string;
+  description: string;
+};
+
+export type ChangeSurvey = {
+  summary: string;
+  themes: ChangeSurveyTheme[];
+};
+
+export type PlanEdge = {
+  id: string;
+  title: string;
+  description: string;
+};
+
+export type Plan = {
+  strategy: PartitionStrategy;
+  strategyRationale: string;
+  edges: PlanEdge[];
+};
+
+export type Partition = {
+  id: number;
   sessionId: string;
   targetNodeId: string;
-  strategy: PartitionStrategy;
-  userConcern: string | null;
+  strategy: PartitionStrategy | null;
+  changeSurvey: ChangeSurvey | null;
+  plan: Plan | null;
+  phase: PhaseName;
+  phaseState: PhaseState;
+  candidateSliceTreeSha: string | null;
+  candidateSliceCommitSha: string | null;
+  createdAt: number;
+};
+
+export type Run = {
+  id: number;
+  partitionId: number;
+  kind: RunKind;
+  status: RunStatus;
+  result: unknown;
+  errorMessage: string | null;
   startedAt: number;
+  finishedAt: number | null;
+};
+
+export type StartRunRequest = {
+  kind: RunKind;
+  parentRunId?: number;
+  userFeedback?: string;
+  strategyOverride?: PartitionStrategy;
 };
 
 export type CursorModel = { id: string };
 export type CursorModels = { models: CursorModel[] };
+
+export type RepoInfo = { currentBranch?: string };
 
 export type TunnelState = "idle" | "running" | "error";
 
@@ -116,6 +187,11 @@ export const api = {
   getGraph: (id: string) => request<Graph>("GET", `/sessions/${id}/graph`),
   getEdge: (sessionId: string, targetNodeId: string) =>
     request<Edge>("GET", `/sessions/${sessionId}/edges/${targetNodeId}`),
+  getDiff: (sessionId: string, fromTree: string, toTree: string) =>
+    request<Diff>(
+      "GET",
+      `/sessions/${sessionId}/diff?fromTree=${encodeURIComponent(fromTree)}&toTree=${encodeURIComponent(toTree)}`,
+    ),
   renameNode: (sessionId: string, nodeId: string, title: string) =>
     request<GraphNode>("PATCH", `/sessions/${sessionId}/nodes/${nodeId}`, { title }),
   branchFromNode: (sessionId: string, nodeId: string, branchName: string, force = false) =>
@@ -124,42 +200,54 @@ export const api = {
       force,
     }),
   deleteSession: (id: string) => request<void>("DELETE", `/sessions/${id}`),
-  getPartitionSettings: (sessionId: string) =>
-    request<PartitionSettings>("GET", `/sessions/${sessionId}/partition-settings`),
-  updatePartitionSettings: (sessionId: string, patch: PartitionSettingsPatch) =>
-    request<PartitionSettings>("PATCH", `/sessions/${sessionId}/partition-settings`, patch),
+  getPartitionSettings: () => request<PartitionSettings>("GET", `/partition-settings`),
+  updatePartitionSettings: (patch: PartitionSettingsPatch) =>
+    request<PartitionSettings>("PATCH", `/partition-settings`, patch),
   listCursorModels: () => request<CursorModels>("GET", "/cursor-models"),
-  startMockPartition: (
-    sessionId: string,
-    targetNodeId: string,
-    body: { strategy: PartitionStrategy; userConcern?: string },
-  ) =>
-    request<MockPartition>(
+  getRepoInfo: () => request<RepoInfo>("GET", "/repo"),
+  beginPartition: (sessionId: string, targetNodeId: string) =>
+    request<Partition>(
       "POST",
-      `/sessions/${sessionId}/edges/${targetNodeId}/mock-partition`,
+      `/sessions/${sessionId}/edges/${targetNodeId}/partition`,
+    ),
+  listPartitions: (sessionId: string, targetNodeId?: string) =>
+    request<Partition[]>(
+      "GET",
+      targetNodeId
+        ? `/sessions/${sessionId}/partitions?targetNodeId=${encodeURIComponent(targetNodeId)}`
+        : `/sessions/${sessionId}/partitions`,
+    ),
+  getPartition: (sessionId: string, partitionId: number) =>
+    request<Partition>("GET", `/sessions/${sessionId}/partitions/${partitionId}`),
+  listRuns: (sessionId: string, partitionId: number) =>
+    request<Run[]>("GET", `/sessions/${sessionId}/partitions/${partitionId}/runs`),
+  startRun: (sessionId: string, partitionId: number, body: StartRunRequest) =>
+    request<Run>(
+      "POST",
+      `/sessions/${sessionId}/partitions/${partitionId}/runs`,
       body,
     ),
-  continueMockPartition: (sessionId: string, targetNodeId: string) =>
-    request<void>(
+  acceptSurvey: (sessionId: string, partitionId: number, runId: number) =>
+    request<Partition>(
       "POST",
-      `/sessions/${sessionId}/edges/${targetNodeId}/mock-partition/continue`,
-      {},
+      `/sessions/${sessionId}/partitions/${partitionId}/survey/accept`,
+      { runId },
     ),
-  rerunMockPartition: (
-    sessionId: string,
-    targetNodeId: string,
-    body: { userFeedback?: string } = {},
-  ) =>
-    request<void>(
+  acceptPlan: (sessionId: string, partitionId: number, runId: number) =>
+    request<Partition>(
       "POST",
-      `/sessions/${sessionId}/edges/${targetNodeId}/mock-partition/rerun`,
-      body,
+      `/sessions/${sessionId}/partitions/${partitionId}/plan/accept`,
+      { runId },
     ),
-  abandonMockPartition: (sessionId: string, targetNodeId: string) =>
+  acceptConstruct: (sessionId: string, partitionId: number) =>
     request<void>(
       "POST",
-      `/sessions/${sessionId}/edges/${targetNodeId}/mock-partition/abandon`,
-      {},
+      `/sessions/${sessionId}/partitions/${partitionId}/construct/accept`,
+    ),
+  abandonPartition: (sessionId: string, partitionId: number) =>
+    request<void>(
+      "POST",
+      `/sessions/${sessionId}/partitions/${partitionId}/abandon`,
     ),
   getTunnel: () => request<TunnelStatus>("GET", "/tunnel"),
   startTunnel: () => request<TunnelStatus>("POST", "/tunnel"),

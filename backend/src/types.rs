@@ -25,7 +25,6 @@ pub struct NodeDto {
     pub tree_sha: String,
     pub commit_sha: String,
     pub title: String,
-    pub is_favorite: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -50,6 +49,14 @@ pub struct EdgeDto {
     pub diff: String,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiffDto {
+    pub from_tree: String,
+    pub to_tree: String,
+    pub diff: String,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RenameNodeRequest {
@@ -71,74 +78,95 @@ pub struct BranchFromNodeResponse {
     pub commit_sha: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PartitionSettingsDto {
+pub struct PartitionSettings {
     #[serde(default)]
-    pub coordinator: CoordinatorSettingsDto,
-    #[serde(default = "default_surveyor")]
-    pub surveyor: SurveyorSettingsDto,
+    pub coordinator: CoordinatorSettings,
     #[serde(default)]
-    pub planner: serde_json::Value,
+    pub surveyor: SubagentSettings,
     #[serde(default)]
-    pub constructor: serde_json::Value,
+    pub planner: SubagentSettings,
+    #[serde(default)]
+    pub constructor: SubagentSettings,
 }
 
-impl Default for PartitionSettingsDto {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CoordinatorSettings {
+    #[serde(default = "default_model")]
+    pub model: String,
+    #[serde(default)]
+    pub human_in_the_loop: HumanInTheLoop,
+}
+
+impl Default for CoordinatorSettings {
     fn default() -> Self {
         Self {
-            coordinator: CoordinatorSettingsDto::default(),
-            surveyor: default_surveyor(),
-            planner: serde_json::Value::Null,
-            constructor: serde_json::Value::Null,
+            model: default_model(),
+            human_in_the_loop: HumanInTheLoop::default(),
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CoordinatorSettingsDto {
-    #[serde(default)]
-    pub human_in_the_loop: HumanInTheLoopDto,
+pub struct HumanInTheLoop {
+    #[serde(default = "default_true")]
+    pub after_survey: bool,
+    #[serde(default = "default_true")]
+    pub after_planning: bool,
+    #[serde(default = "default_true")]
+    pub after_construct: bool,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct HumanInTheLoopDto {
-    #[serde(default)]
-    pub after_survey: bool,
-    #[serde(default)]
-    pub after_planning: bool,
+impl Default for HumanInTheLoop {
+    fn default() -> Self {
+        Self {
+            after_survey: true,
+            after_planning: true,
+            after_construct: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SurveyorSettingsDto {
+pub struct SubagentSettings {
+    #[serde(default)]
+    pub override_model: bool,
     #[serde(default = "default_model")]
     pub model: String,
 }
 
-fn default_surveyor() -> SurveyorSettingsDto {
-    SurveyorSettingsDto {
-        model: default_model(),
+impl Default for SubagentSettings {
+    fn default() -> Self {
+        Self {
+            override_model: false,
+            model: default_model(),
+        }
     }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_model() -> String {
     "composer-2".to_string()
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
-pub struct PartitionSettingsPatchDto {
+pub struct PartitionSettingsPatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub coordinator: Option<CoordinatorSettingsDto>,
+    pub coordinator: Option<CoordinatorSettings>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub surveyor: Option<SurveyorSettingsDto>,
+    pub surveyor: Option<SubagentSettings>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub planner: Option<serde_json::Value>,
+    pub planner: Option<SubagentSettings>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub constructor: Option<serde_json::Value>,
+    pub constructor: Option<SubagentSettings>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -149,32 +177,17 @@ pub enum PartitionStrategy {
     Horizontal,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BeginMockPartitionRequest {
-    pub strategy: PartitionStrategy,
-    #[serde(default)]
-    pub user_concern: Option<String>,
+impl PartitionStrategy {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PartitionStrategy::Semantic => "semantic",
+            PartitionStrategy::Vertical => "vertical",
+            PartitionStrategy::Horizontal => "horizontal",
+        }
+    }
 }
 
-#[derive(Debug, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct RerunMockPartitionRequest {
-    #[serde(default)]
-    pub user_feedback: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MockPartitionDto {
-    pub session_id: String,
-    pub target_node_id: String,
-    pub strategy: PartitionStrategy,
-    pub user_concern: Option<String>,
-    pub started_at: i64,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum PhaseName {
     Survey,
@@ -182,14 +195,218 @@ pub enum PhaseName {
     Construct,
 }
 
+impl PhaseName {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PhaseName::Survey => "survey",
+            PhaseName::Plan => "plan",
+            PhaseName::Construct => "construct",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum PhaseState {
-    Pending,
     Running,
     AwaitingReview,
-    Done,
     Error,
+}
+
+impl PhaseState {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PhaseState::Running => "running",
+            PhaseState::AwaitingReview => "awaiting_review",
+            PhaseState::Error => "error",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum RunKind {
+    #[default]
+    Survey,
+    Plan,
+    Construct,
+}
+
+impl RunKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RunKind::Survey => "survey",
+            RunKind::Plan => "plan",
+            RunKind::Construct => "construct",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "survey" => Some(RunKind::Survey),
+            "plan" => Some(RunKind::Plan),
+            "construct" => Some(RunKind::Construct),
+            _ => None,
+        }
+    }
+
+    pub fn phase(&self) -> PhaseName {
+        match self {
+            RunKind::Survey => PhaseName::Survey,
+            RunKind::Plan => PhaseName::Plan,
+            RunKind::Construct => PhaseName::Construct,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum RunStatus {
+    Running,
+    Finished,
+    Error,
+    Cancelled,
+}
+
+impl RunStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RunStatus::Running => "running",
+            RunStatus::Finished => "finished",
+            RunStatus::Error => "error",
+            RunStatus::Cancelled => "cancelled",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Partition {
+    pub id: i64,
+    pub session_id: String,
+    pub target_node_id: String,
+    pub strategy: Option<PartitionStrategy>,
+    pub change_survey: Option<serde_json::Value>,
+    pub plan: Option<serde_json::Value>,
+    pub phase: PhaseName,
+    pub phase_state: PhaseState,
+    pub candidate_slice_tree_sha: Option<String>,
+    pub candidate_slice_commit_sha: Option<String>,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct PartitionRow {
+    pub id: i64,
+    pub session_id: String,
+    pub target_node_id: String,
+    pub strategy: Option<PartitionStrategy>,
+    pub change_survey_json: Option<String>,
+    pub plan_json: Option<String>,
+    pub candidate_slice_tree_sha: Option<String>,
+    pub candidate_slice_commit_sha: Option<String>,
+    pub phase: PhaseName,
+    pub phase_state: PhaseState,
+    pub worktree_path: String,
+    pub created_at: i64,
+}
+
+impl From<PartitionRow> for Partition {
+    fn from(row: PartitionRow) -> Self {
+        let change_survey = row
+            .change_survey_json
+            .as_deref()
+            .and_then(|s| serde_json::from_str(s).ok());
+        let plan = row
+            .plan_json
+            .as_deref()
+            .and_then(|s| serde_json::from_str(s).ok());
+        Self {
+            id: row.id,
+            session_id: row.session_id,
+            target_node_id: row.target_node_id,
+            strategy: row.strategy,
+            change_survey,
+            plan,
+            phase: row.phase,
+            phase_state: row.phase_state,
+            candidate_slice_tree_sha: row.candidate_slice_tree_sha,
+            candidate_slice_commit_sha: row.candidate_slice_commit_sha,
+            created_at: row.created_at,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct StartRunRequest {
+    pub kind: RunKind,
+    #[serde(default)]
+    pub parent_run_id: Option<i64>,
+    #[serde(default)]
+    pub user_feedback: Option<String>,
+    #[serde(default)]
+    pub strategy_override: Option<PartitionStrategy>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AcceptSurveyRequest {
+    pub run_id: i64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AcceptPlanRequest {
+    pub run_id: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Run {
+    pub id: i64,
+    pub partition_id: i64,
+    pub kind: RunKind,
+    pub status: RunStatus,
+    pub result: Option<serde_json::Value>,
+    pub error_message: Option<String>,
+    pub started_at: i64,
+    pub finished_at: Option<i64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RunRow {
+    pub id: i64,
+    pub partition_id: i64,
+    pub session_id: String,
+    pub target_node_id: String,
+    pub kind: RunKind,
+    pub parent_run_id: Option<i64>,
+    pub status: RunStatus,
+    pub result_json: Option<String>,
+    pub result_text: Option<String>,
+    pub error_message: Option<String>,
+    pub started_at: i64,
+    pub finished_at: Option<i64>,
+}
+
+impl From<RunRow> for Run {
+    fn from(row: RunRow) -> Self {
+        let result = row
+            .result_json
+            .as_deref()
+            .and_then(|s| serde_json::from_str(s).ok());
+        Self {
+            id: row.id,
+            partition_id: row.partition_id,
+            kind: row.kind,
+            status: row.status,
+            result,
+            error_message: row.error_message,
+            started_at: row.started_at,
+            finished_at: row.finished_at,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -199,13 +416,13 @@ pub enum SseEvent {
     Started {
         session_id: String,
         target_node_id: String,
-        strategy: PartitionStrategy,
-        user_concern: Option<String>,
+        partition_id: i64,
     },
     #[serde(rename_all = "camelCase")]
     Phase {
         session_id: String,
         target_node_id: String,
+        partition_id: i64,
         name: PhaseName,
         state: PhaseState,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -215,29 +432,26 @@ pub enum SseEvent {
     SdkMessage {
         session_id: String,
         target_node_id: String,
+        partition_id: i64,
         message: serde_json::Value,
-    },
-    #[serde(rename_all = "camelCase")]
-    LoopProgress {
-        session_id: String,
-        target_node_id: String,
-        item_id: String,
-        status: String,
     },
     #[serde(rename_all = "camelCase")]
     Finished {
         session_id: String,
         target_node_id: String,
+        partition_id: i64,
     },
     #[serde(rename_all = "camelCase")]
     Cancelled {
         session_id: String,
         target_node_id: String,
+        partition_id: i64,
     },
     #[serde(rename_all = "camelCase")]
     Error {
         session_id: String,
         target_node_id: String,
+        partition_id: i64,
         code: String,
         message: String,
     },
@@ -253,6 +467,13 @@ pub struct CursorModelDto {
 #[serde(rename_all = "camelCase")]
 pub struct CursorModelsDto {
     pub models: Vec<CursorModelDto>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoInfoDto {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_branch: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]

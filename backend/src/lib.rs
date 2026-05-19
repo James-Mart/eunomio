@@ -1,11 +1,13 @@
 pub mod branching;
+pub mod coordinator;
 pub mod cursor_bridge;
 pub mod db;
 pub mod embed;
 pub mod error;
 pub mod git;
-pub mod mock_partition;
+pub mod partition_settings;
 pub mod server;
 pub mod sessions;
+pub mod subagents;
 pub mod tunnel;
 pub mod types;

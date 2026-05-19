@@ -3,10 +3,12 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use eunomia::server::{build_state, router, AppState};
+use eunomia::cursor_bridge::SubagentRunner;
+use eunomia::server::{build_state, build_state_with_runner, router, AppState};
 use http_body_util::BodyExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
 use tempfile::TempDir;
 use tower::ServiceExt;
 
@@ -19,6 +21,7 @@ pub struct TestApp {
 }
 
 impl TestApp {
+    #[allow(dead_code)]
     pub async fn spawn() -> Self {
         Self::spawn_with_repo(default_repo).await
     }
@@ -44,6 +47,34 @@ impl TestApp {
         }
     }
 
+    #[allow(dead_code)]
+    pub async fn spawn_with_runner(runner: Arc<dyn SubagentRunner>) -> Self {
+        Self::spawn_with_repo_and_runner(default_repo, runner).await
+    }
+
+    #[allow(dead_code)]
+    pub async fn spawn_with_repo_and_runner<F>(setup: F, runner: Arc<dyn SubagentRunner>) -> Self
+    where
+        F: FnOnce(&Path),
+    {
+        let repo = tempfile::tempdir().expect("tempdir for repo");
+        let data = tempfile::tempdir().expect("tempdir for data");
+        setup(repo.path());
+        let repo_root = repo.path().canonicalize().expect("canonicalise repo path");
+        let data_root = data.path().canonicalize().expect("canonicalise data path");
+        let state = build_state_with_runner(repo_root, data_root, None, runner)
+            .await
+            .expect("build_state_with_runner");
+        let router = router(state.clone());
+        TestApp {
+            router,
+            repo,
+            data,
+            state,
+        }
+    }
+
+    #[allow(dead_code)]
     pub fn repo_path(&self) -> PathBuf {
         self.repo.path().canonicalize().unwrap()
     }

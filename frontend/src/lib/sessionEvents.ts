@@ -1,25 +1,19 @@
-import type { PartitionStrategy } from "@/lib/api";
+import type { PhaseName, PhaseState } from "@/lib/api";
 
-export type PhaseName = "survey" | "plan" | "construct";
-export type PhaseState =
-  | "pending"
-  | "running"
-  | "awaiting_review"
-  | "done"
-  | "error";
+export type { PhaseName, PhaseState };
 
 export type SessionEvent =
   | {
       type: "started";
       sessionId: string;
       targetNodeId: string;
-      strategy: PartitionStrategy;
-      userConcern: string | null;
+      partitionId: number;
     }
   | {
       type: "phase";
       sessionId: string;
       targetNodeId: string;
+      partitionId: number;
       name: PhaseName;
       state: PhaseState;
       payload?: unknown;
@@ -28,21 +22,26 @@ export type SessionEvent =
       type: "sdkMessage";
       sessionId: string;
       targetNodeId: string;
+      partitionId: number;
       message: unknown;
     }
   | {
-      type: "loopProgress";
+      type: "finished";
       sessionId: string;
       targetNodeId: string;
-      itemId: string;
-      status: string;
+      partitionId: number;
     }
-  | { type: "finished"; sessionId: string; targetNodeId: string }
-  | { type: "cancelled"; sessionId: string; targetNodeId: string }
+  | {
+      type: "cancelled";
+      sessionId: string;
+      targetNodeId: string;
+      partitionId: number;
+    }
   | {
       type: "error";
       sessionId: string;
       targetNodeId: string;
+      partitionId: number;
       code: string;
       message: string;
     };

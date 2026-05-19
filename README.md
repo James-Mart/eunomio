@@ -9,7 +9,7 @@ The stack is React/Vite/Tailwind/shadcn for the UI, a Rust axum backend with SQL
 ```
 backend/    Rust axum + rusqlite binary crate `eunomia`
 frontend/   Vite + React + TS + Tailwind + shadcn
-subagents/  prompt markdown for surveyor/planner/constructor (planned)
+subagents/  prompt markdown for surveyor/planner/constructor
 plans/      design plans (gitignored; local-only working drafts)
 ```
 

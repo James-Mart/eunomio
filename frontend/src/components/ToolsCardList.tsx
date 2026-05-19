@@ -7,15 +7,25 @@ import BranchTab from "@/components/BranchTab";
 import InfoTab from "@/components/InfoTab";
 import PartitionSettingsDialog from "@/components/PartitionSettingsDialog";
 import PartitionTab from "@/components/PartitionTab";
+import type { Partition } from "@/lib/api";
 
 type Props = {
   sessionId: string;
   nodeId: string;
   nodeTitle: string;
+  activePartition: Partition | null;
+  onPartitionStarted: (p: Partition) => void;
   onChange?: () => void;
 };
 
-export default function ToolsCardList({ sessionId, nodeId, nodeTitle, onChange }: Props) {
+export default function ToolsCardList({
+  sessionId,
+  nodeId,
+  nodeTitle,
+  activePartition,
+  onPartitionStarted,
+  onChange,
+}: Props) {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
@@ -34,7 +44,12 @@ export default function ToolsCardList({ sessionId, nodeId, nodeTitle, onChange }
           </Button>
         </CardHeader>
         <CardContent className="p-4 pt-2">
-          <PartitionTab sessionId={sessionId} targetNodeId={nodeId} />
+          <PartitionTab
+            sessionId={sessionId}
+            targetNodeId={nodeId}
+            activePartition={activePartition}
+            onPartitionStarted={onPartitionStarted}
+          />
         </CardContent>
       </Card>
 
@@ -64,7 +79,6 @@ export default function ToolsCardList({ sessionId, nodeId, nodeTitle, onChange }
       <PartitionSettingsDialog
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
-        sessionId={sessionId}
       />
     </div>
   );

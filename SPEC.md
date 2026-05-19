@@ -33,7 +33,7 @@ the active state of the Session is a single linear chain of Nodes from
 `base` to `final`.
 
 - **Node** — a full cumulative tree state plus a commit sha that points at
-  that tree, plus a per-Node `is_favorite` UI bit and a per-Node `Title`.
+  that tree, plus a per-Node `Title`.
 - **Edge** — the diff between a Node and its parent. Edges are derived, not
   stored; identified by their target Node.
 - Every Session starts with exactly two Nodes:
@@ -89,13 +89,6 @@ Many Partitions can be pending at once — including more than one on the same
 target — and each appears as an entry in the graph-view dropdown. Acceptance
 of any Partition on a given target auto-Abandons all sibling Partitions on
 that same target (see §3).
-
-### Favorites (UI-only)
-
-Users can favorite Nodes from the UI. **Favoriting has no semantic effect** —
-it does not influence planning, construction, branching, or any subagent
-prompt. It is a pure marker for visually flagging interesting Nodes while
-exploring the graph.
 
 ### Branching out of the graph
 
@@ -259,7 +252,7 @@ Many Partitions can be pending in a Session at once:
 - **Per Session**: any number of pending Partitions. Surveys and Plans of
   different Partitions run truly in parallel (read-only).
 - **Per `(session, target_node_id)`**: any number of pending Partitions —
-  the user can run alternative refinements on the same target (e.g. one
+  the user can run alternative Partitions on the same target (e.g. one
   Vertical, one Horizontal) and compare. At most one of them has an
   actively-executing phase (a Survey, Plan, or Construct currently running)
   at any moment.
@@ -396,8 +389,8 @@ When the user Accepts (or auto-Accept fires under `afterConstruct = false`),
 one transaction:
 
 ```sql
-INSERT INTO nodes (session_id, node_id, parent_node_id, tree_sha, commit_sha, title, is_favorite, created_at)
-  VALUES (?, ?slice_id, ?parent_id, ?candidate_slice_tree_sha, ?candidate_slice_commit_sha, ?edges[0].title, 0, ?now);
+INSERT INTO nodes (session_id, node_id, parent_node_id, tree_sha, commit_sha, title, created_at)
+  VALUES (?, ?slice_id, ?parent_id, ?candidate_slice_tree_sha, ?candidate_slice_commit_sha, ?edges[0].title, ?now);
 
 UPDATE nodes
   SET parent_node_id = ?slice_id, title = ?edges[1].title
@@ -540,7 +533,7 @@ worktree state.
 | Table        | Keyed by                                | What it holds                                                                                                                                                                                                                                                                          |
 | ------------ | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sessions`   | `id` (PK), unique on `(repo_root, base_ref, source_ref)` | refs, trees, `base_node_id`, `created_at`. _No_ session-level worktree path; worktrees are per-Partition. _No_ session-level Partition settings either; settings are user-global and live in a single JSON file under the State directory.                                            |
-| `nodes`      | `(session_id, node_id)`                  | every Node: tree, commit sha, parent, Title, `is_favorite`, `created_at`. Slices use exactly the same shape as seed Nodes; there is no Node-type discriminator.                                                                                                                          |
+| `nodes`      | `(session_id, node_id)`                  | every Node: tree, commit sha, parent, Title, `created_at`. Slices use exactly the same shape as seed Nodes; there is no Node-type discriminator.                                                                                                                          |
 | `partitions` | `id` (PK autoincrement), index on `(session_id, target_node_id)` | per-Partition state: strategy (nullable until Plan Accept), accepted survey / plan JSON, phase, phase_state, candidate slice tree+commit (nullable until Constructor OK), `worktree_path`, `created_at`. Deleted at terminal action (Accept or Abandon).               |
 | `runs`       | `id` (PK autoincrement), index on `(session_id, target_node_id)` | every in-flight subagent Run: partition id, kind (survey / plan / construct), parent_run_id, status, parsed result JSON, raw result text, error message, timestamps. **Transient** — a Run row exists only while its Partition exists; both Acceptance and Abandon delete the Run rows alongside the Partition row.                                       |
 

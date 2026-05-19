@@ -16,12 +16,16 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { api, type Graph, type GraphNode } from "@/lib/api";
+import { api, type Graph, type GraphNode, type Partition } from "@/lib/api";
 import NodeCard, { type NodeCardData } from "@/components/NodeCard";
 import EdgePane from "@/components/EdgePane";
 import ToolsCardList from "@/components/ToolsCardList";
 import ToolsPane from "@/components/ToolsPane";
-import { SessionEventsProvider } from "@/components/SessionEventsProvider";
+import {
+  SessionEventsProvider,
+  useConstructSubscription,
+  useHydratePartition,
+} from "@/components/SessionEventsProvider";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   ResizableHandle,
@@ -29,12 +33,20 @@ import {
   ResizablePanelGroup,
   useDefaultLayout,
 } from "@/components/ui/resizable";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 const nodeTypes: NodeTypes = { eunomia: NodeCard };
 
-const NODE_WIDTH = 240;
-const NODE_GAP = 120;
+const NODE_X = 0;
+const NODE_Y_STEP = 140;
+const CANDIDATE_X_OFFSET = 260;
 
 type ActiveTab = "graph" | "diff" | "tools";
 
@@ -44,40 +56,174 @@ const TABS: { value: ActiveTab; label: string; icon: LucideIcon }[] = [
   { value: "tools", label: "Tools", icon: Wrench },
 ];
 
-function layout(graph: Graph): {
-  nodes: Node<NodeCardData>[];
-  edges: FlowEdge[];
-} {
-  const order: string[] = [];
+type Chain = {
+  ordered: GraphNode[];
+  positionByNodeId: Map<string, string>;
+};
+
+function computeChain(graph: Graph): Chain {
   const byParent = new Map<string | null, GraphNode[]>();
   for (const n of graph.nodes) {
     const key = n.parentNodeId ?? null;
     if (!byParent.has(key)) byParent.set(key, []);
     byParent.get(key)!.push(n);
   }
+  const ordered: GraphNode[] = [];
   const visit = (parent: string | null) => {
     for (const n of byParent.get(parent) ?? []) {
-      order.push(n.nodeId);
+      ordered.push(n);
       visit(n.nodeId);
     }
   };
   visit(null);
 
-  const x = new Map<string, number>();
-  order.forEach((id, i) => x.set(id, i * (NODE_WIDTH + NODE_GAP)));
+  const positionByNodeId = new Map<string, string>();
+  ordered.forEach((node, idx) => {
+    if (node.parentNodeId === null) {
+      positionByNodeId.set(node.nodeId, "base");
+    } else if (idx === ordered.length - 1 && node.title === "final") {
+      positionByNodeId.set(node.nodeId, "final");
+    } else {
+      positionByNodeId.set(node.nodeId, String(idx));
+    }
+  });
+  return { ordered, positionByNodeId };
+}
 
-  const nodes: Node<NodeCardData>[] = graph.nodes.map((n) => ({
+type CanonicalLayout = {
+  nodes: Node<NodeCardData>[];
+  edges: FlowEdge[];
+};
+
+function canonicalLayout(
+  chain: Chain,
+  candidateBadgeTargets: Set<string>,
+): CanonicalLayout {
+  const total = chain.ordered.length;
+  const nodes: Node<NodeCardData>[] = chain.ordered.map((n, idx) => ({
     id: n.nodeId,
     type: "eunomia",
-    position: { x: x.get(n.nodeId) ?? 0, y: 80 },
-    data: { node: n },
+    position: { x: NODE_X, y: (total - 1 - idx) * NODE_Y_STEP },
+    data: {
+      node: n,
+      positionLabel: chain.positionByNodeId.get(n.nodeId) ?? "",
+      candidateBadge: candidateBadgeTargets.has(n.nodeId),
+    },
   }));
-  const edges: FlowEdge[] = graph.edges.map((e) => ({
-    id: `${e.from}->${e.to}`,
-    source: e.from,
-    target: e.to,
-  }));
+  const edges: FlowEdge[] = chain.ordered
+    .filter((n) => n.parentNodeId !== null)
+    .map((n) => ({
+      id: `${n.parentNodeId}->${n.nodeId}`,
+      source: n.parentNodeId!,
+      target: n.nodeId,
+    }));
   return { nodes, edges };
+}
+
+const CANDIDATE_SLICE_ID = "__candidate_slice__";
+const CANDIDATE_TARGET_PREFIX = "__candidate_target__";
+
+type CandidateLayout = {
+  nodes: Node<NodeCardData>[];
+  edges: FlowEdge[];
+  candidateSliceNode: GraphNode;
+  renamedTargetNode: GraphNode;
+};
+
+function candidateLayout(
+  chain: Chain,
+  partition: Partition,
+  graph: Graph,
+): CandidateLayout | null {
+  const targetIdx = chain.ordered.findIndex(
+    (n) => n.nodeId === partition.targetNodeId,
+  );
+  if (targetIdx < 0) return null;
+  const target = chain.ordered[targetIdx];
+  if (target.parentNodeId === null) return null;
+  const parent = graph.nodes.find((n) => n.nodeId === target.parentNodeId);
+  if (!parent) return null;
+  if (
+    !partition.candidateSliceTreeSha ||
+    !partition.candidateSliceCommitSha ||
+    !partition.plan
+  ) {
+    return null;
+  }
+  const slicePosition = chain.positionByNodeId.get(target.nodeId) ?? "?";
+  const parentPosition = chain.positionByNodeId.get(parent.nodeId) ?? "?";
+
+  const candidateSlice: GraphNode = {
+    nodeId: CANDIDATE_SLICE_ID,
+    parentNodeId: parent.nodeId,
+    treeSha: partition.candidateSliceTreeSha,
+    commitSha: partition.candidateSliceCommitSha,
+    title: partition.plan.edges[0].title,
+  };
+  const renamedTarget: GraphNode = {
+    ...target,
+    nodeId: CANDIDATE_TARGET_PREFIX + target.nodeId,
+    parentNodeId: CANDIDATE_SLICE_ID,
+    title: partition.plan.edges[1].title,
+  };
+
+  let targetLabel: string;
+  if (target.parentNodeId === null) {
+    targetLabel = "base";
+  } else if (chain.positionByNodeId.get(target.nodeId) === "final") {
+    targetLabel = "final";
+  } else {
+    const cur = parseInt(slicePosition, 10);
+    targetLabel = Number.isFinite(cur) ? String(cur + 1) : "?";
+  }
+
+  const sliceLabel = slicePosition;
+  const parentLabel = parentPosition;
+
+  const nodes: Node<NodeCardData>[] = [
+    {
+      id: parent.nodeId,
+      type: "eunomia",
+      position: { x: NODE_X, y: 2 * NODE_Y_STEP },
+      data: {
+        node: parent,
+        positionLabel: parentLabel,
+      },
+    },
+    {
+      id: candidateSlice.nodeId,
+      type: "eunomia",
+      position: { x: NODE_X + CANDIDATE_X_OFFSET, y: NODE_Y_STEP },
+      data: {
+        node: candidateSlice,
+        positionLabel: sliceLabel,
+      },
+    },
+    {
+      id: renamedTarget.nodeId,
+      type: "eunomia",
+      position: { x: NODE_X, y: 0 },
+      data: {
+        node: renamedTarget,
+        positionLabel: targetLabel,
+      },
+    },
+  ];
+
+  const edges: FlowEdge[] = [
+    {
+      id: `${parent.nodeId}->${candidateSlice.nodeId}`,
+      source: parent.nodeId,
+      target: candidateSlice.nodeId,
+    },
+    {
+      id: `${candidateSlice.nodeId}->${renamedTarget.nodeId}`,
+      source: candidateSlice.nodeId,
+      target: renamedTarget.nodeId,
+    },
+  ];
+
+  return { nodes, edges, candidateSliceNode: candidateSlice, renamedTargetNode: renamedTarget };
 }
 
 function findLeafNodeId(graph: Graph): string | null {
@@ -95,11 +241,43 @@ function parseActiveTab(raw: string | null): ActiveTab {
   return raw === "diff" || raw === "tools" ? raw : "graph";
 }
 
+function willRenderCandidateLayout(p: Partition): boolean {
+  return (
+    p.phase === "construct" &&
+    p.phaseState === "awaiting_review" &&
+    !!p.candidateSliceTreeSha &&
+    !!p.candidateSliceCommitSha &&
+    !!p.plan
+  );
+}
+
+function phaseLabel(p: Partition): string {
+  if (p.phaseState === "error") return `${p.phase} error`;
+  if (p.phaseState === "awaiting_review") return `${p.phase} review`;
+  if (p.phase === "survey") return "surveying…";
+  if (p.phase === "plan") return "planning…";
+  return "constructing…";
+}
+
 export default function Session() {
   const { id } = useParams<{ id: string }>();
+  if (!id) return null;
+  return (
+    <SessionEventsProvider sessionId={id}>
+      <SessionInner sessionId={id} />
+    </SessionEventsProvider>
+  );
+}
+
+function SessionInner({ sessionId }: { sessionId: string }) {
+  const id = sessionId;
   const [graph, setGraph] = useState<Graph | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [partitions, setPartitions] = useState<Partition[]>([]);
+  const [candidatePartitionId, setCandidatePartitionId] = useState<number | null>(
+    null,
+  );
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = parseActiveTab(searchParams.get("tab"));
 
@@ -119,7 +297,6 @@ export default function Session() {
   );
 
   const refresh = useCallback(async () => {
-    if (!id) return;
     try {
       const g = await api.getGraph(id);
       setGraph(g);
@@ -128,22 +305,83 @@ export default function Session() {
     }
   }, [id]);
 
+  const refreshPartitions = useCallback(async () => {
+    try {
+      const list = await api.listPartitions(id);
+      setPartitions(list);
+    } catch {
+      setPartitions([]);
+    }
+  }, [id]);
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
   useEffect(() => {
-    if (!graph) return;
-    if (selectedNodeId && graph.nodes.some((n) => n.nodeId === selectedNodeId))
-      return;
-    setSelectedNodeId(findLeafNodeId(graph));
-  }, [graph, selectedNodeId]);
+    void refreshPartitions();
+  }, [refreshPartitions]);
 
-  const flow = useMemo(() => (graph ? layout(graph) : null), [graph]);
+  useConstructSubscription(
+    useCallback(() => {
+      void refreshPartitions();
+      void refresh();
+    }, [refresh, refreshPartitions]),
+  );
+
+  const hydratePartition = useHydratePartition();
+
+  useEffect(() => {
+    if (candidatePartitionId === null) return;
+    if (!partitions.some((p) => p.id === candidatePartitionId)) {
+      setCandidatePartitionId(null);
+    }
+  }, [partitions, candidatePartitionId]);
+
+  const chain = useMemo(() => (graph ? computeChain(graph) : null), [graph]);
+
+  const candidatePartition = useMemo(
+    () => partitions.find((p) => p.id === candidatePartitionId) ?? null,
+    [partitions, candidatePartitionId],
+  );
+
+  const acceptReadyTargets = useMemo(
+    () =>
+      new Set(
+        partitions
+          .filter(
+            (p) => p.phase === "construct" && p.phaseState === "awaiting_review",
+          )
+          .map((p) => p.targetNodeId),
+      ),
+    [partitions],
+  );
+
+  const layout = useMemo(() => {
+    if (!chain || !graph) return null;
+    if (candidatePartition) {
+      const lay = candidateLayout(chain, candidatePartition, graph);
+      if (lay) return { kind: "candidate" as const, ...lay };
+    }
+    const lay = canonicalLayout(chain, acceptReadyTargets);
+    return { kind: "canonical" as const, ...lay };
+  }, [chain, graph, candidatePartition, acceptReadyTargets]);
+
+  useEffect(() => {
+    if (!layout) return;
+    if (selectedNodeId && layout.nodes.some((n) => n.id === selectedNodeId)) {
+      return;
+    }
+    if (layout.kind === "candidate") {
+      setSelectedNodeId(layout.renamedTargetNode.nodeId);
+    } else if (graph) {
+      setSelectedNodeId(findLeafNodeId(graph));
+    }
+  }, [layout, selectedNodeId, graph]);
 
   const nodesForFlow = useMemo<Node<NodeCardData>[] | null>(() => {
-    if (!flow || !id) return null;
-    return flow.nodes.map((n) => ({
+    if (!layout || !id) return null;
+    return layout.nodes.map((n) => ({
       ...n,
       selected: n.id === selectedNodeId,
       data: {
@@ -152,7 +390,7 @@ export default function Session() {
         onChange: refresh,
       },
     }));
-  }, [flow, id, refresh, selectedNodeId]);
+  }, [layout, id, refresh, selectedNodeId]);
 
   const onNodeClick = useCallback<NodeMouseHandler>(
     (_event, node) => {
@@ -167,58 +405,124 @@ export default function Session() {
     [setActiveTab],
   );
 
-  const selectedNode = useMemo<GraphNode | null>(() => {
+  const selectedCanonicalNode = useMemo<GraphNode | null>(() => {
     if (!graph || !selectedNodeId) return null;
-    return graph.nodes.find((n) => n.nodeId === selectedNodeId) ?? null;
+    const resolved = selectedNodeId.startsWith(CANDIDATE_TARGET_PREFIX)
+      ? selectedNodeId.slice(CANDIDATE_TARGET_PREFIX.length)
+      : selectedNodeId;
+    return graph.nodes.find((n) => n.nodeId === resolved) ?? null;
   }, [graph, selectedNodeId]);
+
   const desktopSplitLayout = useDefaultLayout({
     id: "session-desktop-split-v3",
     panelIds: ["diff", "aux"],
+  });
+
+  const desktopAuxSplitLayout = useDefaultLayout({
+    id: "session-desktop-aux-split-v1",
+    panelIds: ["graph", "tools"],
   });
 
   if (error) {
     return <div className="container py-10 text-destructive">{error}</div>;
   }
 
-  if (!flow || !nodesForFlow || !id) {
+  if (!layout || !nodesForFlow || !graph || !chain) {
     return <SessionSkeleton />;
   }
 
+  const onSelectCandidate = (next: string) => {
+    if (next === "canonical") {
+      setCandidatePartitionId(null);
+      setSelectedNodeId(findLeafNodeId(graph));
+      return;
+    }
+    const pid = Number(next);
+    const p = partitions.find((x) => x.id === pid);
+    if (!p) return;
+    setCandidatePartitionId(pid);
+    setSelectedNodeId(
+      willRenderCandidateLayout(p)
+        ? CANDIDATE_TARGET_PREFIX + p.targetNodeId
+        : p.targetNodeId,
+    );
+  };
+
+  const onPartitionStarted = (p: Partition) => {
+    hydratePartition(p);
+    setPartitions((prev) =>
+      prev.some((x) => x.id === p.id) ? prev : [...prev, p],
+    );
+    setCandidatePartitionId(p.id);
+    setSelectedNodeId(p.targetNodeId);
+  };
+
   const graphPane = (
-    <ReactFlow
-      nodes={nodesForFlow}
-      edges={flow.edges}
-      nodeTypes={nodeTypes}
-      colorMode="dark"
-      fitView
-      nodesDraggable={false}
-      proOptions={{ hideAttribution: true }}
-      onNodeClick={onNodeClick}
-    >
-      <Background />
-    </ReactFlow>
+    <div className="flex h-full flex-col">
+      {partitions.length > 0 && (
+        <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
+          <span className="text-xs text-muted-foreground">View</span>
+          <Select
+            value={candidatePartitionId === null ? "canonical" : String(candidatePartitionId)}
+            onValueChange={onSelectCandidate}
+          >
+            <SelectTrigger className="h-8 w-auto min-w-[12rem]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="canonical">Canonical</SelectItem>
+              {partitions.map((p) => {
+                const targetPos = chain.positionByNodeId.get(p.targetNodeId) ?? "?";
+                const strategy = p.strategy ?? "semantic";
+                return (
+                  <SelectItem key={p.id} value={String(p.id)}>
+                    Partition on Node {targetPos} ({strategy}, {phaseLabel(p)})
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+      <div className="flex-1 min-h-0">
+        <ReactFlow
+          nodes={nodesForFlow}
+          edges={layout.edges}
+          nodeTypes={nodeTypes}
+          colorMode="dark"
+          fitView
+          nodesDraggable={false}
+          proOptions={{ hideAttribution: true }}
+          onNodeClick={onNodeClick}
+        >
+          <Background />
+        </ReactFlow>
+      </div>
+    </div>
   );
 
-  const diffPane = selectedNodeId ? (
-    <EdgePane
-      key={selectedNodeId}
-      sessionId={id}
-      targetNodeId={selectedNodeId}
-    />
-  ) : null;
+  const diffPane = renderDiffPane({
+    id,
+    layout,
+    selectedNodeId,
+    selectedCanonicalNode,
+    graph,
+  });
 
-  const toolsCardList = selectedNode ? (
+  const toolsCardList = selectedCanonicalNode ? (
     <ToolsCardList
-      key={selectedNode.nodeId}
+      key={selectedCanonicalNode.nodeId}
       sessionId={id}
-      nodeId={selectedNode.nodeId}
-      nodeTitle={selectedNode.title}
+      nodeId={selectedCanonicalNode.nodeId}
+      nodeTitle={selectedCanonicalNode.title}
+      activePartition={candidatePartition}
+      onPartitionStarted={onPartitionStarted}
       onChange={refresh}
     />
   ) : null;
 
   return (
-    <SessionEventsProvider sessionId={id}>
+    <>
       <div className="hidden md:block h-[calc(100vh-3.5rem)]">
         <ResizablePanelGroup
           orientation="horizontal"
@@ -246,20 +550,46 @@ export default function Session() {
             minSize="15%"
             className="min-w-0"
           >
-            <div className="grid h-full min-w-0 overflow-hidden grid-rows-2">
-              <div className="min-h-0 overflow-hidden">{graphPane}</div>
-              <div className="min-h-0 overflow-auto border-t">
-                {selectedNode && (
+            <ResizablePanelGroup
+              orientation="vertical"
+              defaultLayout={desktopAuxSplitLayout.defaultLayout}
+              onLayoutChanged={desktopAuxSplitLayout.onLayoutChanged}
+              className="h-full min-w-0 overflow-hidden"
+            >
+              <ResizablePanel
+                id="graph"
+                defaultSize="50%"
+                minSize="15%"
+                maxSize="85%"
+                className="min-h-0 overflow-hidden"
+              >
+                {graphPane}
+              </ResizablePanel>
+              <ResizableHandle
+                withHandle
+                aria-label="Resize tools and graph"
+                className="my-2"
+              />
+              <ResizablePanel
+                id="tools"
+                defaultSize="50%"
+                minSize="15%"
+                maxSize="85%"
+                className="min-h-0 overflow-auto"
+              >
+                {selectedCanonicalNode && (
                   <ToolsPane
-                    key={selectedNode.nodeId}
+                    key={selectedCanonicalNode.nodeId}
                     sessionId={id}
-                    nodeId={selectedNode.nodeId}
-                    nodeTitle={selectedNode.title}
+                    nodeId={selectedCanonicalNode.nodeId}
+                    nodeTitle={selectedCanonicalNode.title}
+                    activePartition={candidatePartition}
+                    onPartitionStarted={onPartitionStarted}
                     onChange={refresh}
                   />
                 )}
-              </div>
-            </div>
+              </ResizablePanel>
+            </ResizablePanelGroup>
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>
@@ -278,7 +608,70 @@ export default function Session() {
         </div>
         <BottomTabBar value={activeTab} onChange={setActiveTab} />
       </div>
-    </SessionEventsProvider>
+    </>
+  );
+}
+
+function renderDiffPane({
+  id,
+  layout,
+  selectedNodeId,
+  selectedCanonicalNode,
+  graph,
+}: {
+  id: string;
+  layout:
+    | (CanonicalLayout & { kind: "canonical" })
+    | (CandidateLayout & { kind: "candidate" });
+  selectedNodeId: string | null;
+  selectedCanonicalNode: GraphNode | null;
+  graph: Graph;
+}) {
+  if (!selectedNodeId) return null;
+  if (layout.kind === "candidate") {
+    if (selectedNodeId === CANDIDATE_SLICE_ID) {
+      const slice = layout.candidateSliceNode;
+      const parent = graph.nodes.find((n) => n.nodeId === slice.parentNodeId);
+      if (!parent) return null;
+      return (
+        <EdgePane
+          key={`candidate-slice`}
+          sessionId={id}
+          fromTree={parent.treeSha}
+          toTree={slice.treeSha}
+        />
+      );
+    }
+    if (selectedNodeId.startsWith(CANDIDATE_TARGET_PREFIX)) {
+      const slice = layout.candidateSliceNode;
+      const renamed = layout.renamedTargetNode;
+      return (
+        <EdgePane
+          key={`candidate-target`}
+          sessionId={id}
+          fromTree={slice.treeSha}
+          toTree={renamed.treeSha}
+        />
+      );
+    }
+    if (selectedCanonicalNode) {
+      return (
+        <EdgePane
+          key={selectedCanonicalNode.nodeId}
+          sessionId={id}
+          targetNodeId={selectedCanonicalNode.nodeId}
+        />
+      );
+    }
+    return null;
+  }
+  if (!selectedCanonicalNode) return null;
+  return (
+    <EdgePane
+      key={selectedCanonicalNode.nodeId}
+      sessionId={id}
+      targetNodeId={selectedCanonicalNode.nodeId}
+    />
   );
 }
 

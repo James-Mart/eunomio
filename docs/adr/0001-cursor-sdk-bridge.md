@@ -1,8 +1,8 @@
 # Cursor SDK bridge: Node SEA helper invoked as a per-call subprocess
 
-Eunomia is a Rust binary that needs to call `@cursor/sdk` (TypeScript) for every interaction with Cursor agents — model listing today, subagent runs (surveyor / planner / constructor) for Partitions later. The bridge has to preserve the single-binary CLI deploy story from `ARCHITECTURE.md` while letting us use the real SDK rather than a hand-rolled REST client.
+Eunomia is a Rust binary that needs to call `@cursor/sdk` for every interaction with Cursor agents — model listing today, subagent runs (surveyor / planner / constructor) for Partitions later. The bridge has to preserve the single-binary CLI deploy story from `ARCHITECTURE.md` while letting us use the real SDK rather than a hand-rolled REST client.
 
-We compile a small TypeScript helper (`helper/src/cursor.ts`) plus `@cursor/sdk` into a single self-contained `cursor-helper` executable using `esbuild` (to bundle) and Node's Single Executable Applications feature (to inject the bundle into a copy of the `node` runtime). The resulting binary is embedded into the eunomia executable via `rust-embed` at `cargo build --release` time, extracted to a temp directory on first use, and invoked as a per-call subprocess with subcommand arguments (e.g. `cursor-helper list-models`) and JSON over stdout. Each invocation does one thing and exits; future subagent runs will be additional subcommands on the same binary.
+We compile a small Node helper (`helper/src/cursor.mjs`) plus `@cursor/sdk` into a single self-contained `cursor-helper` executable using `esbuild` (to bundle) and Node's Single Executable Applications feature (to inject the bundle into a copy of the `node` runtime). The resulting binary is embedded into the eunomia executable via `rust-embed` at `cargo build --release` time, extracted to a temp directory on first use, and invoked as a per-call subprocess with subcommand arguments (e.g. `cursor-helper list-models`) and JSON over stdout. Each invocation does one thing and exits; future subagent runs will be additional subcommands on the same binary.
 
 ## Considered alternatives
 
@@ -15,4 +15,4 @@ We compile a small TypeScript helper (`helper/src/cursor.ts`) plus `@cursor/sdk`
 
 - Binary size grows by ~85 MB (the embedded `node` runtime plus the bundled SDK). Acceptable for a workstation dev tool.
 - Cross-platform release builds need per-target `node` binaries available at build time. Scriptable in `helper/build.mjs`.
-- The subprocess contract — subcommand args plus JSON over stdout — is intentionally portable. If we later migrate to the Component Model or to a long-lived daemon, callers in `cursor_bridge.rs` change but the helper's TypeScript code mostly doesn't.
+- The subprocess contract — subcommand args plus JSON over stdout — is intentionally portable. If we later migrate to the Component Model or to a long-lived daemon, callers in `cursor_bridge.rs` change but the helper's JavaScript code mostly doesn't.

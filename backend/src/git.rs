@@ -13,7 +13,7 @@ async fn run(repo: &Path, args: &[&str]) -> Result<String> {
         return Err(anyhow!(
             "git {}: {}",
             args.join(" "),
-            String::from_utf8_lossy(&out.stderr).trim().to_string()
+            String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
@@ -42,7 +42,7 @@ pub async fn diff_text(repo: &Path, from_tree: &str, to_tree: &str) -> Result<St
             "git diff {} {}: {}",
             from_tree,
             to_tree,
-            String::from_utf8_lossy(&out.stderr).trim().to_string()
+            String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
@@ -97,6 +97,49 @@ pub async fn branch_create(repo: &Path, name: &str, commit: &str, force: bool) -
     args.push(commit);
     run(repo, &args).await?;
     Ok(())
+}
+
+pub async fn run_in(cwd: &Path, args: &[&str]) -> Result<String> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(cwd)
+        .args(args)
+        .output()
+        .await?;
+    if !out.status.success() {
+        return Err(anyhow!(
+            "git {}: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+pub async fn write_tree(cwd: &Path) -> Result<String> {
+    run_in(cwd, &["write-tree"]).await
+}
+
+pub async fn rev_parse_in(cwd: &Path, refname: &str) -> Result<String> {
+    run_in(cwd, &["rev-parse", refname]).await
+}
+
+pub async fn current_branch(repo: &Path) -> Result<Option<String>> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["symbolic-ref", "--quiet", "--short", "HEAD"])
+        .output()
+        .await?;
+    if !out.status.success() {
+        return Ok(None);
+    }
+    let name = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if name.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(name))
+    }
 }
 
 pub async fn branch_exists(repo: &Path, name: &str) -> Result<bool> {

@@ -4,14 +4,25 @@ import { FileDiff, Virtualizer } from "@pierre/diffs/react";
 import { FileTree, useFileTree } from "@pierre/trees/react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
-import { ApiError, api, type Edge } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
-type Props = {
-  sessionId: string;
-  targetNodeId: string;
-};
+type Props =
+  | {
+      sessionId: string;
+      targetNodeId: string;
+      fromTree?: undefined;
+      toTree?: undefined;
+    }
+  | {
+      sessionId: string;
+      targetNodeId?: undefined;
+      fromTree: string;
+      toTree: string;
+    };
+
+type LoadedEdge = { diff: string };
 
 type DiffStyle = "unified" | "split";
 type Overflow = "scroll" | "wrap";
@@ -19,10 +30,14 @@ type Overflow = "scroll" | "wrap";
 const FILE_DATA_ATTR = "data-edge-file-path";
 
 const STICKY_HEADER_CSS =
-  "[data-diffs-header] { position: sticky; top: 0; z-index: 5; cursor: pointer; }";
+  "[data-diffs-header] { position: sticky; top: 0; z-index: 5; cursor: pointer; background-color: var(--diffs-bg-separator); border-bottom: 1px solid var(--diffs-bg-buffer); }";
 
-export default function EdgePane({ sessionId, targetNodeId }: Props) {
-  const [edge, setEdge] = useState<Edge | null>(null);
+export default function EdgePane(props: Props) {
+  const { sessionId } = props;
+  const targetNodeId = "targetNodeId" in props ? props.targetNodeId : undefined;
+  const fromTree = "fromTree" in props ? props.fromTree : undefined;
+  const toTree = "toTree" in props ? props.toTree : undefined;
+  const [edge, setEdge] = useState<LoadedEdge | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [diffStyle, setDiffStyle] = useState<DiffStyle>("unified");
   const [overflow, setOverflow] = useState<Overflow>("scroll");
@@ -59,8 +74,10 @@ export default function EdgePane({ sessionId, targetNodeId }: Props) {
     let cancelled = false;
     setEdge(null);
     setError(null);
-    api
-      .getEdge(sessionId, targetNodeId)
+    const fetch = targetNodeId !== undefined
+      ? api.getEdge(sessionId, targetNodeId).then((e) => ({ diff: e.diff }))
+      : api.getDiff(sessionId, fromTree!, toTree!).then((d) => ({ diff: d.diff }));
+    fetch
       .then((e) => {
         if (!cancelled) setEdge(e);
       })
@@ -75,7 +92,7 @@ export default function EdgePane({ sessionId, targetNodeId }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [sessionId, targetNodeId]);
+  }, [sessionId, targetNodeId, fromTree, toTree]);
 
   const fileDiffs: FileDiffMetadata[] = useMemo(() => {
     if (!edge || edge.diff.length === 0) return [];
@@ -125,9 +142,10 @@ export default function EdgePane({ sessionId, targetNodeId }: Props) {
   }
 
   if (fileDiffs.length === 0) {
+    const message = targetNodeId !== undefined ? "No diff — this is the base Node." : "No diff.";
     return (
       <div className="flex h-full items-center justify-center p-4 text-sm text-muted-foreground">
-        No diff — this is the base Node.
+        {message}
       </div>
     );
   }

@@ -77,7 +77,7 @@ The terminal-success outcome of a Partition: inserts the new Slice Node, reparen
 A graph-view mode the user enters via a dropdown when one or more Partitions are pending Acceptance. Renders a 3-Node mini-graph (the target's prior parent, the candidate Slice, and the renamed target) so the user can inspect the proposed graph state — including selecting Nodes to view their incoming-edge diffs — before Accepting.
 
 **Sibling Partitions**:
-Two or more pending Partitions sharing the same target Node. Allowed by design — the user can run alternative refinements (e.g. one Vertical and one Horizontal) on the same target and compare. At most one of them has an actively-executing phase at a moment. Accepting any one of them auto-Abandons the others.
+Two or more pending Partitions sharing the same target Node. Allowed by design — the user can run alternative Partitions (e.g. one Vertical and one Horizontal) on the same target and compare. At most one of them has an actively-executing phase at a moment. Accepting any one of them auto-Abandons the others.
 
 ## Relationships
 

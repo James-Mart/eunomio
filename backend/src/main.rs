@@ -34,6 +34,11 @@ struct ServeArgs {
 
     #[arg(long)]
     cursor_api_key: Option<String>,
+
+    /// Delete the existing sqlite db before starting. Useful when the on-disk
+    /// schema has drifted from the embedded migration. Hidden from --help.
+    #[arg(long, hide = true)]
+    new: bool,
 }
 
 #[tokio::main]
@@ -63,6 +68,25 @@ async fn main() -> Result<()> {
 
     tracing::info!(repo_root = %repo_root.display(), data_dir = %data_dir.display(), port = args.port, "starting eunomia");
 
+    if args.new {
+        let db_path = data_dir.join("eunomia.db");
+        for suffix in ["", "-wal", "-shm"] {
+            let p = db_path.with_file_name(format!(
+                "{}{}",
+                db_path.file_name().and_then(|n| n.to_str()).unwrap_or("eunomia.db"),
+                suffix
+            ));
+            match tokio::fs::remove_file(&p).await {
+                Ok(()) => tracing::warn!(path = %p.display(), "--new: deleted db file"),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => {
+                    return Err(anyhow::Error::new(e)
+                        .context(format!("--new: failed to delete {}", p.display())));
+                }
+            }
+        }
+    }
+
     let should_open = !args.no_open && (args.open || std::io::stdout().is_terminal());
     if should_open {
         let url = format!("http://localhost:{}", args.port);
@@ -78,6 +102,7 @@ async fn main() -> Result<()> {
         .cursor_api_key
         .clone()
         .or_else(|| std::env::var("CURSOR_API_KEY").ok());
+    std::env::remove_var("CURSOR_API_KEY");
 
     let state = eunomia::server::build_state(repo_root, data_dir, cursor_api_key).await?;
     eunomia::server::serve(state, args.port).await

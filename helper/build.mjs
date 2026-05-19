@@ -20,8 +20,20 @@ await build({
   mainFields: ["main"],
   resolveExtensions: [".js", ".cjs", ".mjs", ".json"],
   loader: { ".d.ts": "empty", ".map": "empty", ".LICENSE.txt": "empty" },
-  alias: { sqlite3: join(here, "src/sqlite3-stub.mjs") },
+  alias: { bindings: join(here, "src/bindings-loader.cjs") },
 });
+
+// Native bindings can't ride inside the SEA blob (Node SEA only embeds JS, and
+// loading a `.node` requires it to live on disk for `process.dlopen`). We copy
+// them into `dist/` so they get embedded into the eunomia Rust binary by
+// rust-embed and extracted next to `cursor-helper` at runtime. See
+// `helper/src/bindings-loader.cjs` for the runtime loader.
+const nativeBindings = [
+  ["node_modules/sqlite3/build/Release/node_sqlite3.node", "node_sqlite3.node"],
+];
+for (const [src, dst] of nativeBindings) {
+  copyFileSync(join(here, src), join(dist, dst));
+}
 
 const blobPath = join(dist, "sea-prep.blob");
 if (existsSync(blobPath)) rmSync(blobPath);

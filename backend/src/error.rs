@@ -13,6 +13,8 @@ pub enum AppError {
     NotFound,
     #[error("{message}")]
     Conflict { code: String, message: String },
+    #[error("construct blocked: {reason}")]
+    Blocked { run_id: i64, reason: String },
     #[error(transparent)]
     Internal(#[from] anyhow::Error),
     #[error("{message}")]
@@ -29,6 +31,7 @@ impl AppError {
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
             AppError::NotFound => StatusCode::NOT_FOUND,
             AppError::Conflict { .. } => StatusCode::CONFLICT,
+            AppError::Blocked { .. } => StatusCode::CONFLICT,
             AppError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::Unrecoverable { status, .. } => *status,
         }
@@ -46,6 +49,12 @@ impl IntoResponse for AppError {
             AppError::Unrecoverable { code, .. } | AppError::Conflict { code, .. } => {
                 json!({ "error": message, "code": code })
             }
+            AppError::Blocked { run_id, reason } => json!({
+                "error": message,
+                "code": "construct_blocked",
+                "runId": run_id,
+                "reason": reason,
+            }),
             _ => json!({ "error": message }),
         };
         (status, Json(body)).into_response()
