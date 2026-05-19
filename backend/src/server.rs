@@ -1,14 +1,27 @@
-use crate::{branching, db, embed, error::AppError, sessions, types::*};
+use crate::{
+    branching, db, embed,
+    error::AppError,
+    mock_partition::MockRegistry,
+    sessions,
+    tunnel::TunnelRegistry,
+    types::*,
+};
 use anyhow::{Context, Result};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    response::IntoResponse,
+    response::{
+        sse::{Event, KeepAlive, Sse},
+        IntoResponse,
+    },
     routing::{get, patch, post},
     Json, Router,
 };
-use std::{net::SocketAddr, path::PathBuf, sync::Arc};
+use futures::stream::{Stream, StreamExt};
+use std::{convert::Infallible, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
+use tokio::sync::OnceCell;
 use tokio_rusqlite::Connection;
+use tokio_stream::wrappers::BroadcastStream;
 use tower_http::trace::TraceLayer;
 
 #[derive(Clone)]
@@ -18,6 +31,10 @@ pub struct AppStateInner {
     pub repo_root: PathBuf,
     pub data_dir: PathBuf,
     pub db: Connection,
+    pub cursor_api_key: Option<String>,
+    pub cursor_models: OnceCell<Vec<CursorModelDto>>,
+    pub mock_partitions: MockRegistry,
+    pub tunnel: TunnelRegistry,
 }
 
 impl std::ops::Deref for AppState {
@@ -27,15 +44,24 @@ impl std::ops::Deref for AppState {
     }
 }
 
-pub async fn build_state(repo_root: PathBuf, data_dir: PathBuf) -> Result<AppState> {
+pub async fn build_state(
+    repo_root: PathBuf,
+    data_dir: PathBuf,
+    cursor_api_key: Option<String>,
+) -> Result<AppState> {
     tokio::fs::create_dir_all(&data_dir)
         .await
         .with_context(|| format!("create_dir_all {}", data_dir.display()))?;
     let db = db::open(&data_dir.join("eunomia.db")).await?;
+    let tunnel = TunnelRegistry::new(data_dir.clone());
     Ok(AppState(Arc::new(AppStateInner {
         repo_root,
         data_dir,
         db,
+        cursor_api_key,
+        cursor_models: OnceCell::new(),
+        mock_partitions: MockRegistry::new(),
+        tunnel,
     })))
 }
 
@@ -59,6 +85,33 @@ pub fn router(state: AppState) -> Router {
             "/api/sessions/:id/nodes/:node_id/branch",
             post(branch_node),
         )
+        .route(
+            "/api/sessions/:id/partition-settings",
+            get(get_partition_settings).patch(patch_partition_settings),
+        )
+        .route(
+            "/api/sessions/:id/edges/:target_node_id/mock-partition",
+            post(start_mock_partition),
+        )
+        .route(
+            "/api/sessions/:id/edges/:target_node_id/mock-partition/continue",
+            post(continue_mock_partition),
+        )
+        .route(
+            "/api/sessions/:id/edges/:target_node_id/mock-partition/rerun",
+            post(rerun_mock_partition),
+        )
+        .route(
+            "/api/sessions/:id/edges/:target_node_id/mock-partition/abandon",
+            post(abandon_mock_partition),
+        )
+        .route("/api/sessions/:id/events", get(session_events))
+        .route("/api/cursor-models", get(get_cursor_models))
+        .route(
+            "/api/tunnel",
+            get(get_tunnel).post(start_tunnel).delete(stop_tunnel),
+        )
+        .route("/api/tunnel/events", get(tunnel_events))
         .fallback(embed::fallback)
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -79,7 +132,7 @@ async fn create_session(
 ) -> Result<(StatusCode, Json<SessionDto>), AppError> {
     let base_ref = req.base_ref.clone();
     let source_ref = req.source_ref.clone();
-    let created = sessions::create(&state, req).await?;
+    let (created, outcome) = sessions::create(&state, req).await?;
     let dto = SessionDto {
         id: created.id,
         base_ref,
@@ -87,7 +140,11 @@ async fn create_session(
         base_node_id: created.base_node_id,
         created_at: created.created_at,
     };
-    Ok((StatusCode::CREATED, Json(dto)))
+    let status = match outcome {
+        sessions::CreateOutcome::Created => StatusCode::CREATED,
+        sessions::CreateOutcome::Existed => StatusCode::OK,
+    };
+    Ok((status, Json(dto)))
 }
 
 async fn list_sessions(
@@ -328,6 +385,259 @@ async fn branch_node(
         branch_name: req.branch_name,
         commit_sha: tip,
     }))
+}
+
+async fn get_partition_settings(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<PartitionSettingsDto>, AppError> {
+    let repo_root = state.repo_root.to_string_lossy().to_string();
+    let row: Option<String> = state
+        .db
+        .call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT partition_settings_json FROM sessions WHERE id = ?1 AND repo_root = ?2",
+            )?;
+            let mut rows = stmt.query(tokio_rusqlite::params![id, repo_root])?;
+            if let Some(row) = rows.next()? {
+                Ok(Some(row.get::<_, String>(0)?))
+            } else {
+                Ok(None)
+            }
+        })
+        .await?;
+    let raw = row.ok_or(AppError::NotFound)?;
+    let parsed: PartitionSettingsDto = serde_json::from_str(&raw)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("parsing partition settings: {e}")))?;
+    Ok(Json(parsed))
+}
+
+async fn patch_partition_settings(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(patch): Json<PartitionSettingsPatchDto>,
+) -> Result<Json<PartitionSettingsDto>, AppError> {
+    let repo_root = state.repo_root.to_string_lossy().to_string();
+    let id_for_lookup = id.clone();
+    let existing: Option<String> = state
+        .db
+        .call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT partition_settings_json FROM sessions WHERE id = ?1 AND repo_root = ?2",
+            )?;
+            let mut rows = stmt.query(tokio_rusqlite::params![id_for_lookup, repo_root])?;
+            if let Some(row) = rows.next()? {
+                Ok(Some(row.get::<_, String>(0)?))
+            } else {
+                Ok(None)
+            }
+        })
+        .await?;
+    let raw = existing.ok_or(AppError::NotFound)?;
+    let mut merged: PartitionSettingsDto = serde_json::from_str(&raw)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("parsing partition settings: {e}")))?;
+    if let Some(v) = patch.coordinator {
+        merged.coordinator = v;
+    }
+    if let Some(v) = patch.surveyor {
+        merged.surveyor = v;
+    }
+    if let Some(v) = patch.planner {
+        merged.planner = v;
+    }
+    if let Some(v) = patch.constructor {
+        merged.constructor = v;
+    }
+    let serialized = serde_json::to_string(&merged)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("serializing partition settings: {e}")))?;
+    let id_for_update = id.clone();
+    let serialized_for_db = serialized.clone();
+    let updated: usize = state
+        .db
+        .call(move |conn| {
+            let n = conn.execute(
+                "UPDATE sessions SET partition_settings_json = ?1 WHERE id = ?2",
+                tokio_rusqlite::params![serialized_for_db, id_for_update],
+            )?;
+            Ok(n)
+        })
+        .await?;
+    if updated == 0 {
+        return Err(AppError::NotFound);
+    }
+    Ok(Json(merged))
+}
+
+async fn get_cursor_models(
+    State(state): State<AppState>,
+) -> Result<Json<CursorModelsDto>, AppError> {
+    if state.cursor_api_key.is_none() {
+        return Err(AppError::Unrecoverable {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            code: "cursor_sdk_unavailable".into(),
+            message: "CURSOR_API_KEY not configured".into(),
+        });
+    }
+    let models = state
+        .cursor_models
+        .get_or_try_init(|| crate::cursor_bridge::list_models(&state))
+        .await?;
+    Ok(Json(CursorModelsDto {
+        models: models.clone(),
+    }))
+}
+
+async fn start_mock_partition(
+    State(state): State<AppState>,
+    Path((session_id, target_node_id)): Path<(String, String)>,
+    Json(req): Json<BeginMockPartitionRequest>,
+) -> Result<Json<MockPartitionDto>, AppError> {
+    let hitl = ensure_edge_for_mock(&state, &session_id, &target_node_id).await?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let dto = state.mock_partitions.start(
+        session_id,
+        target_node_id,
+        req.strategy,
+        req.user_concern,
+        hitl,
+        now,
+    )?;
+    Ok(Json(dto))
+}
+
+async fn continue_mock_partition(
+    State(state): State<AppState>,
+    Path((session_id, target_node_id)): Path<(String, String)>,
+) -> Result<StatusCode, AppError> {
+    state
+        .mock_partitions
+        .continue_(&session_id, &target_node_id)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn rerun_mock_partition(
+    State(state): State<AppState>,
+    Path((session_id, target_node_id)): Path<(String, String)>,
+    body: Option<Json<RerunMockPartitionRequest>>,
+) -> Result<StatusCode, AppError> {
+    let req = body.map(|Json(r)| r).unwrap_or_default();
+    state
+        .mock_partitions
+        .rerun(&session_id, &target_node_id, req.user_feedback)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn abandon_mock_partition(
+    State(state): State<AppState>,
+    Path((session_id, target_node_id)): Path<(String, String)>,
+) -> Result<StatusCode, AppError> {
+    state
+        .mock_partitions
+        .abandon(&session_id, &target_node_id)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn session_events(
+    State(state): State<AppState>,
+    Path(session_id): Path<String>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    let rx = state.mock_partitions.subscribe(&session_id);
+    let stream = BroadcastStream::new(rx).filter_map(|res| async move {
+        match res {
+            Ok(event) => match serde_json::to_string(&event) {
+                Ok(data) => Some(Ok(Event::default().data(data))),
+                Err(e) => {
+                    tracing::error!(error = %e, "failed to serialise SSE event");
+                    None
+                }
+            },
+            Err(_) => None,
+        }
+    });
+    Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
+}
+
+async fn get_tunnel(State(state): State<AppState>) -> Json<TunnelStatusDto> {
+    Json(state.tunnel.status())
+}
+
+async fn start_tunnel(
+    State(state): State<AppState>,
+) -> Result<Json<TunnelStatusDto>, AppError> {
+    let auth_router = router(state.clone());
+    let dto = state.tunnel.start(auth_router).await?;
+    Ok(Json(dto))
+}
+
+async fn stop_tunnel(State(state): State<AppState>) -> Result<StatusCode, AppError> {
+    state.tunnel.stop()?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn tunnel_events(
+    State(state): State<AppState>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    let rx = state.tunnel.subscribe();
+    let initial = state.tunnel.status();
+    let initial = futures::stream::iter(
+        serde_json::to_string(&initial)
+            .ok()
+            .map(|s| Ok(Event::default().data(s))),
+    );
+    let updates = BroadcastStream::new(rx).filter_map(|res| async move {
+        match res {
+            Ok(dto) => match serde_json::to_string(&dto) {
+                Ok(data) => Some(Ok(Event::default().data(data))),
+                Err(e) => {
+                    tracing::error!(error = %e, "failed to serialise tunnel SSE event");
+                    None
+                }
+            },
+            Err(_) => None,
+        }
+    });
+    Sse::new(initial.chain(updates)).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
+}
+
+async fn ensure_edge_for_mock(
+    state: &AppState,
+    session_id: &str,
+    target_node_id: &str,
+) -> Result<HumanInTheLoopDto, AppError> {
+    let repo_root = state.repo_root.to_string_lossy().to_string();
+    let session_id_owned = session_id.to_string();
+    let target_owned = target_node_id.to_string();
+    let row: Option<String> = state
+        .db
+        .call(move |conn| {
+            let mut session_stmt = conn.prepare(
+                "SELECT partition_settings_json FROM sessions \
+                 WHERE id = ?1 AND repo_root = ?2",
+            )?;
+            let mut session_rows =
+                session_stmt.query(tokio_rusqlite::params![session_id_owned, repo_root])?;
+            let Some(session_row) = session_rows.next()? else {
+                return Ok(None);
+            };
+            let settings: String = session_row.get(0)?;
+            let mut node_stmt = conn.prepare(
+                "SELECT 1 FROM nodes WHERE session_id = ?1 AND node_id = ?2",
+            )?;
+            let mut node_rows =
+                node_stmt.query(tokio_rusqlite::params![session_id_owned, target_owned])?;
+            if node_rows.next()?.is_none() {
+                return Ok(None);
+            }
+            Ok(Some(settings))
+        })
+        .await?;
+    let raw = row.ok_or(AppError::NotFound)?;
+    let parsed: PartitionSettingsDto = serde_json::from_str(&raw)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("parsing partition settings: {e}")))?;
+    Ok(parsed.coordinator.human_in_the_loop)
 }
 
 async fn delete_session(

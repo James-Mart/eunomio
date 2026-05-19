@@ -9,8 +9,47 @@ pub struct CreatedSession {
     pub created_at: i64,
 }
 
-pub async fn create(state: &AppState, dto: CreateSessionRequest) -> Result<CreatedSession, AppError> {
+pub enum CreateOutcome {
+    Created,
+    Existed,
+}
+
+pub async fn create(
+    state: &AppState,
+    dto: CreateSessionRequest,
+) -> Result<(CreatedSession, CreateOutcome), AppError> {
     let CreateSessionRequest { base_ref, source_ref } = dto;
+
+    let repo_root_str = state.repo_root.to_string_lossy().to_string();
+    let base_ref_lookup = base_ref.clone();
+    let source_ref_lookup = source_ref.clone();
+    let existing: Option<CreatedSession> = state
+        .db
+        .call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, base_node_id, created_at FROM sessions \
+                 WHERE repo_root = ?1 AND base_ref = ?2 AND source_ref = ?3 \
+                 LIMIT 1",
+            )?;
+            let mut rows = stmt.query(tokio_rusqlite::params![
+                repo_root_str,
+                base_ref_lookup,
+                source_ref_lookup
+            ])?;
+            if let Some(row) = rows.next()? {
+                Ok(Some(CreatedSession {
+                    id: row.get(0)?,
+                    base_node_id: row.get(1)?,
+                    created_at: row.get(2)?,
+                }))
+            } else {
+                Ok(None)
+            }
+        })
+        .await?;
+    if let Some(existing) = existing {
+        return Ok((existing, CreateOutcome::Existed));
+    }
 
     let mb = git::merge_base(&state.repo_root, &base_ref, &source_ref)
         .await
@@ -114,11 +153,14 @@ pub async fn create(state: &AppState, dto: CreateSessionRequest) -> Result<Creat
         })
         .await?;
 
-    Ok(CreatedSession {
-        id: session_id,
-        base_node_id,
-        created_at: now,
-    })
+    Ok((
+        CreatedSession {
+            id: session_id,
+            base_node_id,
+            created_at: now,
+        },
+        CreateOutcome::Created,
+    ))
 }
 
 fn unix_seconds() -> i64 {

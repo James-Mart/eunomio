@@ -11,10 +11,16 @@ pub enum AppError {
     BadRequest(String),
     #[error("not found")]
     NotFound,
-    #[error("{0}")]
-    Conflict(String),
+    #[error("{message}")]
+    Conflict { code: String, message: String },
     #[error(transparent)]
     Internal(#[from] anyhow::Error),
+    #[error("{message}")]
+    Unrecoverable {
+        status: StatusCode,
+        code: String,
+        message: String,
+    },
 }
 
 impl AppError {
@@ -22,8 +28,9 @@ impl AppError {
         match self {
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
             AppError::NotFound => StatusCode::NOT_FOUND,
-            AppError::Conflict(_) => StatusCode::CONFLICT,
+            AppError::Conflict { .. } => StatusCode::CONFLICT,
             AppError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::Unrecoverable { status, .. } => *status,
         }
     }
 }
@@ -35,7 +42,13 @@ impl IntoResponse for AppError {
         if status.is_server_error() {
             tracing::error!(error = %message, "request failed");
         }
-        (status, Json(json!({ "error": message }))).into_response()
+        let body = match &self {
+            AppError::Unrecoverable { code, .. } | AppError::Conflict { code, .. } => {
+                json!({ "error": message, "code": code })
+            }
+            _ => json!({ "error": message }),
+        };
+        (status, Json(body)).into_response()
     }
 }
 

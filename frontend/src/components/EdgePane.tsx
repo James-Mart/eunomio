@@ -5,7 +5,6 @@ import { FileTree, useFileTree } from "@pierre/trees/react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
 import { ApiError, api, type Edge } from "@/lib/api";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
@@ -108,6 +107,10 @@ export default function EdgePane({ sessionId, targetNodeId }: Props) {
     search: true,
     onSelectionChange: handleSelectionChange,
   });
+
+  useEffect(() => {
+    model.resetPaths(paths);
+  }, [model, paths]);
 
   if (error) {
     return (
@@ -213,19 +216,30 @@ function SegmentedToggle<T extends string>({
   options: ReadonlyArray<{ value: T; label: string }>;
 }) {
   return (
-    <div className="inline-flex rounded-md border bg-muted p-0.5 text-xs">
-      {options.map((o) => (
-        <Button
-          key={o.value}
-          type="button"
-          size="sm"
-          variant={value === o.value ? "secondary" : "ghost"}
-          className="h-7 px-2"
-          onClick={() => onChange(o.value)}
-        >
-          {o.label}
-        </Button>
-      ))}
+    <div
+      role="radiogroup"
+      className="inline-flex rounded-md border bg-muted p-0.5 text-xs"
+    >
+      {options.map((o) => {
+        const active = value === o.value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(o.value)}
+            className={cn(
+              "h-7 rounded-sm px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              active
+                ? "bg-background text-foreground shadow-sm ring-1 ring-border"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {o.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

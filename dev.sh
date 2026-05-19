@@ -23,6 +23,11 @@ if [[ ! -d "$EUNOMIA_REPO/frontend/node_modules" ]]; then
   ( cd "$EUNOMIA_REPO/frontend" && npm install )
 fi
 
+if [[ ! -d "$EUNOMIA_REPO/helper/node_modules" ]]; then
+  echo "[dev] installing helper deps (one-time)…"
+  ( cd "$EUNOMIA_REPO/helper" && npm install )
+fi
+
 if command -v cargo-watch >/dev/null 2>&1; then
   backend_cmd=(
     cargo watch -q

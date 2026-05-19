@@ -31,6 +31,9 @@ struct ServeArgs {
 
     #[arg(long, conflicts_with = "no_open")]
     open: bool,
+
+    #[arg(long)]
+    cursor_api_key: Option<String>,
 }
 
 #[tokio::main]
@@ -71,7 +74,12 @@ async fn main() -> Result<()> {
         });
     }
 
-    let state = eunomia::server::build_state(repo_root, data_dir).await?;
+    let cursor_api_key = args
+        .cursor_api_key
+        .clone()
+        .or_else(|| std::env::var("CURSOR_API_KEY").ok());
+
+    let state = eunomia::server::build_state(repo_root, data_dir, cursor_api_key).await?;
     eunomia::server::serve(state, args.port).await
 }
 

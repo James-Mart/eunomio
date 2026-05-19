@@ -24,9 +24,10 @@ pub async fn branch_from_node(
     }
 
     if !force && git::branch_exists(&state.repo_root, branch_name).await? {
-        return Err(AppError::Conflict(format!(
-            "branch {branch_name} already exists"
-        )));
+        return Err(AppError::Conflict {
+            code: "branch_exists".into(),
+            message: format!("branch {branch_name} already exists"),
+        });
     }
 
     let mut parent: Option<String> = None;

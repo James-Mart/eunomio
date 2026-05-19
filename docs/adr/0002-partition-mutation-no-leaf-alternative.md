@@ -1,0 +1,15 @@
+# Partition mutates the graph in place; no leaf-alternative preservation
+
+A Partition adds exactly one new Slice Node between the target Node and its prior parent, reparents the target onto the Slice, rewrites the target's Title to the Planner's description of the leftover edge, and removes its synthesis worktree. The original target is **not** preserved as a leaf alternative; the graph after a Partition is a strictly linear extension of the chain, not a branching DAG.
+
+The alternative we rejected was preserving the original target as a leaf alternative parented on its original parent — letting the user always inspect "what the chain looked like before this Partition." This is a real and legible feature in isolation; it shapes a graph that grows monotonically and never loses information.
+
+We rejected it for two reasons that compound:
+
+1. **Information value vs visual cost.** A Partition mutates the target's incoming Edge from one diff into two. Whatever Title the target carried _before_ the Partition described the whole, and after the Partition is structurally wrong for either half. Preserving the original target as a leaf alternative therefore preserves a Node whose Title is already known to be misleading; the user gets a path they shouldn't branch from. Branching is the only thing leaf alternatives unlock, so the value is narrow.
+
+2. **Interaction with parallel pending Partitions.** Multiple Partitions can be pending against the same target simultaneously — the user can run a Vertical and a Horizontal candidate and compare in the review mini-graphs. Acceptance of one auto-Abandons the siblings, which is fine; that's just rolling back work that hadn't been applied. But if Acceptance _also_ added a leaf alternative for the original pre-Accept target, every Accepted candidate would leave a leaf behind, and a Session that explored 4 strategies on each of 5 successive targets would accumulate 20 dangling leaves the user has no use for. The pre-Accept state of the target is already inspectable while the Partition is pending (via the candidate-view mini-graph); once one Partition is Accepted, the user has explicitly committed and the pre-Accept state is no longer worth carrying forward in the canonical chain.
+
+The trade we accepted: any user-set Title on a Node is lost the next time that Node's Edge is Partitioned. This is intentional and documented in `CONTEXT.md`. User-set Titles on Nodes whose Edges are never Partitioned persist indefinitely.
+
+Reversing this decision later would require: changing the Acceptance transaction to insert two Nodes instead of one (Slice + leftover-as-new-Node) plus a third "leaf" Node parented on the original parent, and changing the graph view to render branching DAGs rather than linear chains. The schema accommodates the extra Nodes trivially (they're just rows in `nodes`); the cost is in the renderer and in user mental model. Worth recording the decision so a future contributor doesn't try to "fix" the missing leaf alternative without knowing it was deliberately removed.
