@@ -33,14 +33,14 @@ if command -v cargo-watch >/dev/null 2>&1; then
     cargo watch -q
       -w "$EUNOMIA_REPO/backend/src"
       -w "$EUNOMIA_REPO/backend/Cargo.toml"
-      -x "run --manifest-path $EUNOMIA_REPO/backend/Cargo.toml -- serve --port $PORT --no-open"
+      -x "run --manifest-path $EUNOMIA_REPO/backend/Cargo.toml -- --port $PORT --no-open"
   )
 else
   echo "[dev] cargo-watch not installed; backend won't auto-reload on Rust changes."
   echo "[dev]   install with:  cargo install cargo-watch"
   backend_cmd=(
     cargo run --manifest-path "$EUNOMIA_REPO/backend/Cargo.toml" --
-      serve --port "$PORT" --no-open
+      --port "$PORT" --no-open
   )
 fi
 

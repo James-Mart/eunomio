@@ -647,12 +647,12 @@ function renderDiffPane({
   selectedCanonicalNode: GraphNode | null;
   graph: Graph;
 }) {
-  if (!selectedNodeId) return null;
+  if (!selectedNodeId) return <DiffPaneEmpty />;
   if (layout.kind === "candidate") {
     if (selectedNodeId === CANDIDATE_SLICE_ID) {
       const slice = layout.candidateSliceNode;
       const parent = graph.nodes.find((n) => n.nodeId === slice.parentNodeId);
-      if (!parent) return null;
+      if (!parent) return <DiffPaneEmpty />;
       return (
         <EdgePane
           key={`candidate-slice`}
@@ -683,15 +683,23 @@ function renderDiffPane({
         />
       );
     }
-    return null;
+    return <DiffPaneEmpty />;
   }
-  if (!selectedCanonicalNode) return null;
+  if (!selectedCanonicalNode) return <DiffPaneEmpty />;
   return (
     <EdgePane
       key={selectedCanonicalNode.nodeId}
       sessionId={id}
       targetNodeId={selectedCanonicalNode.nodeId}
     />
+  );
+}
+
+function DiffPaneEmpty() {
+  return (
+    <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
+      Select a node or partition to view diff.
+    </div>
   );
 }
 

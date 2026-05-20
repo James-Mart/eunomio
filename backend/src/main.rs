@@ -1,30 +1,21 @@
-use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
+use anyhow::{bail, Context, Result};
+use clap::Parser;
 use std::io::IsTerminal;
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[command(name = "eunomia", version, about = "Eunomia commit-review server")]
 struct Cli {
-    #[command(subcommand)]
-    command: Option<Command>,
-
-    #[command(flatten)]
-    serve: ServeArgs,
-}
-
-#[derive(Subcommand, Debug)]
-enum Command {
-    Serve(ServeArgs),
-}
-
-#[derive(clap::Args, Debug, Clone)]
-struct ServeArgs {
     #[arg(long, default_value_t = 3001)]
     port: u16,
 
     #[arg(long)]
     data_dir: Option<PathBuf>,
+
+    /// Git repository to operate on. Defaults to the current working directory.
+    /// Honoured as either a CLI flag or the `EUNOMIA_REPO_ROOT` env var.
+    #[arg(long, env = "EUNOMIA_REPO_ROOT")]
+    repo_root: Option<PathBuf>,
 
     #[arg(long)]
     no_open: bool,
@@ -39,6 +30,13 @@ struct ServeArgs {
     /// schema has drifted from the embedded migration. Hidden from --help.
     #[arg(long, hide = true)]
     new: bool,
+
+    /// Point `POST /api/tunnel` at the Vite dev server on `127.0.0.1:5173`
+    /// and skip the share-token gate, so HMR works over the public URL.
+    /// Set by `npm run dev`'s backend invocation; never set on release builds.
+    /// Hidden from --help.
+    #[arg(long, hide = true)]
+    dev_tunnel: bool,
 }
 
 #[tokio::main]
@@ -50,16 +48,21 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    let cli = Cli::parse();
-    let args = match cli.command {
-        Some(Command::Serve(s)) => s,
-        None => cli.serve,
-    };
+    let args = Cli::parse();
 
-    let repo_root = std::env::current_dir()
-        .context("reading current_dir for REPO_ROOT")?
-        .canonicalize()
-        .context("canonicalising REPO_ROOT")?;
+    let raw_repo_root = match args.repo_root.as_ref() {
+        Some(p) => p.clone(),
+        None => std::env::current_dir().context("reading current_dir for REPO_ROOT")?,
+    };
+    let repo_root = raw_repo_root.canonicalize().with_context(|| {
+        format!("canonicalising REPO_ROOT {}", raw_repo_root.display())
+    })?;
+    if !repo_root.is_dir() {
+        bail!("REPO_ROOT {} is not a directory", repo_root.display());
+    }
+    eunomia::git::ensure_repo(&repo_root)
+        .await
+        .with_context(|| format!("REPO_ROOT {} is not a git repository", repo_root.display()))?;
 
     let data_dir = args
         .data_dir
@@ -104,7 +107,8 @@ async fn main() -> Result<()> {
         .or_else(|| std::env::var("CURSOR_API_KEY").ok());
     std::env::remove_var("CURSOR_API_KEY");
 
-    let state = eunomia::server::build_state(repo_root, data_dir, cursor_api_key).await?;
+    let state =
+        eunomia::server::build_state(repo_root, data_dir, cursor_api_key, args.dev_tunnel).await?;
     eunomia::server::serve(state, args.port).await
 }
 

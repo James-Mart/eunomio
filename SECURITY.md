@@ -7,7 +7,7 @@ boundaries.
 ## Trust model
 
 The Eunomia HTTP listener binds `127.0.0.1` only. The local OS user that ran
-`eunomia serve` is the trust boundary: any process executing as that user can
+`eunomia` is the trust boundary: any process executing as that user can
 already read the source tree, the SQLite state under `~/.eunomia/`, and the
 synthesis worktrees, so the API does not add an authentication layer on top.
 
@@ -45,6 +45,10 @@ Operational notes:
 - The share token is **not** broadcast over `/api/tunnel/events`. SSE
   subscribers see a redacted DTO; the full token is only returned by
   `GET /api/tunnel`, which is reachable only on the host-gated local listener.
+- The hidden `--dev-tunnel` flag, set only by `npm run dev`'s backend
+  invocation, points cloudflared at the Vite dev server on `:5173` and skips
+  the share-token gate entirely. See the "Dev escape hatch" section of
+  [`docs/adr/0003-public-url-token-tunnel.md`](docs/adr/0003-public-url-token-tunnel.md).
 
 ## Subagents are unsandboxed local processes
 

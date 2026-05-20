@@ -79,6 +79,12 @@ A graph-view mode the user enters via a dropdown when one or more Partitions are
 **Sibling Partitions**:
 Two or more pending Partitions sharing the same target Node. Allowed by design — the user can run alternative Partitions (e.g. one Vertical and one Horizontal) on the same target and compare. At most one of them has an actively-executing phase at a moment. Accepting any one of them auto-Abandons the others.
 
+**Indivisible verdict**:
+A Planner output declaring that the diff between a Partition's BeforeTree and TargetTree is already a single cohesive change and should not be split further. Serialised as `{ outcome: "indivisible", rationale: "…" }` on the Planner's JSON output, parallel to the Constructor's `BLOCKED` outcome. Terminates a branch of the **Auto fan-out** loop. Governed by `humanInTheLoop.afterIndivisible` in Partition settings (default on): when on, the Partition parks at the Plan Review gate for the user to confirm or push back; when off, the Partition is auto-Abandoned without surfacing the gate.
+
+**Auto fan-out**:
+A Coordinator-driven loop that turns one user-initiated Begin Partition into a binary tree of Partitions: each Acceptance auto-Begins two new Partitions, one targeting the newly inserted Slice's incoming Edge and one targeting the renamed-target's incoming Edge. Configured by `coordinator.maxIterations` in Partition settings: `{ kind: "count", count: N }` caps the tree depth at N (count=1 disables fan-out entirely, matching the pre-feature behaviour); `{ kind: "auto" }` removes the depth cap. Branches terminate naturally on an **Indivisible verdict**, a Constructor `BLOCKED`, a Run error, a user Abandon, or the depth budget reaching zero. Orthogonal to the HITL flags — each Phase still respects its own `afterX` flag, so a user can run Auto fan-out with HITL on and review every gate in the tree manually.
+
 ## Relationships
 
 - A **Session** has exactly one **REPO_ROOT** and starts with exactly two **Nodes**: **base** and **final**.

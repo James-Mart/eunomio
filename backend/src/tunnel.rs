@@ -37,6 +37,7 @@ const URL_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
 const SHARE_COOKIE: &str = "eunomia_share_token";
 const SHARE_QUERY: &str = "eunomia_token";
 const CLOUDFLARED_VERSION: &str = "2026.5.0";
+const DEV_TUNNEL_TARGET_PORT: u16 = 5173;
 
 #[derive(Clone)]
 pub struct TunnelRegistry {
@@ -48,6 +49,7 @@ struct Inner {
     events: broadcast::Sender<TunnelStatusDto>,
     data_dir: PathBuf,
     start_gate: tokio::sync::Mutex<()>,
+    dev_mode: bool,
 }
 
 enum TunnelState {
@@ -58,13 +60,13 @@ enum TunnelState {
 
 struct Running {
     url: String,
-    token: Uuid,
+    token: Option<Uuid>,
     started_at: i64,
     stop_tx: oneshot::Sender<()>,
 }
 
 impl TunnelRegistry {
-    pub fn new(data_dir: PathBuf) -> Self {
+    pub fn new(data_dir: PathBuf, dev_mode: bool) -> Self {
         let (events, _) = broadcast::channel(BROADCAST_CAPACITY);
         Self {
             inner: Arc::new(Inner {
@@ -72,20 +74,21 @@ impl TunnelRegistry {
                 events,
                 data_dir,
                 start_gate: tokio::sync::Mutex::new(()),
+                dev_mode,
             }),
         }
     }
 
     pub fn status(&self) -> TunnelStatusDto {
         let state = self.inner.state.lock().unwrap();
-        snapshot(&state)
+        snapshot(&state, self.inner.dev_mode)
     }
 
     /// Same as [`Self::status`] with the share token stripped. Use this for
     /// anything that might be observed via the tunnel itself.
     pub fn status_redacted(&self) -> TunnelStatusDto {
         let state = self.inner.state.lock().unwrap();
-        snapshot_redacted(&state)
+        snapshot_redacted(&state, self.inner.dev_mode)
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<TunnelStatusDto> {
@@ -108,25 +111,31 @@ impl TunnelRegistry {
             .await
             .map_err(map_binary_error)?;
 
-        let token = Uuid::new_v4();
-        let listener = TcpListener::bind(("127.0.0.1", 0u16))
-            .await
-            .context("binding tunnel auth listener")?;
-        let tunnel_port = listener
-            .local_addr()
-            .context("reading tunnel listener address")?
-            .port();
-
-        let auth_router = router.layer(from_fn_with_state(token, check_token));
-        let (serve_shutdown_tx, serve_shutdown_rx) = oneshot::channel::<()>();
-        tokio::spawn(async move {
-            let server = axum::serve(listener, auth_router).with_graceful_shutdown(async move {
-                let _ = serve_shutdown_rx.await;
+        let (target_port, token, serve_shutdown_tx) = if self.inner.dev_mode {
+            drop(router);
+            (DEV_TUNNEL_TARGET_PORT, None, None)
+        } else {
+            let token = Uuid::new_v4();
+            let listener = TcpListener::bind(("127.0.0.1", 0u16))
+                .await
+                .context("binding tunnel auth listener")?;
+            let port = listener
+                .local_addr()
+                .context("reading tunnel listener address")?
+                .port();
+            let auth_router = router.layer(from_fn_with_state(token, check_token));
+            let (tx, rx) = oneshot::channel::<()>();
+            tokio::spawn(async move {
+                let server =
+                    axum::serve(listener, auth_router).with_graceful_shutdown(async move {
+                        let _ = rx.await;
+                    });
+                if let Err(e) = server.await {
+                    tracing::error!(error = %e, "tunnel listener exited with error");
+                }
             });
-            if let Err(e) = server.await {
-                tracing::error!(error = %e, "tunnel listener exited with error");
-            }
-        });
+            (port, Some(token), Some(tx))
+        };
 
         let (ready_tx, ready_rx) = oneshot::channel::<Result<TunnelStatusDto, AppError>>();
         let (stop_tx, stop_rx) = oneshot::channel::<()>();
@@ -135,7 +144,7 @@ impl TunnelRegistry {
             supervise(
                 inner,
                 binary,
-                tunnel_port,
+                target_port,
                 token,
                 ready_tx,
                 stop_tx,
@@ -190,10 +199,12 @@ impl TunnelRegistry {
     }
 }
 
-fn snapshot(state: &TunnelState) -> TunnelStatusDto {
+fn snapshot(state: &TunnelState, dev_mode: bool) -> TunnelStatusDto {
+    let token_required = !dev_mode;
     match state {
         TunnelState::Idle => TunnelStatusDto {
             state: TunnelStateName::Idle,
+            token_required,
             url: None,
             token: None,
             started_at: None,
@@ -201,13 +212,15 @@ fn snapshot(state: &TunnelState) -> TunnelStatusDto {
         },
         TunnelState::Running(r) => TunnelStatusDto {
             state: TunnelStateName::Running,
+            token_required,
             url: Some(r.url.clone()),
-            token: Some(r.token.to_string()),
+            token: r.token.map(|t| t.to_string()),
             started_at: Some(r.started_at),
             error_message: None,
         },
         TunnelState::Error { message, at } => TunnelStatusDto {
             state: TunnelStateName::Error,
+            token_required,
             url: None,
             token: None,
             started_at: Some(*at),
@@ -220,8 +233,8 @@ fn snapshot(state: &TunnelState) -> TunnelStatusDto {
 /// broadcast that may be observed via the tunnel itself (so a holder
 /// of the token cannot use the SSE stream to see future tokens after
 /// rotation).
-fn snapshot_redacted(state: &TunnelState) -> TunnelStatusDto {
-    let mut dto = snapshot(state);
+fn snapshot_redacted(state: &TunnelState, dev_mode: bool) -> TunnelStatusDto {
+    let mut dto = snapshot(state, dev_mode);
     dto.token = None;
     dto
 }
@@ -231,12 +244,13 @@ async fn supervise(
     inner: Arc<Inner>,
     binary: PathBuf,
     target_port: u16,
-    token: Uuid,
+    token: Option<Uuid>,
     ready_tx: oneshot::Sender<Result<TunnelStatusDto, AppError>>,
     stop_tx: oneshot::Sender<()>,
     stop_rx: oneshot::Receiver<()>,
-    serve_shutdown_tx: oneshot::Sender<()>,
+    serve_shutdown_tx: Option<oneshot::Sender<()>>,
 ) {
+    let dev_mode = inner.dev_mode;
     let mut child = match spawn_cloudflared(&binary, target_port) {
         Ok(c) => c,
         Err(e) => {
@@ -271,7 +285,7 @@ async fn supervise(
             started_at,
             stop_tx,
         });
-        (snapshot(&state), snapshot_redacted(&state))
+        (snapshot(&state, dev_mode), snapshot_redacted(&state, dev_mode))
     };
     let _ = inner.events.send(dto_redacted);
     let _ = ready_tx.send(Ok(dto_full));
@@ -290,18 +304,20 @@ async fn supervise(
                         message: "cloudflared exited unexpectedly".into(),
                         at: now_secs(),
                     };
-                    let _ = inner.events.send(snapshot_redacted(&state));
+                    let _ = inner.events.send(snapshot_redacted(&state, dev_mode));
                 }
             }
         }
     }
-    let _ = serve_shutdown_tx.send(());
+    if let Some(tx) = serve_shutdown_tx {
+        let _ = tx.send(());
+    }
 }
 
 fn fail_startup(
     inner: &Arc<Inner>,
     ready_tx: oneshot::Sender<Result<TunnelStatusDto, AppError>>,
-    serve_shutdown_tx: oneshot::Sender<()>,
+    serve_shutdown_tx: Option<oneshot::Sender<()>>,
     err: anyhow::Error,
 ) {
     let message = format!("cloudflared: {err:#}");
@@ -311,10 +327,14 @@ fn fail_startup(
             message: message.clone(),
             at: now_secs(),
         };
-        let _ = inner.events.send(snapshot_redacted(&state));
+        let _ = inner
+            .events
+            .send(snapshot_redacted(&state, inner.dev_mode));
     }
     let _ = ready_tx.send(Err(AppError::Internal(anyhow!(message))));
-    let _ = serve_shutdown_tx.send(());
+    if let Some(tx) = serve_shutdown_tx {
+        let _ = tx.send(());
+    }
 }
 
 fn spawn_cloudflared(binary: &Path, target_port: u16) -> Result<Child> {

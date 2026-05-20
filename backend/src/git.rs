@@ -19,6 +19,11 @@ async fn run(repo: &Path, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
+/// Returns Ok if `path` is inside a git repository, Err otherwise.
+pub async fn ensure_repo(path: &Path) -> Result<()> {
+    run(path, &["rev-parse", "--git-dir"]).await.map(|_| ())
+}
+
 pub async fn merge_base(repo: &Path, base: &str, source: &str) -> Result<String> {
     run(repo, &["merge-base", "--end-of-options", base, source]).await
 }

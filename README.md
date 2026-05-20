@@ -103,7 +103,13 @@ npm install
 npm run dev
 ```
 
-Vite serves the UI on `:5173` (proxying `/api` to `:3001`); the backend runs on `:3001` and uses the `cargo watch` cwd as `REPO_ROOT`.
+Vite serves the UI on `:5173` (proxying `/api` to `:3001`); the backend runs on `:3001` and uses the `cargo watch` cwd as `REPO_ROOT`. To point the dev server at a different repo without leaving this directory, set `EUNOMIA_REPO_ROOT`:
+
+```bash
+EUNOMIA_REPO_ROOT=/path/to/some/git/repo npm run dev
+```
+
+(Equivalent to passing `--repo-root /path/to/some/git/repo` to a built binary.)
 
 ## Build
 
@@ -115,7 +121,7 @@ Produces `target/release/eunomia` (workspace target dir, not `backend/target/`),
 
 ```bash
 cd /path/to/some/git/repo
-/path/to/eunomia/target/release/eunomia serve --port 3001
+/path/to/eunomia/target/release/eunomia --port 3001
 ```
 
 To put it on your PATH, symlink it to a directory already on `$PATH`:

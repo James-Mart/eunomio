@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import CollapsibleItem from "@/components/review/CollapsibleItem";
 
 type Props = {
   partitionId: number;
@@ -87,18 +88,14 @@ export default function PlanReview({
         </div>
         <div className="space-y-2">
           {plan.edges.map((edge, idx) => (
-            <div
+            <CollapsibleItem
               key={edge.id}
-              className="rounded-md border bg-muted/30 px-3 py-2"
-            >
-              <div className="text-xs text-muted-foreground">
-                {idx === 0 ? "Slice (this Partition's new Node)" : "Leftover"}
-              </div>
-              <div className="text-sm font-medium">{edge.title}</div>
-              <div className="text-xs text-muted-foreground">
-                {edge.description}
-              </div>
-            </div>
+              leadingLabel={
+                idx === 0 ? "Slice (this Partition's new Node)" : "Leftover"
+              }
+              title={edge.title}
+              description={edge.description}
+            />
           ))}
         </div>
       </section>

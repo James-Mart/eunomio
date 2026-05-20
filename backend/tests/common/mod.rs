@@ -35,7 +35,7 @@ impl TestApp {
         setup(repo.path());
         let repo_root = repo.path().canonicalize().expect("canonicalise repo path");
         let data_root = data.path().canonicalize().expect("canonicalise data path");
-        let state = build_state(repo_root, data_root, None)
+        let state = build_state(repo_root, data_root, None, false)
             .await
             .expect("build_state");
         let router = router(state.clone());
@@ -62,7 +62,7 @@ impl TestApp {
         setup(repo.path());
         let repo_root = repo.path().canonicalize().expect("canonicalise repo path");
         let data_root = data.path().canonicalize().expect("canonicalise data path");
-        let state = build_state_with_runner(repo_root, data_root, None, runner)
+        let state = build_state_with_runner(repo_root, data_root, None, false, runner)
             .await
             .expect("build_state_with_runner");
         let router = router(state.clone());

@@ -27,7 +27,7 @@ export default function MobileShareCard() {
         if (!cancelled) setStatus(s);
       })
       .catch(() => {
-        if (!cancelled) setStatus({ state: "idle" });
+        if (!cancelled) setStatus({ state: "idle", tokenRequired: true });
       });
     return () => {
       cancelled = true;
@@ -58,10 +58,17 @@ export default function MobileShareCard() {
         // loaded via the initial REST fetch (or a prior fetch in this
         // tab). If we're "running" with no token cached anywhere, do
         // a one-off refetch from the local listener so a freshly
-        // opened tab can recover the token.
+        // opened tab can recover the token. Skipped when the backend
+        // is in dev-tunnel mode (tokenRequired = false), where the
+        // refetch would never return a token.
         setStatus((prev) => {
           const merged: TunnelStatus = { ...(prev ?? {}), ...payload };
-          if (merged.state === "running" && !merged.token && !prev?.token) {
+          if (
+            merged.state === "running" &&
+            merged.tokenRequired &&
+            !merged.token &&
+            !prev?.token
+          ) {
             api.getTunnel().then((full) => {
               if (!stopped) setStatus(full);
             }).catch(() => {});
@@ -109,7 +116,10 @@ export default function MobileShareCard() {
     setPending(true);
     try {
       await api.stopTunnel();
-      setStatus({ state: "idle" });
+      setStatus((prev) => ({
+        state: "idle",
+        tokenRequired: prev?.tokenRequired ?? true,
+      }));
     } catch (e) {
       toast.error(formatError(e, "Failed to stop tunnel"));
     } finally {
@@ -133,6 +143,14 @@ export default function MobileShareCard() {
           <CardDescription className="text-xs">
             Scan a QR code on your phone to access this Eunomia instance remotely. Warning:
             the link grants full control, not just view access.
+            {status && !status.tokenRequired && (
+              <>
+                {" "}
+                <span className="text-destructive">
+                  Dev tunnel: no share token, URL secrecy is the only gate.
+                </span>
+              </>
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent className="p-4 pt-2">
@@ -220,7 +238,7 @@ function Controls({
 function ModalBody({ status }: { status: TunnelStatus | null }) {
   const [view, setView] = useState<"qr" | "link">("qr");
 
-  if (status?.state !== "running" || !status.url || !status.token) {
+  if (status?.state !== "running" || !status.url) {
     return (
       <div className="flex flex-col items-center gap-3 py-6 text-sm text-muted-foreground">
         <Loader2 className="h-5 w-5 animate-spin" />
@@ -228,9 +246,23 @@ function ModalBody({ status }: { status: TunnelStatus | null }) {
       </div>
     );
   }
-  const shareUrl = buildShareUrl(status.url, status.token);
+  if (status.tokenRequired && !status.token) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-6 text-sm text-muted-foreground">
+        <Loader2 className="h-5 w-5 animate-spin" />
+        Allocating tunnel&hellip;
+      </div>
+    );
+  }
+  const shareUrl = buildShareUrl(status.url, status.token ?? null);
   return (
     <div className="flex flex-col gap-4">
+      {!status.tokenRequired && (
+        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          Dev tunnel: no share token &mdash; anyone who learns this URL has
+          full control. Stop the tunnel when you&rsquo;re done.
+        </p>
+      )}
       {view === "qr" ? (
         <div className="self-center rounded-lg bg-white p-4">
           <QRCodeSVG value={shareUrl} size={240} marginSize={0} />
@@ -263,8 +295,9 @@ function ModalBody({ status }: { status: TunnelStatus | null }) {
   );
 }
 
-function buildShareUrl(url: string, token: string): string {
+function buildShareUrl(url: string, token: string | null): string {
   const base = url.endsWith("/") ? url.slice(0, -1) : url;
+  if (token === null) return `${base}/`;
   return `${base}/?eunomia_token=${token}`;
 }
 

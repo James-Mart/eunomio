@@ -7,6 +7,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import CollapsibleItem from "@/components/review/CollapsibleItem";
 
 type Props = {
   partitionId: number;
@@ -65,15 +66,11 @@ export default function SurveyReview({
         <p className="text-sm">{survey.summary}</p>
         <div className="space-y-2">
           {survey.themes.map((theme) => (
-            <div
+            <CollapsibleItem
               key={theme.id}
-              className="rounded-md border bg-muted/30 px-3 py-2"
-            >
-              <div className="text-sm font-medium">{theme.title}</div>
-              <div className="text-xs text-muted-foreground">
-                {theme.description}
-              </div>
-            </div>
+              title={theme.title}
+              description={theme.description}
+            />
           ))}
         </div>
       </section>

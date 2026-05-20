@@ -54,18 +54,20 @@ pub async fn build_state(
     repo_root: PathBuf,
     data_dir: PathBuf,
     cursor_api_key: Option<String>,
+    dev_tunnel: bool,
 ) -> Result<AppState> {
     let runner: Arc<dyn SubagentRunner> = Arc::new(CursorHelperRunner::new(
         cursor_api_key.clone(),
         data_dir.clone(),
     ));
-    build_state_with_runner(repo_root, data_dir, cursor_api_key, runner).await
+    build_state_with_runner(repo_root, data_dir, cursor_api_key, dev_tunnel, runner).await
 }
 
 pub async fn build_state_with_runner(
     repo_root: PathBuf,
     data_dir: PathBuf,
     cursor_api_key: Option<String>,
+    dev_tunnel: bool,
     runner: Arc<dyn SubagentRunner>,
 ) -> Result<AppState> {
     tokio::fs::create_dir_all(&data_dir)
@@ -74,7 +76,7 @@ pub async fn build_state_with_runner(
     let db = db::open(&data_dir.join("eunomia.db")).await?;
     let settings_path = data_dir.join("settings.json");
     let partition_settings = PartitionSettingsStore::load(settings_path).await?;
-    let tunnel = TunnelRegistry::new(data_dir.clone());
+    let tunnel = TunnelRegistry::new(data_dir.clone(), dev_tunnel);
     let subagents = load_subagents()?;
     let coordinator = Coordinator::new(subagents, runner);
     let state = AppState(Arc::new(AppStateInner {

@@ -135,6 +135,7 @@ export type TunnelState = "idle" | "running" | "error";
 
 export type TunnelStatus = {
   state: TunnelState;
+  tokenRequired: boolean;
   url?: string;
   token?: string;
   startedAt?: number;

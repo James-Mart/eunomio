@@ -43,4 +43,4 @@ The in-app tunnel is most useful in single-binary mode (below), where the same a
 ## Two run modes (recap)
 
 - **Dev** (`./dev.sh [REPO_ROOT]`) — Vite serves the UI on :5173 with HMR; cargo-watch keeps eunomia auto-restarting on Rust changes; Vite's proxy bridges `/api` into the running backend. **Open `http://localhost:5173`**, not :3001.
-- **Single-binary** (`eunomia serve`) — frontend assets are baked in via `rust-embed` at `cargo build --release` time. One port, one process. Use this for prod, smoke tests, or sharing via the in-app tunnel. No HMR.
+- **Single-binary** (`eunomia`) — frontend assets are baked in via `rust-embed` at `cargo build --release` time. One port, one process. Use this for prod, smoke tests, or sharing via the in-app tunnel. No HMR.
