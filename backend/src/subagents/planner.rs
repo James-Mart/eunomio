@@ -2,11 +2,16 @@ use crate::subagents::loader::{ParseError, Subagents};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PlanOutput {
-    pub strategy: PlanStrategy,
-    pub strategy_rationale: String,
-    pub edges: Vec<PlanEdge>,
+#[serde(tag = "outcome", rename_all = "lowercase")]
+pub enum PlanOutput {
+    #[serde(rename_all = "camelCase")]
+    Split {
+        strategy: PlanStrategy,
+        strategy_rationale: String,
+        edges: Vec<PlanEdge>,
+    },
+    #[serde(rename_all = "camelCase")]
+    Indivisible { rationale: String },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -25,13 +30,24 @@ pub struct PlanEdge {
     pub description: String,
 }
 
+#[derive(Debug, Clone)]
+pub enum PriorAttempt {
+    Blocked {
+        reason: String,
+    },
+    Candidate {
+        slice_title: String,
+        slice_description: String,
+    },
+}
+
 pub struct PlanContext {
     pub before_tree: String,
     pub target_tree: String,
     pub change_survey_json: String,
     pub strategy_override: String,
     pub user_feedback: String,
-    pub prior_block_or_candidate: String,
+    pub prior_attempt: Option<PriorAttempt>,
 }
 
 pub fn render_prompt(ctx: &PlanContext, defs: &Subagents) -> String {
@@ -56,13 +72,24 @@ pub fn render_prompt(ctx: &PlanContext, defs: &Subagents) -> String {
     );
     map.insert(
         "PRIOR_BLOCK_OR_CANDIDATE".into(),
-        serde_json::json!(if ctx.prior_block_or_candidate.trim().is_empty() {
-            "(none)".to_string()
-        } else {
-            ctx.prior_block_or_candidate.clone()
-        }),
+        serde_json::json!(format_prior_attempt(ctx.prior_attempt.as_ref())),
     );
     defs.planner.template.render(&map)
+}
+
+fn format_prior_attempt(prior: Option<&PriorAttempt>) -> String {
+    match prior {
+        None => "(none)".to_string(),
+        Some(PriorAttempt::Blocked { reason }) => {
+            format!("Previous Construct attempt was BLOCKED with reason: {reason}")
+        }
+        Some(PriorAttempt::Candidate {
+            slice_title,
+            slice_description,
+        }) => format!(
+            "Previous attempt produced this slice (the user has asked for a different slice; see USER_FEEDBACK):\n  title: {slice_title}\n  description: {slice_description}"
+        ),
+    }
 }
 
 pub fn parse_output(raw: &str) -> Result<PlanOutput, ParseError> {
@@ -70,11 +97,16 @@ pub fn parse_output(raw: &str) -> Result<PlanOutput, ParseError> {
         .ok_or_else(|| ParseError::Malformed("no fenced ```json``` block found".into()))?;
     let parsed: PlanOutput = serde_json::from_str(&block)
         .map_err(|e| ParseError::Malformed(format!("invalid JSON: {e}")))?;
-    if parsed.edges.len() != 2 {
-        return Err(ParseError::Malformed(format!(
-            "plan must have exactly 2 edges, got {}",
-            parsed.edges.len()
-        )));
+    match &parsed {
+        PlanOutput::Split { edges, .. } => {
+            if edges.len() != 2 {
+                return Err(ParseError::Malformed(format!(
+                    "split plan must have exactly 2 edges, got {}",
+                    edges.len()
+                )));
+            }
+        }
+        PlanOutput::Indivisible { .. } => {}
     }
     Ok(parsed)
 }
@@ -108,7 +140,7 @@ mod tests {
                 change_survey_json: "{\"summary\":\"x\",\"themes\":[]}".into(),
                 strategy_override: "auto".into(),
                 user_feedback: "".into(),
-                prior_block_or_candidate: "".into(),
+                prior_attempt: None,
             },
             &defs,
         );
@@ -119,9 +151,30 @@ mod tests {
     }
 
     #[test]
-    fn parses_two_edges() {
+    fn renders_prior_blocked() {
+        let defs = load_subagents().unwrap();
+        let out = render_prompt(
+            &PlanContext {
+                before_tree: "b".into(),
+                target_tree: "t".into(),
+                change_survey_json: "{}".into(),
+                strategy_override: "auto".into(),
+                user_feedback: "".into(),
+                prior_attempt: Some(PriorAttempt::Blocked {
+                    reason: "needs leftover hunks".into(),
+                }),
+            },
+            &defs,
+        );
+        assert!(out.contains("BLOCKED"));
+        assert!(out.contains("needs leftover hunks"));
+    }
+
+    #[test]
+    fn parses_split_two_edges() {
         let raw = r#"```json
 {
+  "outcome": "split",
   "strategy": "semantic",
   "strategyRationale": "the diff has two clearly separated concerns",
   "edges": [
@@ -131,15 +184,21 @@ mod tests {
 }
 ```"#;
         let parsed = parse_output(raw).unwrap();
-        assert_eq!(parsed.strategy, PlanStrategy::Semantic);
-        assert_eq!(parsed.edges.len(), 2);
-        assert_eq!(parsed.edges[0].id, "slice");
+        match parsed {
+            PlanOutput::Split { strategy, edges, .. } => {
+                assert_eq!(strategy, PlanStrategy::Semantic);
+                assert_eq!(edges.len(), 2);
+                assert_eq!(edges[0].id, "slice");
+            }
+            _ => panic!("expected split"),
+        }
     }
 
     #[test]
-    fn rejects_one_edge_plan() {
+    fn rejects_split_with_one_edge() {
         let raw = r#"```json
 {
+  "outcome": "split",
   "strategy": "vertical",
   "strategyRationale": "x",
   "edges": [
@@ -150,6 +209,23 @@ mod tests {
         let err = parse_output(raw).unwrap_err();
         match err {
             ParseError::Malformed(msg) => assert!(msg.contains("exactly 2")),
+        }
+    }
+
+    #[test]
+    fn parses_indivisible() {
+        let raw = r#"```json
+{
+  "outcome": "indivisible",
+  "rationale": "the diff is one tight refactor"
+}
+```"#;
+        let parsed = parse_output(raw).unwrap();
+        match parsed {
+            PlanOutput::Indivisible { rationale } => {
+                assert!(rationale.contains("tight refactor"));
+            }
+            _ => panic!("expected indivisible"),
         }
     }
 }

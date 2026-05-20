@@ -19,7 +19,7 @@ use axum::{
         sse::{Event, KeepAlive, Sse},
         IntoResponse, Response,
     },
-    routing::{get, patch, post},
+    routing::{delete, get, patch, post},
     Json, Router,
 };
 use futures::stream::{Stream, StreamExt};
@@ -121,6 +121,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/api/partitions/:partition_id/runs",
             get(list_runs).post(start_run),
+        )
+        .route(
+            "/api/partitions/:partition_id/runs/:run_id",
+            delete(cancel_run),
         )
         .route(
             "/api/partitions/:partition_id/survey/accept",
@@ -680,6 +684,17 @@ async fn list_runs(
     Path(partition_id): Path<i64>,
 ) -> Result<Json<Vec<Run>>, AppError> {
     Ok(Json(state.coordinator.list_runs(&state, partition_id).await?))
+}
+
+async fn cancel_run(
+    State(state): State<AppState>,
+    Path((partition_id, run_id)): Path<(i64, i64)>,
+) -> Result<StatusCode, AppError> {
+    state
+        .coordinator
+        .cancel_run(&state, partition_id, run_id)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn accept_survey(

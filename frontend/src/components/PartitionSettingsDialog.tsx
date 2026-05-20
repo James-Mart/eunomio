@@ -12,6 +12,7 @@ import {
   api,
   type CursorModel,
   type HumanInTheLoopSettings,
+  type IterationLimit,
   type PartitionSettings,
   type PartitionSettingsPatch,
   type SubagentSettings,
@@ -117,6 +118,27 @@ export default function PartitionSettingsDialog({ open, onOpenChange }: Props) {
     }
   };
 
+  const onMaxIterationsChange = async (next: IterationLimit) => {
+    if (!settings) return;
+    const previous = settings.coordinator.maxIterations;
+    setSettings({
+      ...settings,
+      coordinator: { ...settings.coordinator, maxIterations: next },
+    });
+    try {
+      const updated = await api.updatePartitionSettings({
+        coordinator: { ...settings.coordinator, maxIterations: next },
+      } as PartitionSettingsPatch);
+      setSettings(updated);
+    } catch (e) {
+      setSettings({
+        ...settings,
+        coordinator: { ...settings.coordinator, maxIterations: previous },
+      });
+      toast.error(e instanceof Error ? e.message : "Failed to save settings");
+    }
+  };
+
   const updateRoleModel = async (role: SubagentCategory, next: string) => {
     if (!settings) return;
     const previous = settings[role];
@@ -162,6 +184,7 @@ export default function PartitionSettingsDialog({ open, onOpenChange }: Props) {
                 models={models}
                 onModelChange={onCoordinatorModelChange}
                 onHitlChange={onHitlChange}
+                onMaxIterationsChange={onMaxIterationsChange}
               />
             ) : (
               <SubagentPanel
@@ -204,25 +227,51 @@ export default function PartitionSettingsDialog({ open, onOpenChange }: Props) {
   );
 }
 
+const ITERATION_OPTIONS: { value: string; label: string }[] = [
+  { value: "1", label: "1" },
+  { value: "2", label: "2" },
+  { value: "3", label: "3" },
+  { value: "5", label: "5" },
+  { value: "10", label: "10" },
+  { value: "auto", label: "Auto" },
+];
+
+function iterationLimitToOption(limit: IterationLimit | undefined): string {
+  if (!limit) return "1";
+  if (limit.kind === "auto") return "auto";
+  return String(limit.count);
+}
+
+function optionToIterationLimit(value: string): IterationLimit {
+  if (value === "auto") return { kind: "auto" };
+  const n = Number(value);
+  return { kind: "count", count: Number.isFinite(n) && n > 0 ? n : 1 };
+}
+
 function CoordinatorPanel({
   settings,
   models,
   onModelChange,
   onHitlChange,
+  onMaxIterationsChange,
 }: {
   settings: PartitionSettings | null;
   models: ModelsState;
   onModelChange: (next: string) => void;
   onHitlChange: (next: HumanInTheLoopSettings) => void;
+  onMaxIterationsChange: (next: IterationLimit) => void;
 }) {
   const hitl =
     settings?.coordinator.humanInTheLoop ?? {
       afterSurvey: true,
       afterPlanning: true,
       afterConstruct: true,
+      afterIndivisible: true,
     };
   const disabled = !settings;
   const selected = settings?.coordinator.model ?? "composer-2";
+  const iterations = settings?.coordinator.maxIterations;
+  const iterationsOption = iterationLimitToOption(iterations);
   return (
     <div className="space-y-6">
       <section className="space-y-1.5">
@@ -266,7 +315,44 @@ function CoordinatorPanel({
             disabled={disabled}
             onChange={(checked) => onHitlChange({ ...hitl, afterConstruct: checked })}
           />
+          <HitlRow
+            id="hitl-after-indivisible"
+            label="Pause after indivisible verdict"
+            description="Wait for me to confirm an indivisible plan before auto-Abandoning."
+            checked={hitl.afterIndivisible}
+            disabled={disabled}
+            onChange={(checked) =>
+              onHitlChange({ ...hitl, afterIndivisible: checked })
+            }
+          />
         </div>
+      </section>
+
+      <section className="space-y-1.5">
+        <Label htmlFor="coordinator-max-iterations">Max iterations</Label>
+        <Select
+          value={iterationsOption}
+          onValueChange={(v) => onMaxIterationsChange(optionToIterationLimit(v))}
+          disabled={disabled}
+        >
+          <SelectTrigger id="coordinator-max-iterations">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {ITERATION_OPTIONS.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          After Accepting a Partition, automatically Begin two new Partitions
+          (one on the new Slice, one on the renamed target). Each iteration
+          roughly doubles the work in flight. Stops when the Planner verdicts a
+          branch as indivisible, the depth budget runs out, or a Constructor
+          blocks.
+        </p>
       </section>
     </div>
   );

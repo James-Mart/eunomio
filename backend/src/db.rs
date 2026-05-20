@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS partitions (
   phase TEXT NOT NULL,
   phase_state TEXT NOT NULL,
   worktree_path TEXT NOT NULL,
+  remaining_depth INTEGER,
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS partitions_by_edge ON partitions (session_id, target_node_id);

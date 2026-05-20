@@ -98,6 +98,8 @@ pub struct CoordinatorSettings {
     pub model: String,
     #[serde(default)]
     pub human_in_the_loop: HumanInTheLoop,
+    #[serde(default = "default_iteration_limit")]
+    pub max_iterations: IterationLimit,
 }
 
 impl Default for CoordinatorSettings {
@@ -105,6 +107,7 @@ impl Default for CoordinatorSettings {
         Self {
             model: default_model(),
             human_in_the_loop: HumanInTheLoop::default(),
+            max_iterations: default_iteration_limit(),
         }
     }
 }
@@ -118,6 +121,8 @@ pub struct HumanInTheLoop {
     pub after_planning: bool,
     #[serde(default = "default_true")]
     pub after_construct: bool,
+    #[serde(default = "default_true")]
+    pub after_indivisible: bool,
 }
 
 impl Default for HumanInTheLoop {
@@ -126,8 +131,27 @@ impl Default for HumanInTheLoop {
             after_survey: true,
             after_planning: true,
             after_construct: true,
+            after_indivisible: true,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum IterationLimit {
+    Count {
+        #[serde(default = "default_count")]
+        count: u32,
+    },
+    Auto,
+}
+
+fn default_count() -> u32 {
+    1
+}
+
+fn default_iteration_limit() -> IterationLimit {
+    IterationLimit::Count { count: 1 }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -292,6 +316,7 @@ pub struct Partition {
     pub phase_state: PhaseState,
     pub candidate_slice_tree_sha: Option<String>,
     pub candidate_slice_commit_sha: Option<String>,
+    pub remaining_depth: Option<i64>,
     pub created_at: i64,
 }
 
@@ -308,6 +333,7 @@ pub struct PartitionRow {
     pub phase: PhaseName,
     pub phase_state: PhaseState,
     pub worktree_path: String,
+    pub remaining_depth: Option<i64>,
     pub created_at: i64,
 }
 
@@ -332,6 +358,7 @@ impl From<PartitionRow> for Partition {
             phase_state: row.phase_state,
             candidate_slice_tree_sha: row.candidate_slice_tree_sha,
             candidate_slice_commit_sha: row.candidate_slice_commit_sha,
+            remaining_depth: row.remaining_depth,
             created_at: row.created_at,
         }
     }

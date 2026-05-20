@@ -7,7 +7,7 @@ use crate::{
     subagents::{
         self,
         constructor::ConstructOutput,
-        planner::{PlanOutput, PlanStrategy},
+        planner::{PlanOutput, PlanStrategy, PriorAttempt},
         surveyor::SurveyOutput,
         Subagents,
     },
@@ -28,7 +28,6 @@ pub struct Coordinator {
 }
 
 struct Inner {
-    locks: StdMutex<HashMap<String, i64>>,
     channels: StdMutex<HashMap<String, broadcast::Sender<SseEvent>>>,
     handles: Mutex<HashMap<i64, RunHandle>>,
     abandoning: StdMutex<std::collections::HashSet<i64>>,
@@ -40,7 +39,6 @@ impl Coordinator {
     pub fn new(subagents: Subagents, runner: Arc<dyn SubagentRunner>) -> Self {
         Self {
             inner: Arc::new(Inner {
-                locks: StdMutex::new(HashMap::new()),
                 channels: StdMutex::new(HashMap::new()),
                 handles: Mutex::new(HashMap::new()),
                 abandoning: StdMutex::new(std::collections::HashSet::new()),
@@ -67,29 +65,6 @@ impl Coordinator {
                 .clone()
         };
         let _ = tx.send(event);
-    }
-
-    fn acquire_lock(&self, session_id: &str, partition_id: i64) -> Result<(), AppError> {
-        let mut locks = self.inner.locks.lock().unwrap();
-        if let Some(existing) = locks.get(session_id) {
-            if *existing != partition_id {
-                return Err(AppError::Conflict {
-                    code: "partition_in_flight".into(),
-                    message: "another partition is already in flight for this session".into(),
-                });
-            }
-        }
-        locks.insert(session_id.to_string(), partition_id);
-        Ok(())
-    }
-
-    fn release_lock(&self, session_id: &str, partition_id: i64) {
-        let mut locks = self.inner.locks.lock().unwrap();
-        if let Some(existing) = locks.get(session_id) {
-            if *existing == partition_id {
-                locks.remove(session_id);
-            }
-        }
     }
 
     pub async fn process_startup_recovery(&self, state: &AppState) -> Result<(), AppError> {
@@ -158,7 +133,7 @@ impl Coordinator {
                 continue;
             }
             alive_partition_ids.push(id);
-            self.acquire_lock(&session_id, id).ok();
+            let _ = session_id;
         }
 
         let worktrees_root = state.data_dir.join("worktrees");
@@ -216,17 +191,37 @@ impl Coordinator {
         session_id: &str,
         target_node_id: &str,
     ) -> Result<Partition, AppError> {
+        let settings = state.partition_settings.snapshot().await;
+        let remaining_depth = match settings.coordinator.max_iterations {
+            IterationLimit::Count { count } => Some(count as i64),
+            IterationLimit::Auto => None,
+        };
+        self.begin_partition_internal(state, session_id, target_node_id, remaining_depth)
+            .await
+    }
+
+    async fn begin_child_partition(
+        &self,
+        state: &AppState,
+        session_id: &str,
+        target_node_id: &str,
+        parent_remaining_depth: Option<i64>,
+    ) -> Result<Partition, AppError> {
+        let remaining_depth = parent_remaining_depth.map(|n| (n - 1).max(0));
+        self.begin_partition_internal(state, session_id, target_node_id, remaining_depth)
+            .await
+    }
+
+    async fn begin_partition_internal(
+        &self,
+        state: &AppState,
+        session_id: &str,
+        target_node_id: &str,
+        remaining_depth: Option<i64>,
+    ) -> Result<Partition, AppError> {
         let (_, parent_node) = fetch_target_and_parent(state, session_id, target_node_id).await?;
         let parent = parent_node
             .ok_or_else(|| AppError::BadRequest("base node has no incoming edge to partition".into()))?;
-
-        let temp_partition_id = -1_i64;
-        self.acquire_lock(session_id, temp_partition_id)?;
-        let _guard = LockGuard {
-            coord: self.clone(),
-            session_id: session_id.to_string(),
-            partition_id: temp_partition_id,
-        };
 
         let worktree_root = state.data_dir.join("worktrees").join(session_id);
         tokio::fs::create_dir_all(&worktree_root)
@@ -236,14 +231,15 @@ impl Coordinator {
         let session_id_owned = session_id.to_string();
         let target_owned = target_node_id.to_string();
         let now = unix_seconds();
+        let depth_for_insert = remaining_depth;
         let inserted_id: i64 = state
             .db
             .call(move |conn| {
                 let tx = conn.transaction()?;
                 tx.execute(
-                    "INSERT INTO partitions (session_id, target_node_id, phase, phase_state, worktree_path, created_at) \
-                     VALUES (?1, ?2, 'survey', 'running', '', ?3)",
-                    tokio_rusqlite::params![session_id_owned, target_owned, now],
+                    "INSERT INTO partitions (session_id, target_node_id, phase, phase_state, worktree_path, remaining_depth, created_at) \
+                     VALUES (?1, ?2, 'survey', 'running', '', ?3, ?4)",
+                    tokio_rusqlite::params![session_id_owned, target_owned, depth_for_insert, now],
                 )?;
                 let id = tx.last_insert_rowid();
                 tx.commit()?;
@@ -287,12 +283,6 @@ impl Coordinator {
             })
             .await?;
 
-        std::mem::forget(_guard);
-        {
-            let mut locks = self.inner.locks.lock().unwrap();
-            locks.insert(session_id.to_string(), inserted_id);
-        }
-
         self.emit(
             session_id,
             SseEvent::Started {
@@ -317,6 +307,12 @@ impl Coordinator {
         partition_id: i64,
         req: StartRunRequest,
     ) -> Result<Run, AppError> {
+        if self.inner.handles.lock().await.contains_key(&partition_id) {
+            return Err(AppError::Conflict {
+                code: "partition_run_in_flight".into(),
+                message: "this partition already has a run in flight".into(),
+            });
+        }
         let row = load_partition_row(state, partition_id).await?;
         if !matches!(row.phase_state, PhaseState::AwaitingReview | PhaseState::Error) {
             return Err(AppError::Conflict {
@@ -324,7 +320,11 @@ impl Coordinator {
                 message: "partition is not currently at a review gate or in error state".into(),
             });
         }
+        validate_run_kind_transition(row.phase, req.kind)?;
         let kind = req.kind;
+        if kind == RunKind::Plan && row.phase == PhaseName::Construct {
+            self.reset_for_construct_to_plan_back_edge(state, partition_id, &row).await?;
+        }
         self.spawn_run_boxed(
             state.clone(),
             partition_id,
@@ -334,6 +334,86 @@ impl Coordinator {
             req.strategy_override,
         )
         .await
+    }
+
+    async fn reset_for_construct_to_plan_back_edge(
+        &self,
+        state: &AppState,
+        partition_id: i64,
+        row: &PartitionRow,
+    ) -> Result<(), AppError> {
+        let (_, parent_node) =
+            fetch_target_and_parent(state, &row.session_id, &row.target_node_id).await?;
+        let parent = parent_node
+            .ok_or_else(|| AppError::BadRequest("no parent node".into()))?;
+        let worktree_path = PathBuf::from(&row.worktree_path);
+        if let Err(e) = git::run_in(&worktree_path, &["reset", "--hard", &parent.commit_sha]).await
+        {
+            tracing::warn!(error = %e, "reset on back-edge failed");
+        }
+        if let Err(e) = git::run_in(&worktree_path, &["clean", "-fdx"]).await {
+            tracing::warn!(error = %e, "clean on back-edge failed");
+        }
+        state
+            .db
+            .call(move |conn| {
+                conn.execute(
+                    "UPDATE partitions SET plan_json = NULL, strategy = NULL, candidate_slice_tree_sha = NULL, candidate_slice_commit_sha = NULL WHERE id = ?1",
+                    tokio_rusqlite::params![partition_id],
+                )?;
+                Ok(())
+            })
+            .await?;
+        Ok(())
+    }
+
+    pub async fn cancel_run(
+        &self,
+        state: &AppState,
+        partition_id: i64,
+        run_id: i64,
+    ) -> Result<(), AppError> {
+        let run = load_run(state, run_id).await?;
+        if run.partition_id != partition_id {
+            return Err(AppError::NotFound);
+        }
+        if !matches!(run.status, RunStatus::Running) {
+            return Err(AppError::Conflict {
+                code: "run_not_running".into(),
+                message: "run is not in running state".into(),
+            });
+        }
+        let row = load_partition_row(state, partition_id).await?;
+        let handle = self.inner.handles.lock().await.remove(&partition_id);
+        if let Some(handle) = handle {
+            (handle.cancel)();
+        }
+        let now = unix_seconds();
+        state
+            .db
+            .call(move |conn| {
+                let tx = conn.transaction()?;
+                tx.execute(
+                    "UPDATE runs SET status = 'cancelled', finished_at = ?1 WHERE id = ?2",
+                    tokio_rusqlite::params![now, run_id],
+                )?;
+                tx.execute(
+                    "UPDATE partitions SET phase_state = 'error' WHERE id = ?1",
+                    tokio_rusqlite::params![partition_id],
+                )?;
+                tx.commit()?;
+                Ok(())
+            })
+            .await?;
+        self.emit(
+            &row.session_id,
+            SseEvent::Cancelled {
+                session_id: row.session_id.clone(),
+                target_node_id: row.target_node_id.clone(),
+                partition_id,
+            },
+        );
+        Ok(())
     }
 
     fn spawn_run_boxed(
@@ -442,7 +522,15 @@ impl Coordinator {
             .ok_or_else(|| AppError::BadRequest("plan run has no parsed result".into()))?;
         let plan: PlanOutput = serde_json::from_str(result_json)
             .map_err(|e| AppError::BadRequest(format!("invalid plan result: {e}")))?;
-        let strategy_str = match plan.strategy {
+        let strategy = match &plan {
+            PlanOutput::Split { strategy, .. } => *strategy,
+            PlanOutput::Indivisible { .. } => {
+                return Err(AppError::BadRequest(
+                    "plan is indivisible; cannot accept".into(),
+                ))
+            }
+        };
+        let strategy_str = match strategy {
             PlanStrategy::Semantic => "semantic",
             PlanStrategy::Vertical => "vertical",
             PlanStrategy::Horizontal => "horizontal",
@@ -500,6 +588,14 @@ impl Coordinator {
             .ok_or_else(|| AppError::BadRequest("no plan accepted".into()))?;
         let plan: PlanOutput = serde_json::from_str(plan_json)
             .map_err(|e| AppError::BadRequest(format!("invalid plan result: {e}")))?;
+        let edges = match &plan {
+            PlanOutput::Split { edges, .. } => edges.clone(),
+            PlanOutput::Indivisible { .. } => {
+                return Err(AppError::BadRequest(
+                    "plan is indivisible; cannot accept".into(),
+                ))
+            }
+        };
 
         let session_id = row.session_id.clone();
         let target_node_id = row.target_node_id.clone();
@@ -509,10 +605,27 @@ impl Coordinator {
             AppError::BadRequest("target has no parent; cannot insert slice".into())
         })?;
 
+        let siblings = load_sibling_partitions(state, &session_id, &target_node_id, partition_id)
+            .await?;
+
+        {
+            let mut a = self.inner.abandoning.lock().unwrap();
+            for s in &siblings {
+                a.insert(s.id);
+            }
+        }
+        for s in &siblings {
+            let h = self.inner.handles.lock().await.remove(&s.id);
+            if let Some(handle) = h {
+                (handle.cancel)();
+            }
+        }
+
         let slice_node_id = Uuid::new_v4().to_string();
         let now = unix_seconds();
-        let slice_title = plan.edges[0].title.clone();
-        let leftover_title = plan.edges[1].title.clone();
+        let slice_title = edges[0].title.clone();
+        let leftover_title = edges[1].title.clone();
+        let remaining_depth = row.remaining_depth;
 
         let session_id_db = session_id.clone();
         let target_id_db = target_node_id.clone();
@@ -522,6 +635,7 @@ impl Coordinator {
         let leftover_title_db = leftover_title.clone();
         let candidate_tree_db = candidate_tree.clone();
         let candidate_commit_db = candidate_commit.clone();
+        let sibling_ids: Vec<i64> = siblings.iter().map(|s| s.id).collect();
         state
             .db
             .call(move |conn| {
@@ -543,14 +657,18 @@ impl Coordinator {
                     "UPDATE nodes SET parent_node_id = ?1, title = ?2 WHERE session_id = ?3 AND node_id = ?4",
                     tokio_rusqlite::params![slice_id_db, leftover_title_db, session_id_db, target_id_db],
                 )?;
-                tx.execute(
-                    "DELETE FROM runs WHERE partition_id = ?1",
-                    tokio_rusqlite::params![partition_id],
-                )?;
-                tx.execute(
-                    "DELETE FROM partitions WHERE id = ?1",
-                    tokio_rusqlite::params![partition_id],
-                )?;
+                let mut all_ids = sibling_ids.clone();
+                all_ids.push(partition_id);
+                for id in &all_ids {
+                    tx.execute(
+                        "DELETE FROM runs WHERE partition_id = ?1",
+                        tokio_rusqlite::params![id],
+                    )?;
+                    tx.execute(
+                        "DELETE FROM partitions WHERE id = ?1",
+                        tokio_rusqlite::params![id],
+                    )?;
+                }
                 tx.commit()?;
                 Ok(())
             })
@@ -565,6 +683,17 @@ impl Coordinator {
         if let Some(parent_dir) = worktree_path.parent() {
             let _ = tokio::fs::remove_dir_all(parent_dir).await;
         }
+        for sib in &siblings {
+            let sib_path = PathBuf::from(&sib.worktree_path);
+            if sib_path.exists() {
+                if let Err(e) = git::worktree_remove(&state.repo_root, &sib_path).await {
+                    tracing::warn!(error = %e, sibling_partition_id = sib.id, "removing sibling worktree failed");
+                }
+            }
+            if let Some(parent_dir) = sib_path.parent() {
+                let _ = tokio::fs::remove_dir_all(parent_dir).await;
+            }
+        }
 
         self.emit(
             &session_id,
@@ -574,7 +703,58 @@ impl Coordinator {
                 partition_id,
             },
         );
-        self.release_lock(&session_id, partition_id);
+        for sib in &siblings {
+            self.emit(
+                &session_id,
+                SseEvent::Cancelled {
+                    session_id: session_id.clone(),
+                    target_node_id: sib.target_node_id.clone(),
+                    partition_id: sib.id,
+                },
+            );
+        }
+        {
+            let mut a = self.inner.abandoning.lock().unwrap();
+            for s in &siblings {
+                a.remove(&s.id);
+            }
+        }
+
+        let should_fan_out = match remaining_depth {
+            None => true,
+            Some(n) => n > 1,
+        };
+        if should_fan_out {
+            let renamed_target_id = target_node_id.clone();
+            let new_slice_id = slice_node_id.clone();
+            let session_for_children = session_id.clone();
+            let coord = self.clone();
+            let state_for_children = state.clone();
+            tokio::spawn(async move {
+                let on_slice = coord
+                    .begin_child_partition(
+                        &state_for_children,
+                        &session_for_children,
+                        &new_slice_id,
+                        remaining_depth,
+                    )
+                    .await;
+                if let Err(e) = on_slice {
+                    tracing::warn!(error = %e, "fan-out child on slice failed");
+                }
+                let on_target = coord
+                    .begin_child_partition(
+                        &state_for_children,
+                        &session_for_children,
+                        &renamed_target_id,
+                        remaining_depth,
+                    )
+                    .await;
+                if let Err(e) = on_target {
+                    tracing::warn!(error = %e, "fan-out child on renamed target failed");
+                }
+            });
+        }
         Ok(())
     }
 
@@ -636,7 +816,6 @@ impl Coordinator {
                 Ok(())
             })
             .await?;
-        self.release_lock(&row.session_id, partition_id);
         {
             let mut a = self.inner.abandoning.lock().unwrap();
             a.remove(&partition_id);
@@ -657,12 +836,12 @@ impl Coordinator {
             .call(move |conn| {
                 let (sql, has_filter) = match &target_owned {
                     Some(_) => (
-                        "SELECT id, session_id, target_node_id, strategy, change_survey_json, plan_json, candidate_slice_tree_sha, candidate_slice_commit_sha, phase, phase_state, worktree_path, created_at \
+                        "SELECT id, session_id, target_node_id, strategy, change_survey_json, plan_json, candidate_slice_tree_sha, candidate_slice_commit_sha, phase, phase_state, worktree_path, remaining_depth, created_at \
                          FROM partitions WHERE session_id = ?1 AND target_node_id = ?2 ORDER BY created_at",
                         true,
                     ),
                     None => (
-                        "SELECT id, session_id, target_node_id, strategy, change_survey_json, plan_json, candidate_slice_tree_sha, candidate_slice_commit_sha, phase, phase_state, worktree_path, created_at \
+                        "SELECT id, session_id, target_node_id, strategy, change_survey_json, plan_json, candidate_slice_tree_sha, candidate_slice_commit_sha, phase, phase_state, worktree_path, remaining_depth, created_at \
                          FROM partitions WHERE session_id = ?1 ORDER BY created_at",
                         false,
                     ),
@@ -684,7 +863,8 @@ impl Coordinator {
                         phase_state: parse_phase_state(&row.get::<_, String>(9)?)
                             .unwrap_or(PhaseState::Error),
                         worktree_path: row.get(10)?,
-                        created_at: row.get(11)?,
+                        remaining_depth: row.get(11)?,
+                        created_at: row.get(12)?,
                     })
                 };
                 let rows = if has_filter {
@@ -830,13 +1010,14 @@ impl Coordinator {
                     Some(s) => s.as_str().to_string(),
                     None => "auto".to_string(),
                 };
+                let prior_attempt = self.lookup_prior_attempt(state, partition.id).await?;
                 let ctx = subagents::planner::PlanContext {
                     before_tree,
                     target_tree,
                     change_survey_json: survey_json,
                     strategy_override: strategy_override_str,
                     user_feedback: user_feedback.unwrap_or("").to_string(),
-                    prior_block_or_candidate: "(none)".to_string(),
+                    prior_attempt,
                 };
                 subagents::planner::render_prompt(&ctx, &self.inner.subagents)
             }
@@ -847,6 +1028,14 @@ impl Coordinator {
                     .ok_or_else(|| AppError::BadRequest("no plan accepted".into()))?;
                 let plan: PlanOutput = serde_json::from_str(plan_json)
                     .map_err(|e| AppError::BadRequest(format!("invalid plan: {e}")))?;
+                let edges = match &plan {
+                    PlanOutput::Split { edges, .. } => edges,
+                    PlanOutput::Indivisible { .. } => {
+                        return Err(AppError::BadRequest(
+                            "cannot run constructor: plan is indivisible".into(),
+                        ))
+                    }
+                };
                 let strategy = partition
                     .strategy
                     .ok_or_else(|| AppError::BadRequest("no strategy on partition".into()))?;
@@ -855,14 +1044,61 @@ impl Coordinator {
                     target_tree,
                     worktree_head_tree: before_tree,
                     strategy: strategy.as_str().to_string(),
-                    slice_title: plan.edges[0].title.clone(),
-                    slice_description: plan.edges[0].description.clone(),
+                    slice_title: edges[0].title.clone(),
+                    slice_description: edges[0].description.clone(),
                     user_feedback: user_feedback.unwrap_or("").to_string(),
                 };
                 subagents::constructor::render_prompt(&ctx, &self.inner.subagents)
             }
         };
         Ok(prompt)
+    }
+
+    async fn lookup_prior_attempt(
+        &self,
+        state: &AppState,
+        partition_id: i64,
+    ) -> Result<Option<PriorAttempt>, AppError> {
+        let runs = load_runs_for_partition(state, partition_id).await?;
+        let last_construct = runs
+            .iter()
+            .find(|r| r.kind == RunKind::Construct && matches!(r.status, RunStatus::Finished | RunStatus::Error));
+        let Some(construct_run) = last_construct else {
+            return Ok(None);
+        };
+        if let Some(json) = construct_run.result_json.as_deref() {
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(json) {
+                let outcome = value.get("outcome").and_then(|v| v.as_str()).unwrap_or("");
+                if outcome == "blocked" {
+                    let reason = value
+                        .get("reason")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    return Ok(Some(PriorAttempt::Blocked { reason }));
+                }
+                if outcome == "ok" {
+                    let last_plan = runs
+                        .iter()
+                        .find(|r| r.kind == RunKind::Plan && r.status == RunStatus::Finished);
+                    if let Some(plan_run) = last_plan {
+                        if let Some(plan_json) = plan_run.result_json.as_deref() {
+                            if let Ok(PlanOutput::Split { edges, .. }) =
+                                serde_json::from_str::<PlanOutput>(plan_json)
+                            {
+                                if !edges.is_empty() {
+                                    return Ok(Some(PriorAttempt::Candidate {
+                                        slice_title: edges[0].title.clone(),
+                                        slice_description: edges[0].description.clone(),
+                                    }));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(None)
     }
 
     async fn drive_run(
@@ -1149,6 +1385,49 @@ impl Coordinator {
     ) -> Result<(), AppError> {
         let settings = state.partition_settings.snapshot().await;
         let hitl = settings.coordinator.human_in_the_loop;
+
+        if kind == RunKind::Plan {
+            let outcome = payload
+                .as_ref()
+                .and_then(|p| p.get("outcome"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("split");
+            if outcome == "indivisible" {
+                if hitl.after_indivisible {
+                    state
+                        .db
+                        .call(move |conn| {
+                            conn.execute(
+                                "UPDATE partitions SET phase_state = 'awaiting_review' WHERE id = ?1",
+                                tokio_rusqlite::params![partition_id],
+                            )?;
+                            Ok(())
+                        })
+                        .await?;
+                    self.emit(
+                        session_id,
+                        SseEvent::Phase {
+                            session_id: session_id.to_string(),
+                            target_node_id: target_node_id.to_string(),
+                            partition_id,
+                            name: PhaseName::Plan,
+                            state: PhaseState::AwaitingReview,
+                            payload,
+                        },
+                    );
+                } else {
+                    let coord = self.clone();
+                    let state_owned = state.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = coord.abandon_partition(&state_owned, partition_id).await {
+                            tracing::error!(error = %e, partition_id, "auto-abandon on indivisible failed");
+                        }
+                    });
+                }
+                return Ok(());
+            }
+        }
+
         let gate = match kind {
             RunKind::Survey => hitl.after_survey,
             RunKind::Plan => hitl.after_planning,
@@ -1223,7 +1502,14 @@ impl Coordinator {
         let plan_json = row.plan_json.as_deref().ok_or_else(|| AppError::BadRequest("no plan".into()))?;
         let plan: PlanOutput = serde_json::from_str(plan_json)
             .map_err(|e| AppError::BadRequest(format!("invalid plan: {e}")))?;
-        let slice_title = plan.edges[0].title.clone();
+        let slice_title = match &plan {
+            PlanOutput::Split { edges, .. } => edges[0].title.clone(),
+            PlanOutput::Indivisible { .. } => {
+                return Err(AppError::BadRequest(
+                    "constructor produced OK for an indivisible plan".into(),
+                ))
+            }
+        };
 
         let worktree_path = PathBuf::from(&row.worktree_path);
         git::run_in(&worktree_path, &["add", "-A"])
@@ -1340,15 +1626,25 @@ impl Coordinator {
     }
 }
 
-struct LockGuard {
-    coord: Coordinator,
-    session_id: String,
-    partition_id: i64,
-}
-
-impl Drop for LockGuard {
-    fn drop(&mut self) {
-        self.coord.release_lock(&self.session_id, self.partition_id);
+fn validate_run_kind_transition(phase: PhaseName, kind: RunKind) -> Result<(), AppError> {
+    let ok = matches!(
+        (phase, kind),
+        (PhaseName::Survey, RunKind::Survey)
+            | (PhaseName::Plan, RunKind::Plan)
+            | (PhaseName::Construct, RunKind::Construct)
+            | (PhaseName::Construct, RunKind::Plan)
+    );
+    if ok {
+        Ok(())
+    } else {
+        Err(AppError::Conflict {
+            code: "invalid_run_kind".into(),
+            message: format!(
+                "cannot start run kind {} from phase {}",
+                kind.as_str(),
+                phase.as_str()
+            ),
+        })
     }
 }
 
@@ -1404,7 +1700,7 @@ async fn load_partition_row(state: &AppState, partition_id: i64) -> Result<Parti
         .db
         .call(move |conn| {
             let mut stmt = conn.prepare(
-                "SELECT p.id, p.session_id, p.target_node_id, p.strategy, p.change_survey_json, p.plan_json, p.candidate_slice_tree_sha, p.candidate_slice_commit_sha, p.phase, p.phase_state, p.worktree_path, p.created_at \
+                "SELECT p.id, p.session_id, p.target_node_id, p.strategy, p.change_survey_json, p.plan_json, p.candidate_slice_tree_sha, p.candidate_slice_commit_sha, p.phase, p.phase_state, p.worktree_path, p.remaining_depth, p.created_at \
                  FROM partitions p JOIN sessions s ON s.id = p.session_id \
                  WHERE p.id = ?1 AND s.repo_root = ?2",
             )?;
@@ -1423,7 +1719,8 @@ async fn load_partition_row(state: &AppState, partition_id: i64) -> Result<Parti
                     phase_state: parse_phase_state(&r.get::<_, String>(9)?)
                         .unwrap_or(PhaseState::Error),
                     worktree_path: r.get(10)?,
-                    created_at: r.get(11)?,
+                    remaining_depth: r.get(11)?,
+                    created_at: r.get(12)?,
                 }))
             } else {
                 Ok(None)
@@ -1463,6 +1760,46 @@ async fn load_run(state: &AppState, run_id: i64) -> Result<RunRow, AppError> {
         })
         .await?;
     row.ok_or(AppError::NotFound)
+}
+
+#[derive(Debug, Clone)]
+struct SiblingInfo {
+    id: i64,
+    target_node_id: String,
+    worktree_path: String,
+}
+
+async fn load_sibling_partitions(
+    state: &AppState,
+    session_id: &str,
+    target_node_id: &str,
+    accepted_partition_id: i64,
+) -> Result<Vec<SiblingInfo>, AppError> {
+    let session_owned = session_id.to_string();
+    let target_owned = target_node_id.to_string();
+    let rows: Vec<SiblingInfo> = state
+        .db
+        .call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, target_node_id, worktree_path FROM partitions \
+                 WHERE session_id = ?1 AND target_node_id = ?2 AND id != ?3",
+            )?;
+            let rows = stmt
+                .query_map(
+                    tokio_rusqlite::params![session_owned, target_owned, accepted_partition_id],
+                    |r| {
+                        Ok(SiblingInfo {
+                            id: r.get(0)?,
+                            target_node_id: r.get(1)?,
+                            worktree_path: r.get(2)?,
+                        })
+                    },
+                )?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+        .await?;
+    Ok(rows)
 }
 
 async fn load_runs_for_partition(

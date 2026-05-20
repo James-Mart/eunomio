@@ -149,24 +149,26 @@ function candidateLayout(
   if (
     !partition.candidateSliceTreeSha ||
     !partition.candidateSliceCommitSha ||
-    !partition.plan
+    !partition.plan ||
+    partition.plan.outcome !== "split"
   ) {
     return null;
   }
   const parentPosition = chain.positionByNodeId.get(parent.nodeId) ?? "?";
+  const planEdges = partition.plan.edges;
 
   const candidateSlice: GraphNode = {
     nodeId: CANDIDATE_SLICE_ID,
     parentNodeId: parent.nodeId,
     treeSha: partition.candidateSliceTreeSha,
     commitSha: partition.candidateSliceCommitSha,
-    title: partition.plan.edges[0].title,
+    title: planEdges[0].title,
   };
   const renamedTarget: GraphNode = {
     ...target,
     nodeId: CANDIDATE_TARGET_PREFIX + target.nodeId,
     parentNodeId: CANDIDATE_SLICE_ID,
-    title: partition.plan.edges[1].title,
+    title: planEdges[1].title,
   };
 
   const isSeedFinal =

@@ -41,11 +41,17 @@ export type HumanInTheLoopSettings = {
   afterSurvey: boolean;
   afterPlanning: boolean;
   afterConstruct: boolean;
+  afterIndivisible: boolean;
 };
+
+export type IterationLimit =
+  | { kind: "count"; count: number }
+  | { kind: "auto" };
 
 export type CoordinatorSettings = {
   model: string;
   humanInTheLoop: HumanInTheLoopSettings;
+  maxIterations: IterationLimit;
 };
 
 export interface PartitionSettings {
@@ -88,11 +94,17 @@ export type PlanEdge = {
   description: string;
 };
 
-export type Plan = {
-  strategy: PartitionStrategy;
-  strategyRationale: string;
-  edges: PlanEdge[];
-};
+export type Plan =
+  | {
+      outcome: "split";
+      strategy: PartitionStrategy;
+      strategyRationale: string;
+      edges: PlanEdge[];
+    }
+  | {
+      outcome: "indivisible";
+      rationale: string;
+    };
 
 export type Partition = {
   id: number;
@@ -105,6 +117,7 @@ export type Partition = {
   phaseState: PhaseState;
   candidateSliceTreeSha: string | null;
   candidateSliceCommitSha: string | null;
+  remainingDepth: number | null;
   createdAt: number;
 };
 
@@ -224,6 +237,8 @@ export const api = {
     request<Run[]>("GET", `/partitions/${partitionId}/runs`),
   startRun: (partitionId: number, body: StartRunRequest) =>
     request<Run>("POST", `/partitions/${partitionId}/runs`, body),
+  cancelRun: (partitionId: number, runId: number) =>
+    request<void>("DELETE", `/partitions/${partitionId}/runs/${runId}`),
   acceptSurvey: (partitionId: number, runId: number) =>
     request<Partition>("POST", `/partitions/${partitionId}/survey/accept`, { runId }),
   acceptPlan: (partitionId: number, runId: number) =>

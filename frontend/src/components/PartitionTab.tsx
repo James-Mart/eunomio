@@ -158,9 +158,15 @@ export default function PartitionTab({
       ) : phase === "awaitingConstruct" && activeLifecycle?.constructPayload ? (
         <ConstructReview
           partitionId={activeLifecycle.partitionId}
+          sessionId={sessionId}
+          targetNodeId={activeLifecycle.targetNodeId}
           payload={activeLifecycle.constructPayload}
           constructRunId={pickRunId(runs, "construct") ?? undefined}
-          slicePlanEdge={partition?.plan?.edges[0] ?? null}
+          slicePlanEdge={
+            partition?.plan && partition.plan.outcome === "split"
+              ? partition.plan.edges[0]
+              : null
+          }
           showSlicePlan={isCandidateSliceSelected}
           onAbandon={abandon}
         />

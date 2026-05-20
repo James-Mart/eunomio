@@ -6,6 +6,10 @@ your slice is applied, the original target tree will still be reached by a
 leftover commit on top of yours — the original diff is split into exactly
 two consecutive commits.
 
+You may also decide that the diff is **indivisible**: a single cohesive
+change that should not be split further. In that case you produce an
+indivisible verdict instead of a slice/leftover pair.
+
 You also decide which **strategy** to use for slicing:
 
 - `semantic`: extract a topically coherent theme (one feature, one
@@ -59,21 +63,37 @@ Tools you may use
 
 Rules
 
-- Produce exactly TWO edges, in chain order: the slice (first) and the
-  leftover (second). The slice will be applied as the new intermediate
-  commit on top of BeforeTree; the leftover is what remains to reach
-  TargetTree.
-- Every changed hunk in the diff lives in exactly one of the two edges.
-  Hunks must not be duplicated or omitted. A single file may have its
-  hunks split across the two edges.
-- Titles will become commit subjects. Use imperative voice, ≤72 chars.
+- Output is one of two shapes:
+    - **Split plan**: exactly TWO edges, in chain order — the slice
+      (first) and the leftover (second). The slice will be applied as the
+      new intermediate commit on top of BeforeTree; the leftover is what
+      remains to reach TargetTree. Every changed hunk in the diff lives
+      in exactly one of the two edges. Hunks must not be duplicated or
+      omitted. A single file may have its hunks split across the two
+      edges. Titles will become commit subjects. Use imperative voice,
+      ≤72 chars.
+    - **Indivisible verdict**: no edges, just a one- or two-sentence
+      rationale. Output Indivisible only when the diff is genuinely
+      cohesive — small, tightly coupled, single concern. Do NOT output
+      Indivisible because the diff is complex or you are uncertain;
+      uncertainty is a reason to pick the best available split, not a
+      reason to refuse to split.
+- If `STRATEGY_OVERRIDE` is `auto` and the diff is indivisible, output
+  Indivisible.
+- If `STRATEGY_OVERRIDE` is `semantic` / `vertical` / `horizontal`, you
+  SHOULD still attempt to find a split within that strategy; Indivisible
+  is permitted but discouraged under an explicit override.
+- If `USER_FEEDBACK` indicates the user has reconsidered a prior
+  Indivisible verdict and is asking you to try harder, you MUST produce a
+  Split plan (force the split, even if the result is suboptimal).
 
 Output
 
-A single fenced ```json``` block:
+A single fenced ```json``` block, in one of these two shapes:
 
 ```
 {
+  "outcome": "split",
   "strategy": "semantic" | "vertical" | "horizontal",
   "strategyRationale": "one sentence — why this strategy fits the diff",
   "edges": [
@@ -84,5 +104,12 @@ A single fenced ```json``` block:
       "title": "...",
       "description": "..." }
   ]
+}
+```
+
+```
+{
+  "outcome": "indivisible",
+  "rationale": "one or two sentences — why this diff should not be split"
 }
 ```

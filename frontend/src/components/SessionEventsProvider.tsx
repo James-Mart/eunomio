@@ -22,6 +22,15 @@ export type ConstructPayload =
   | { outcome: "ok"; candidateTreeSha: string; candidateCommitSha: string }
   | { outcome: "blocked"; reason: string };
 
+export type PlanPayload =
+  | {
+      outcome: "split";
+      strategy: "semantic" | "vertical" | "horizontal";
+      strategyRationale: string;
+      edges: { id: string; title: string; description: string }[];
+    }
+  | { outcome: "indivisible"; rationale: string };
+
 export type Lifecycle = {
   partitionId: number;
   targetNodeId: string;
@@ -29,7 +38,7 @@ export type Lifecycle = {
   plan: PhaseState | "pending";
   construct: PhaseState | "pending";
   surveyPayload?: unknown;
-  planPayload?: unknown;
+  planPayload?: PlanPayload;
   constructPayload?: ConstructPayload;
   recentMessages: unknown[];
   lastError?: { code: string; message: string };
@@ -109,7 +118,7 @@ class SessionStore {
         if (event.name === "survey" && event.payload !== undefined)
           updated.surveyPayload = event.payload;
         if (event.name === "plan" && event.payload !== undefined)
-          updated.planPayload = event.payload;
+          updated.planPayload = event.payload as PlanPayload;
         if (event.name === "construct" && event.payload !== undefined) {
           updated.constructPayload = event.payload as ConstructPayload;
         }

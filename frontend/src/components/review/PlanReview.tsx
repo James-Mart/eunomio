@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { PauseCircle } from "lucide-react";
+import { CircleAlert, PauseCircle } from "lucide-react";
 import { toast } from "sonner";
 
 import { api, type Plan, type PartitionStrategy } from "@/lib/api";
@@ -70,35 +70,47 @@ export default function PlanReview({
     }
   };
 
+  const isIndivisible = plan.outcome === "indivisible";
+
   return (
     <div className="space-y-3">
-      <Alert>
-        <PauseCircle className="h-4 w-4" />
-        <AlertTitle>Plan ready for review</AlertTitle>
-        <AlertDescription>
-          Accept the plan to start constructing, or re-run with feedback.
-        </AlertDescription>
-      </Alert>
+      {isIndivisible ? (
+        <Alert>
+          <CircleAlert className="h-4 w-4" />
+          <AlertTitle>Planner declined to split</AlertTitle>
+          <AlertDescription>{plan.rationale}</AlertDescription>
+        </Alert>
+      ) : (
+        <Alert>
+          <PauseCircle className="h-4 w-4" />
+          <AlertTitle>Plan ready for review</AlertTitle>
+          <AlertDescription>
+            Accept the plan to start constructing, or re-run with feedback.
+          </AlertDescription>
+        </Alert>
+      )}
 
-      <section className="space-y-2">
-        <div className="text-sm">
-          <span className="font-medium">Strategy:</span>{" "}
-          <span className="capitalize">{plan.strategy}</span> —{" "}
-          <span className="text-muted-foreground">{plan.strategyRationale}</span>
-        </div>
-        <div className="space-y-2">
-          {plan.edges.map((edge, idx) => (
-            <CollapsibleItem
-              key={edge.id}
-              leadingLabel={
-                idx === 0 ? "Slice (this Partition's new Node)" : "Leftover"
-              }
-              title={edge.title}
-              description={edge.description}
-            />
-          ))}
-        </div>
-      </section>
+      {!isIndivisible && (
+        <section className="space-y-2">
+          <div className="text-sm">
+            <span className="font-medium">Strategy:</span>{" "}
+            <span className="capitalize">{plan.strategy}</span> —{" "}
+            <span className="text-muted-foreground">{plan.strategyRationale}</span>
+          </div>
+          <div className="space-y-2">
+            {plan.edges.map((edge, idx) => (
+              <CollapsibleItem
+                key={edge.id}
+                leadingLabel={
+                  idx === 0 ? "Slice (this Partition's new Node)" : "Leftover"
+                }
+                title={edge.title}
+                description={edge.description}
+              />
+            ))}
+          </div>
+        </section>
+      )}
 
       <div className="space-y-3 rounded-md border bg-muted/30 p-3">
         <div className="space-y-1.5">
@@ -107,7 +119,11 @@ export default function PlanReview({
             id="plan-feedback"
             value={feedback}
             onChange={(e) => setFeedback(e.target.value)}
-            placeholder="What did the planner get wrong?"
+            placeholder={
+              isIndivisible
+                ? "Tell the Planner to try harder to find a split, or accept the verdict and Abandon."
+                : "What did the planner get wrong?"
+            }
             rows={3}
           />
         </div>
@@ -134,11 +150,13 @@ export default function PlanReview({
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Button onClick={accept} disabled={busy}>
-          Accept plan
-        </Button>
+        {!isIndivisible && (
+          <Button onClick={accept} disabled={busy}>
+            Accept plan
+          </Button>
+        )}
         <Button variant="secondary" onClick={rerun} disabled={busy}>
-          Re-run with feedback
+          Re-run Planner
         </Button>
         <Button
           variant="outline"
