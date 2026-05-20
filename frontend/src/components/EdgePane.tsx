@@ -5,6 +5,12 @@ import { FileTree, useFileTree } from "@pierre/trees/react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
 import { ApiError, api } from "@/lib/api";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+  useDefaultLayout,
+} from "@/components/ui/resizable";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
@@ -129,6 +135,13 @@ export default function EdgePane(props: Props) {
     model.resetPaths(paths);
   }, [model, paths]);
 
+  const treeSplitLayout = useDefaultLayout({
+    id: "edge-pane-tree-split-v1",
+    panelIds: ["tree", "diff"],
+  });
+
+  const isDesktop = useIsDesktop();
+
   if (error) {
     return (
       <div className="flex h-full items-center p-4 text-sm text-destructive">
@@ -150,76 +163,104 @@ export default function EdgePane(props: Props) {
     );
   }
 
-  return (
-    <div ref={rootRef} className="flex h-full min-h-0 w-full">
-      <div className={cn("hidden md:flex w-64 shrink-0 border-r overflow-hidden")}>
-        <FileTree model={model} className="flex-1 min-w-0" />
+  const diffBody = (
+    <div className="flex h-full min-w-0 flex-col">
+      <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-b py-1.5 pl-2 pr-12 md:pr-2">
+        <SegmentedToggle
+          value={diffStyle}
+          onChange={setDiffStyle}
+          options={[
+            { value: "unified", label: "Unified" },
+            { value: "split", label: "Split" },
+          ]}
+        />
+        <SegmentedToggle
+          value={overflow}
+          onChange={setOverflow}
+          options={[
+            { value: "scroll", label: "Scroll" },
+            { value: "wrap", label: "Wrap" },
+          ]}
+        />
       </div>
-      <div className="flex flex-1 min-w-0 flex-col">
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-b py-1.5 pl-2 pr-12 md:pr-2">
-          <SegmentedToggle
-            value={diffStyle}
-            onChange={setDiffStyle}
-            options={[
-              { value: "unified", label: "Unified" },
-              { value: "split", label: "Split" },
-            ]}
-          />
-          <SegmentedToggle
-            value={overflow}
-            onChange={setOverflow}
-            options={[
-              { value: "scroll", label: "Scroll" },
-              { value: "wrap", label: "Wrap" },
-            ]}
-          />
-        </div>
-        <Virtualizer className="flex-1 min-w-0 h-full overflow-y-auto overflow-x-hidden touch-pan-y">
-          {fileDiffs.map((file, i) => {
-            const isCollapsed = collapsedFiles.has(file.name);
-            const onWrapperClick = (e: React.MouseEvent) => {
-              const path = e.nativeEvent.composedPath();
-              const inHeader = path.some(
-                (n) =>
-                  n instanceof Element &&
-                  typeof n.matches === "function" &&
-                  n.matches("[data-diffs-header]"),
-              );
-              if (inHeader) toggleCollapsed(file.name);
-            };
-            return (
-              <div
-                key={`${file.name}-${i}`}
-                {...{ [FILE_DATA_ATTR]: file.name }}
-                onClick={onWrapperClick}
-              >
-                <FileDiff
-                  fileDiff={file}
-                  options={{
-                    theme: "github-dark",
-                    diffStyle,
-                    overflow,
-                    collapsed: isCollapsed,
-                    unsafeCSS: STICKY_HEADER_CSS,
-                  }}
-                  renderHeaderPrefix={() => (
-                    <span
-                      aria-hidden="true"
-                      className="inline-flex h-5 w-5 items-center justify-center text-muted-foreground"
-                    >
-                      {isCollapsed ? (
-                        <ChevronRight className="h-4 w-4" />
-                      ) : (
-                        <ChevronDown className="h-4 w-4" />
-                      )}
-                    </span>
-                  )}
-                />
-              </div>
+      <Virtualizer className="flex-1 min-w-0 h-full overflow-y-auto overflow-x-hidden touch-pan-y">
+        {fileDiffs.map((file, i) => {
+          const isCollapsed = collapsedFiles.has(file.name);
+          const onWrapperClick = (e: React.MouseEvent) => {
+            const path = e.nativeEvent.composedPath();
+            const inHeader = path.some(
+              (n) =>
+                n instanceof Element &&
+                typeof n.matches === "function" &&
+                n.matches("[data-diffs-header]"),
             );
-          })}
-        </Virtualizer>
-      </div>
+            if (inHeader) toggleCollapsed(file.name);
+          };
+          return (
+            <div
+              key={`${file.name}-${i}`}
+              {...{ [FILE_DATA_ATTR]: file.name }}
+              onClick={onWrapperClick}
+            >
+              <FileDiff
+                fileDiff={file}
+                options={{
+                  theme: "github-dark",
+                  diffStyle,
+                  overflow,
+                  collapsed: isCollapsed,
+                  unsafeCSS: STICKY_HEADER_CSS,
+                }}
+                renderHeaderPrefix={() => (
+                  <span
+                    aria-hidden="true"
+                    className="inline-flex h-5 w-5 items-center justify-center text-muted-foreground"
+                  >
+                    {isCollapsed ? (
+                      <ChevronRight className="h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )}
+                  </span>
+                )}
+              />
+            </div>
+          );
+        })}
+      </Virtualizer>
+    </div>
+  );
+
+  return (
+    <div ref={rootRef} className="h-full min-h-0 w-full">
+      <ResizablePanelGroup
+        orientation="horizontal"
+        defaultLayout={treeSplitLayout.defaultLayout}
+        onLayoutChanged={treeSplitLayout.onLayoutChanged}
+        className="h-full"
+      >
+        {isDesktop && (
+          <>
+            <ResizablePanel
+              id="tree"
+              defaultSize="16rem"
+              minSize="10rem"
+              maxSize="40%"
+              className="min-w-0 border-r"
+            >
+              <FileTree model={model} className="h-full min-w-0" />
+            </ResizablePanel>
+            <ResizableHandle
+              withHandle
+              aria-label="Resize file tree"
+              className="mx-1"
+            />
+          </>
+        )}
+        <ResizablePanel id="diff" minSize="30%" className="min-w-0">
+          {diffBody}
+        </ResizablePanel>
+      </ResizablePanelGroup>
     </div>
   );
 }
@@ -293,4 +334,22 @@ function cssEscape(value: string): string {
     return CSS.escape(value);
   }
   return value.replace(/(["\\])/g, "\\$1");
+}
+
+const DESKTOP_QUERY = "(min-width: 768px)";
+
+function useIsDesktop(): boolean {
+  const [matches, setMatches] = useState(() =>
+    typeof window !== "undefined"
+      ? window.matchMedia(DESKTOP_QUERY).matches
+      : true,
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia(DESKTOP_QUERY);
+    const handler = (e: MediaQueryListEvent) => setMatches(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+  return matches;
 }

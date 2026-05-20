@@ -30,25 +30,25 @@ import { Button } from "@/components/ui/button";
 
 type Props = {
   sessionId: string;
-  targetNodeId: string;
+  targetNodeId: string | null;
   activePartition: Partition | null;
+  isCandidateSliceSelected: boolean;
   onPartitionStarted: (p: Partition) => void;
+  onPartitionEnded: () => void;
 };
 
 export default function PartitionTab({
   sessionId,
   targetNodeId,
   activePartition,
+  isCandidateSliceSelected,
   onPartitionStarted,
+  onPartitionEnded,
 }: Props) {
-  const isActive =
-    activePartition !== null && activePartition.targetNodeId === targetNodeId;
-  const activeLifecycle = usePartitionLifecycle(
-    isActive ? activePartition.id : null,
-  );
-  const pendingForTarget = usePartitionLifecyclesByTarget(targetNodeId).filter(
-    (l) => !l.finishedAt && !l.cancelledAt,
-  );
+  const activeLifecycle = usePartitionLifecycle(activePartition?.id ?? null);
+  const pendingForTarget = usePartitionLifecyclesByTarget(
+    targetNodeId ?? "",
+  ).filter((l) => !l.finishedAt && !l.cancelledAt);
 
   const [partition, setPartition] = useState<Partition | null>(null);
   const [runs, setRuns] = useState<Run[]>([]);
@@ -87,32 +87,38 @@ export default function PartitionTab({
     construct: activeLifecycle?.construct ?? "pending",
   };
 
-  const phase = derivePhase(isActive ? activeLifecycle : undefined);
+  const phase = derivePhase(activeLifecycle);
 
   const abandon = useCallback(async () => {
     if (!activeLifecycle) return;
+    const partitionId = activeLifecycle.partitionId;
     try {
-      await api.abandonPartition(sessionId, activeLifecycle.partitionId);
+      await api.abandonPartition(sessionId, partitionId);
+      resetLifecycle(partitionId);
+      onPartitionEnded();
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) {
-        resetLifecycle(activeLifecycle.partitionId);
+        resetLifecycle(partitionId);
+        onPartitionEnded();
         return;
       }
       toast.error(e instanceof Error ? e.message : "Failed to abandon");
     }
-  }, [activeLifecycle, sessionId, resetLifecycle]);
+  }, [activeLifecycle, sessionId, resetLifecycle, onPartitionEnded]);
 
   return (
     <div className="space-y-4">
       <LifecycleStepper states={states} />
       {phase === "idle" || phase === "cancelled" || phase === "finished" ? (
-        <BeginView
-          sessionId={sessionId}
-          targetNodeId={targetNodeId}
-          phase={phase}
-          disabled={pendingForTarget.length > 0}
-          onPartitionStarted={onPartitionStarted}
-        />
+        targetNodeId ? (
+          <BeginView
+            sessionId={sessionId}
+            targetNodeId={targetNodeId}
+            phase={phase}
+            disabled={pendingForTarget.length > 0}
+            onPartitionStarted={onPartitionStarted}
+          />
+        ) : null
       ) : phase === "error" ? (
         <ErrorView
           message={activeLifecycle?.lastError?.message ?? "Unknown error"}
@@ -158,6 +164,8 @@ export default function PartitionTab({
           partitionId={activeLifecycle.partitionId}
           payload={activeLifecycle.constructPayload}
           constructRunId={pickRunId(runs, "construct") ?? undefined}
+          slicePlanEdge={partition?.plan?.edges[0] ?? null}
+          showSlicePlan={isCandidateSliceSelected}
           onAbandon={abandon}
         />
       ) : (

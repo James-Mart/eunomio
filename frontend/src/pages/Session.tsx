@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import {
   Background,
@@ -17,7 +17,10 @@ import {
 } from "lucide-react";
 
 import { api, type Graph, type GraphNode, type Partition } from "@/lib/api";
-import NodeCard, { type NodeCardData } from "@/components/NodeCard";
+import NodeCard, {
+  type BadgeState,
+  type NodeCardData,
+} from "@/components/NodeCard";
 import EdgePane from "@/components/EdgePane";
 import ToolsCardList from "@/components/ToolsCardList";
 import ToolsPane from "@/components/ToolsPane";
@@ -97,7 +100,7 @@ type CanonicalLayout = {
 
 function canonicalLayout(
   chain: Chain,
-  candidateBadgeTargets: Set<string>,
+  badgeByNode: Map<string, BadgeState>,
 ): CanonicalLayout {
   const total = chain.ordered.length;
   const nodes: Node<NodeCardData>[] = chain.ordered.map((n, idx) => ({
@@ -107,7 +110,7 @@ function canonicalLayout(
     data: {
       node: n,
       positionLabel: chain.positionByNodeId.get(n.nodeId) ?? "",
-      candidateBadge: candidateBadgeTargets.has(n.nodeId),
+      badgeState: badgeByNode.get(n.nodeId) ?? "none",
     },
   }));
   const edges: FlowEdge[] = chain.ordered
@@ -150,7 +153,6 @@ function candidateLayout(
   ) {
     return null;
   }
-  const slicePosition = chain.positionByNodeId.get(target.nodeId) ?? "?";
   const parentPosition = chain.positionByNodeId.get(parent.nodeId) ?? "?";
 
   const candidateSlice: GraphNode = {
@@ -167,17 +169,10 @@ function candidateLayout(
     title: partition.plan.edges[1].title,
   };
 
-  let targetLabel: string;
-  if (target.parentNodeId === null) {
-    targetLabel = "base";
-  } else if (chain.positionByNodeId.get(target.nodeId) === "final") {
-    targetLabel = "final";
-  } else {
-    const cur = parseInt(slicePosition, 10);
-    targetLabel = Number.isFinite(cur) ? String(cur + 1) : "?";
-  }
-
-  const sliceLabel = slicePosition;
+  const isSeedFinal =
+    targetIdx === chain.ordered.length - 1 && target.title === "final";
+  const sliceLabel = String(targetIdx);
+  const targetLabel = isSeedFinal ? "final" : String(targetIdx + 1);
   const parentLabel = parentPosition;
 
   const nodes: Node<NodeCardData>[] = [
@@ -223,7 +218,12 @@ function candidateLayout(
     },
   ];
 
-  return { nodes, edges, candidateSliceNode: candidateSlice, renamedTargetNode: renamedTarget };
+  return {
+    nodes,
+    edges,
+    candidateSliceNode: candidateSlice,
+    renamedTargetNode: renamedTarget,
+  };
 }
 
 function findLeafNodeId(graph: Graph): string | null {
@@ -275,9 +275,9 @@ function SessionInner({ sessionId }: { sessionId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [partitions, setPartitions] = useState<Partition[]>([]);
-  const [candidatePartitionId, setCandidatePartitionId] = useState<number | null>(
-    null,
-  );
+  const [candidatePartitionId, setCandidatePartitionId] = useState<
+    number | null
+  >(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = parseActiveTab(searchParams.get("tab"));
 
@@ -345,17 +345,19 @@ function SessionInner({ sessionId }: { sessionId: string }) {
     [partitions, candidatePartitionId],
   );
 
-  const acceptReadyTargets = useMemo(
-    () =>
-      new Set(
-        partitions
-          .filter(
-            (p) => p.phase === "construct" && p.phaseState === "awaiting_review",
-          )
-          .map((p) => p.targetNodeId),
-      ),
-    [partitions],
-  );
+  const badgeByNode = useMemo(() => {
+    const m = new Map<string, BadgeState>();
+    for (const p of partitions) {
+      const next: BadgeState =
+        p.phaseState === "awaiting_review" || p.phaseState === "error"
+          ? "awaiting"
+          : "running";
+      const prev = m.get(p.targetNodeId);
+      if (prev === "awaiting") continue;
+      m.set(p.targetNodeId, next);
+    }
+    return m;
+  }, [partitions]);
 
   const layout = useMemo(() => {
     if (!chain || !graph) return null;
@@ -363,21 +365,29 @@ function SessionInner({ sessionId }: { sessionId: string }) {
       const lay = candidateLayout(chain, candidatePartition, graph);
       if (lay) return { kind: "candidate" as const, ...lay };
     }
-    const lay = canonicalLayout(chain, acceptReadyTargets);
+    const lay = canonicalLayout(chain, badgeByNode);
     return { kind: "canonical" as const, ...lay };
-  }, [chain, graph, candidatePartition, acceptReadyTargets]);
+  }, [chain, graph, candidatePartition, badgeByNode]);
+
+  const didInitSelectionRef = useRef(false);
+  useEffect(() => {
+    if (!graph || didInitSelectionRef.current) return;
+    didInitSelectionRef.current = true;
+    setSelectedNodeId(findLeafNodeId(graph));
+  }, [graph]);
 
   useEffect(() => {
-    if (!layout) return;
-    if (selectedNodeId && layout.nodes.some((n) => n.id === selectedNodeId)) {
-      return;
+    if (!layout || !selectedNodeId) return;
+    if (layout.nodes.some((n) => n.id === selectedNodeId)) return;
+    if (selectedNodeId.startsWith(CANDIDATE_TARGET_PREFIX)) {
+      const stripped = selectedNodeId.slice(CANDIDATE_TARGET_PREFIX.length);
+      if (layout.nodes.some((n) => n.id === stripped)) {
+        setSelectedNodeId(stripped);
+        return;
+      }
     }
-    if (layout.kind === "candidate") {
-      setSelectedNodeId(layout.renamedTargetNode.nodeId);
-    } else if (graph) {
-      setSelectedNodeId(findLeafNodeId(graph));
-    }
-  }, [layout, selectedNodeId, graph]);
+    setSelectedNodeId(null);
+  }, [layout, selectedNodeId]);
 
   const nodesForFlow = useMemo<Node<NodeCardData>[] | null>(() => {
     if (!layout || !id) return null;
@@ -413,6 +423,9 @@ function SessionInner({ sessionId }: { sessionId: string }) {
     return graph.nodes.find((n) => n.nodeId === resolved) ?? null;
   }, [graph, selectedNodeId]);
 
+  const isCandidateSliceSelected =
+    layout?.kind === "candidate" && selectedNodeId === CANDIDATE_SLICE_ID;
+
   const desktopSplitLayout = useDefaultLayout({
     id: "session-desktop-split-v3",
     panelIds: ["diff", "aux"],
@@ -434,7 +447,7 @@ function SessionInner({ sessionId }: { sessionId: string }) {
   const onSelectCandidate = (next: string) => {
     if (next === "canonical") {
       setCandidatePartitionId(null);
-      setSelectedNodeId(findLeafNodeId(graph));
+      setSelectedNodeId(null);
       return;
     }
     const pid = Number(next);
@@ -453,8 +466,13 @@ function SessionInner({ sessionId }: { sessionId: string }) {
     setPartitions((prev) =>
       prev.some((x) => x.id === p.id) ? prev : [...prev, p],
     );
-    setCandidatePartitionId(p.id);
-    setSelectedNodeId(p.targetNodeId);
+    setSelectedNodeId(null);
+  };
+
+  const onPartitionEnded = () => {
+    setCandidatePartitionId(null);
+    setSelectedNodeId(null);
+    void refreshPartitions();
   };
 
   const graphPane = (
@@ -463,7 +481,11 @@ function SessionInner({ sessionId }: { sessionId: string }) {
         <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
           <span className="text-xs text-muted-foreground">View</span>
           <Select
-            value={candidatePartitionId === null ? "canonical" : String(candidatePartitionId)}
+            value={
+              candidatePartitionId === null
+                ? "canonical"
+                : String(candidatePartitionId)
+            }
             onValueChange={onSelectCandidate}
           >
             <SelectTrigger className="h-8 w-auto min-w-[12rem]">
@@ -472,7 +494,8 @@ function SessionInner({ sessionId }: { sessionId: string }) {
             <SelectContent>
               <SelectItem value="canonical">Canonical</SelectItem>
               {partitions.map((p) => {
-                const targetPos = chain.positionByNodeId.get(p.targetNodeId) ?? "?";
+                const targetPos =
+                  chain.positionByNodeId.get(p.targetNodeId) ?? "?";
                 const strategy = p.strategy ?? "semantic";
                 return (
                   <SelectItem key={p.id} value={String(p.id)}>
@@ -494,6 +517,11 @@ function SessionInner({ sessionId }: { sessionId: string }) {
           nodesDraggable={false}
           proOptions={{ hideAttribution: true }}
           onNodeClick={onNodeClick}
+          style={
+            layout.kind === "candidate"
+              ? { backgroundColor: "#1f2226" }
+              : undefined
+          }
         >
           <Background />
         </ReactFlow>
@@ -509,17 +537,18 @@ function SessionInner({ sessionId }: { sessionId: string }) {
     graph,
   });
 
-  const toolsCardList = selectedCanonicalNode ? (
+  const toolsCardList = (
     <ToolsCardList
-      key={selectedCanonicalNode.nodeId}
       sessionId={id}
-      nodeId={selectedCanonicalNode.nodeId}
-      nodeTitle={selectedCanonicalNode.title}
+      nodeId={selectedCanonicalNode?.nodeId ?? null}
+      nodeTitle={selectedCanonicalNode?.title ?? null}
       activePartition={candidatePartition}
+      isCandidateSliceSelected={isCandidateSliceSelected}
       onPartitionStarted={onPartitionStarted}
+      onPartitionEnded={onPartitionEnded}
       onChange={refresh}
     />
-  ) : null;
+  );
 
   return (
     <>
@@ -539,11 +568,7 @@ function SessionInner({ sessionId }: { sessionId: string }) {
           >
             <div className="h-full min-w-0 overflow-hidden">{diffPane}</div>
           </ResizablePanel>
-          <ResizableHandle
-            withHandle
-            aria-label="Resize panes"
-            className="mx-4"
-          />
+          <ResizableHandle withHandle aria-label="Resize panes" />
           <ResizablePanel
             id="aux"
             defaultSize="30%"
@@ -565,11 +590,7 @@ function SessionInner({ sessionId }: { sessionId: string }) {
               >
                 {graphPane}
               </ResizablePanel>
-              <ResizableHandle
-                withHandle
-                aria-label="Resize tools and graph"
-                className="my-2"
-              />
+              <ResizableHandle withHandle aria-label="Resize tools and graph" />
               <ResizablePanel
                 id="tools"
                 defaultSize="50%"
@@ -577,17 +598,16 @@ function SessionInner({ sessionId }: { sessionId: string }) {
                 maxSize="85%"
                 className="min-h-0 overflow-auto"
               >
-                {selectedCanonicalNode && (
-                  <ToolsPane
-                    key={selectedCanonicalNode.nodeId}
-                    sessionId={id}
-                    nodeId={selectedCanonicalNode.nodeId}
-                    nodeTitle={selectedCanonicalNode.title}
-                    activePartition={candidatePartition}
-                    onPartitionStarted={onPartitionStarted}
-                    onChange={refresh}
-                  />
-                )}
+                <ToolsPane
+                  sessionId={id}
+                  nodeId={selectedCanonicalNode?.nodeId ?? null}
+                  nodeTitle={selectedCanonicalNode?.title ?? null}
+                  activePartition={candidatePartition}
+                  isCandidateSliceSelected={isCandidateSliceSelected}
+                  onPartitionStarted={onPartitionStarted}
+                  onPartitionEnded={onPartitionEnded}
+                  onChange={refresh}
+                />
               </ResizablePanel>
             </ResizablePanelGroup>
           </ResizablePanel>

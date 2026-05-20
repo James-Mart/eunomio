@@ -2,7 +2,7 @@ import { useState } from "react";
 import { CircleAlert, PauseCircle } from "lucide-react";
 import { toast } from "sonner";
 
-import { api } from "@/lib/api";
+import { api, type PlanEdge } from "@/lib/api";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -14,6 +14,8 @@ type Props = {
   partitionId: number;
   payload: ConstructPayload;
   constructRunId?: number;
+  slicePlanEdge?: PlanEdge | null;
+  showSlicePlan?: boolean;
   onAbandon: () => void;
 };
 
@@ -22,6 +24,8 @@ export default function ConstructReview({
   partitionId,
   payload,
   constructRunId,
+  slicePlanEdge,
+  showSlicePlan,
   onAbandon,
 }: Props) {
   const [feedback, setFeedback] = useState("");
@@ -58,6 +62,19 @@ export default function ConstructReview({
 
   return (
     <div className="space-y-3">
+      {showSlicePlan && slicePlanEdge && (
+        <section className="space-y-1.5">
+          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Slice plan
+          </div>
+          <div className="rounded-md border bg-muted/30 px-3 py-2">
+            <div className="text-sm font-medium">{slicePlanEdge.title}</div>
+            <div className="text-xs text-muted-foreground">
+              {slicePlanEdge.description}
+            </div>
+          </div>
+        </section>
+      )}
       {blocked ? (
         <Alert variant="destructive">
           <CircleAlert className="h-4 w-4" />
