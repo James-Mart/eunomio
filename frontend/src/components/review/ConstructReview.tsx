@@ -10,7 +10,6 @@ import { Textarea } from "@/components/ui/textarea";
 import type { ConstructPayload } from "@/components/SessionEventsProvider";
 
 type Props = {
-  sessionId: string;
   partitionId: number;
   payload: ConstructPayload;
   constructRunId?: number;
@@ -20,7 +19,6 @@ type Props = {
 };
 
 export default function ConstructReview({
-  sessionId,
   partitionId,
   payload,
   constructRunId,
@@ -34,7 +32,7 @@ export default function ConstructReview({
   const accept = async () => {
     setBusy(true);
     try {
-      await api.acceptConstruct(sessionId, partitionId);
+      await api.acceptConstruct(partitionId);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Accept failed");
     } finally {
@@ -45,7 +43,7 @@ export default function ConstructReview({
   const rerun = async () => {
     setBusy(true);
     try {
-      await api.startRun(sessionId, partitionId, {
+      await api.startRun(partitionId, {
         kind: "construct",
         parentRunId: constructRunId,
         userFeedback: feedback.trim() || undefined,

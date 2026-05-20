@@ -62,8 +62,8 @@ export default function PartitionTab({
     }
     try {
       const [p, r] = await Promise.all([
-        api.getPartition(sessionId, activeLifecycle.partitionId).catch(() => null),
-        api.listRuns(sessionId, activeLifecycle.partitionId).catch(() => [] as Run[]),
+        api.getPartition(activeLifecycle.partitionId).catch(() => null),
+        api.listRuns(activeLifecycle.partitionId).catch(() => [] as Run[]),
       ]);
       if (p) setPartition(p);
       setRuns(r);
@@ -93,7 +93,7 @@ export default function PartitionTab({
     if (!activeLifecycle) return;
     const partitionId = activeLifecycle.partitionId;
     try {
-      await api.abandonPartition(sessionId, partitionId);
+      await api.abandonPartition(partitionId);
       resetLifecycle(partitionId);
       onPartitionEnded();
     } catch (e) {
@@ -127,7 +127,6 @@ export default function PartitionTab({
       ) : phase === "awaitingSurvey" ? (
         partition?.changeSurvey ? (
           <SurveyReview
-            sessionId={sessionId}
             partitionId={partition.id}
             survey={partition.changeSurvey ?? readSurveyFromRuns(runs)!}
             surveyRunId={pickRunId(runs, "survey")!}
@@ -136,7 +135,6 @@ export default function PartitionTab({
         ) : (
           readSurveyFromRuns(runs) ? (
             <SurveyReview
-              sessionId={sessionId}
               partitionId={activeLifecycle!.partitionId}
               survey={readSurveyFromRuns(runs)!}
               surveyRunId={pickRunId(runs, "survey")!}
@@ -149,7 +147,6 @@ export default function PartitionTab({
       ) : phase === "awaitingPlan" ? (
         readPlanFromRuns(runs) ? (
           <PlanReview
-            sessionId={sessionId}
             partitionId={activeLifecycle!.partitionId}
             plan={readPlanFromRuns(runs)!}
             planRunId={pickRunId(runs, "plan")!}
@@ -160,7 +157,6 @@ export default function PartitionTab({
         )
       ) : phase === "awaitingConstruct" && activeLifecycle?.constructPayload ? (
         <ConstructReview
-          sessionId={sessionId}
           partitionId={activeLifecycle.partitionId}
           payload={activeLifecycle.constructPayload}
           constructRunId={pickRunId(runs, "construct") ?? undefined}

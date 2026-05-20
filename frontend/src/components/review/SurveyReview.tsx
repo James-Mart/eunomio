@@ -9,7 +9,6 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
 type Props = {
-  sessionId: string;
   partitionId: number;
   survey: ChangeSurvey;
   surveyRunId: number;
@@ -17,7 +16,6 @@ type Props = {
 };
 
 export default function SurveyReview({
-  sessionId,
   partitionId,
   survey,
   surveyRunId,
@@ -29,7 +27,7 @@ export default function SurveyReview({
   const accept = async () => {
     setBusy(true);
     try {
-      await api.acceptSurvey(sessionId, partitionId, surveyRunId);
+      await api.acceptSurvey(partitionId, surveyRunId);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Accept failed");
     } finally {
@@ -40,7 +38,7 @@ export default function SurveyReview({
   const rerun = async () => {
     setBusy(true);
     try {
-      await api.startRun(sessionId, partitionId, {
+      await api.startRun(partitionId, {
         kind: "survey",
         parentRunId: surveyRunId,
         userFeedback: feedback.trim() || undefined,

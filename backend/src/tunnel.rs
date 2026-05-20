@@ -1,8 +1,14 @@
+// Cloudflared upgrade procedure: bump `CLOUDFLARED_VERSION`, then update every
+// `expected_sha256` in `platform_target` by downloading each asset from the new
+// release tag and running `sha256sum` (or `shasum -a 256`) on it. Hashes are
+// computed over the published asset as-downloaded (tarballs are hashed before
+// extraction, since Cloudflare publishes asset-level hashes).
 use crate::{
     error::AppError,
     types::{TunnelStateName, TunnelStatusDto},
 };
 use anyhow::{anyhow, Context, Result};
+use sha2::{Digest, Sha256};
 use axum::{
     body::Body,
     extract::{Request, State},
@@ -30,6 +36,7 @@ const BROADCAST_CAPACITY: usize = 16;
 const URL_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
 const SHARE_COOKIE: &str = "eunomia_share_token";
 const SHARE_QUERY: &str = "eunomia_token";
+const CLOUDFLARED_VERSION: &str = "2026.5.0";
 
 #[derive(Clone)]
 pub struct TunnelRegistry {
@@ -72,6 +79,13 @@ impl TunnelRegistry {
     pub fn status(&self) -> TunnelStatusDto {
         let state = self.inner.state.lock().unwrap();
         snapshot(&state)
+    }
+
+    /// Same as [`Self::status`] with the share token stripped. Use this for
+    /// anything that might be observed via the tunnel itself.
+    pub fn status_redacted(&self) -> TunnelStatusDto {
+        let state = self.inner.state.lock().unwrap();
+        snapshot_redacted(&state)
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<TunnelStatusDto> {
@@ -160,7 +174,7 @@ impl TunnelRegistry {
             });
         };
         let _ = r.stop_tx.send(());
-        let _ = self.inner.events.send(self.status());
+        let _ = self.inner.events.send(self.status_redacted());
         Ok(())
     }
 
@@ -172,7 +186,7 @@ impl TunnelRegistry {
                 at: now_secs(),
             };
         }
-        let _ = self.inner.events.send(self.status());
+        let _ = self.inner.events.send(self.status_redacted());
     }
 }
 
@@ -200,6 +214,16 @@ fn snapshot(state: &TunnelState) -> TunnelStatusDto {
             error_message: Some(message.clone()),
         },
     }
+}
+
+/// Like `snapshot` but never includes the share token. Used for any
+/// broadcast that may be observed via the tunnel itself (so a holder
+/// of the token cannot use the SSE stream to see future tokens after
+/// rotation).
+fn snapshot_redacted(state: &TunnelState) -> TunnelStatusDto {
+    let mut dto = snapshot(state);
+    dto.token = None;
+    dto
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -239,7 +263,7 @@ async fn supervise(
     };
 
     let started_at = now_secs();
-    let dto = {
+    let (dto_full, dto_redacted) = {
         let mut state = inner.state.lock().unwrap();
         *state = TunnelState::Running(Running {
             url: url.clone(),
@@ -247,10 +271,10 @@ async fn supervise(
             started_at,
             stop_tx,
         });
-        snapshot(&state)
+        (snapshot(&state), snapshot_redacted(&state))
     };
-    let _ = inner.events.send(dto.clone());
-    let _ = ready_tx.send(Ok(dto));
+    let _ = inner.events.send(dto_redacted);
+    let _ = ready_tx.send(Ok(dto_full));
 
     tokio::spawn(drain_lines(line_rx));
 
@@ -266,7 +290,7 @@ async fn supervise(
                         message: "cloudflared exited unexpectedly".into(),
                         at: now_secs(),
                     };
-                    let _ = inner.events.send(snapshot(&state));
+                    let _ = inner.events.send(snapshot_redacted(&state));
                 }
             }
         }
@@ -287,7 +311,7 @@ fn fail_startup(
             message: message.clone(),
             at: now_secs(),
         };
-        let _ = inner.events.send(snapshot(&state));
+        let _ = inner.events.send(snapshot_redacted(&state));
     }
     let _ = ready_tx.send(Err(AppError::Internal(anyhow!(message))));
     let _ = serve_shutdown_tx.send(());
@@ -490,8 +514,8 @@ async fn ensure_binary(data_dir: &Path) -> Result<PathBuf> {
     }
 
     let url = format!(
-        "https://github.com/cloudflare/cloudflared/releases/latest/download/{}",
-        target.asset
+        "https://github.com/cloudflare/cloudflared/releases/download/{}/{}",
+        CLOUDFLARED_VERSION, target.asset
     );
     let download_path = bin_dir.join(target.asset);
     tracing::info!(url = %url, dest = %download_path.display(), "downloading cloudflared");
@@ -507,6 +531,8 @@ async fn ensure_binary(data_dir: &Path) -> Result<PathBuf> {
             "curl exited with status {status} while downloading cloudflared"
         ));
     }
+
+    verify_sha256(&download_path, target.expected_sha256).await?;
 
     if target.is_tarball {
         let status = Command::new("tar")
@@ -553,6 +579,7 @@ struct PlatformTarget {
     asset: &'static str,
     final_name: &'static str,
     is_tarball: bool,
+    expected_sha256: &'static str,
 }
 
 fn platform_target() -> Result<PlatformTarget> {
@@ -563,31 +590,58 @@ fn platform_target() -> Result<PlatformTarget> {
             asset: "cloudflared-linux-amd64",
             final_name: "cloudflared",
             is_tarball: false,
+            expected_sha256: "0095e46fdc88855d801c4d304cb1f5dd4bd656116c47ab94c2ad0ae7cda1c7ec",
         }),
         ("linux", "aarch64") => Ok(PlatformTarget {
             asset: "cloudflared-linux-arm64",
             final_name: "cloudflared",
             is_tarball: false,
+            expected_sha256: "2dc0945345677d27de3ae390a31c3b168866b48766da5f4cfd3fc473ce572303",
         }),
         ("macos", "x86_64") => Ok(PlatformTarget {
             asset: "cloudflared-darwin-amd64.tgz",
             final_name: "cloudflared",
             is_tarball: true,
+            expected_sha256: "7f2c4c8c86e787226804694112682aefacd4cfb98f54508f1a5a841a78bbbef9",
         }),
         ("macos", "aarch64") => Ok(PlatformTarget {
             asset: "cloudflared-darwin-arm64.tgz",
             final_name: "cloudflared",
             is_tarball: true,
+            expected_sha256: "116ef11a59fc4f31e7f1bcc4378070cd7ca053fa37b4484b1432bb150b358219",
         }),
         ("windows", "x86_64") => Ok(PlatformTarget {
             asset: "cloudflared-windows-amd64.exe",
             final_name: "cloudflared.exe",
             is_tarball: false,
+            expected_sha256: "f141cded099c239171ad2cea6fb5da0fdaa2bd36104c3074d883f9546519eba7",
         }),
         _ => Err(anyhow!(
             "cloudflared auto-install is not available for {os}/{arch}; install cloudflared manually and ensure it is on PATH"
         )),
     }
+}
+
+async fn verify_sha256(path: &Path, expected: &str) -> Result<()> {
+    let path_owned = path.to_path_buf();
+    let expected_owned = expected.to_string();
+    tokio::task::spawn_blocking(move || -> Result<()> {
+        let mut file = std::fs::File::open(&path_owned)
+            .with_context(|| format!("opening downloaded cloudflared at {}", path_owned.display()))?;
+        let mut hasher = Sha256::new();
+        std::io::copy(&mut file, &mut hasher)
+            .with_context(|| format!("hashing downloaded cloudflared at {}", path_owned.display()))?;
+        let actual = format!("{:x}", hasher.finalize());
+        if actual.eq_ignore_ascii_case(&expected_owned) {
+            return Ok(());
+        }
+        let _ = std::fs::remove_file(&path_owned);
+        Err(anyhow!(
+            "cloudflared sha256 mismatch: expected {expected_owned}, got {actual}"
+        ))
+    })
+    .await
+    .context("joining verify_sha256 task")?
 }
 
 fn which_on_path(name: &str) -> Option<PathBuf> {
@@ -613,6 +667,12 @@ fn map_binary_error(e: anyhow::Error) -> AppError {
         AppError::Unrecoverable {
             status: StatusCode::SERVICE_UNAVAILABLE,
             code: "cloudflared_unsupported_platform".into(),
+            message: msg,
+        }
+    } else if msg.contains("sha256 mismatch") {
+        AppError::Unrecoverable {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            code: "cloudflared_sha_mismatch".into(),
             message: msg,
         }
     } else {

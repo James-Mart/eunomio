@@ -1399,14 +1399,16 @@ fn parse_run_status(s: &str) -> Option<RunStatus> {
 }
 
 async fn load_partition_row(state: &AppState, partition_id: i64) -> Result<PartitionRow, AppError> {
+    let repo_root = state.repo_root.to_string_lossy().to_string();
     let row: Option<PartitionRow> = state
         .db
         .call(move |conn| {
             let mut stmt = conn.prepare(
-                "SELECT id, session_id, target_node_id, strategy, change_survey_json, plan_json, candidate_slice_tree_sha, candidate_slice_commit_sha, phase, phase_state, worktree_path, created_at \
-                 FROM partitions WHERE id = ?1",
+                "SELECT p.id, p.session_id, p.target_node_id, p.strategy, p.change_survey_json, p.plan_json, p.candidate_slice_tree_sha, p.candidate_slice_commit_sha, p.phase, p.phase_state, p.worktree_path, p.created_at \
+                 FROM partitions p JOIN sessions s ON s.id = p.session_id \
+                 WHERE p.id = ?1 AND s.repo_root = ?2",
             )?;
-            let mut rows = stmt.query(tokio_rusqlite::params![partition_id])?;
+            let mut rows = stmt.query(tokio_rusqlite::params![partition_id, repo_root])?;
             if let Some(r) = rows.next()? {
                 Ok(Some(PartitionRow {
                     id: r.get(0)?,

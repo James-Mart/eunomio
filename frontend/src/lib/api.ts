@@ -217,38 +217,20 @@ export const api = {
         ? `/sessions/${sessionId}/partitions?targetNodeId=${encodeURIComponent(targetNodeId)}`
         : `/sessions/${sessionId}/partitions`,
     ),
-  getPartition: (sessionId: string, partitionId: number) =>
-    request<Partition>("GET", `/sessions/${sessionId}/partitions/${partitionId}`),
-  listRuns: (sessionId: string, partitionId: number) =>
-    request<Run[]>("GET", `/sessions/${sessionId}/partitions/${partitionId}/runs`),
-  startRun: (sessionId: string, partitionId: number, body: StartRunRequest) =>
-    request<Run>(
-      "POST",
-      `/sessions/${sessionId}/partitions/${partitionId}/runs`,
-      body,
-    ),
-  acceptSurvey: (sessionId: string, partitionId: number, runId: number) =>
-    request<Partition>(
-      "POST",
-      `/sessions/${sessionId}/partitions/${partitionId}/survey/accept`,
-      { runId },
-    ),
-  acceptPlan: (sessionId: string, partitionId: number, runId: number) =>
-    request<Partition>(
-      "POST",
-      `/sessions/${sessionId}/partitions/${partitionId}/plan/accept`,
-      { runId },
-    ),
-  acceptConstruct: (sessionId: string, partitionId: number) =>
-    request<void>(
-      "POST",
-      `/sessions/${sessionId}/partitions/${partitionId}/construct/accept`,
-    ),
-  abandonPartition: (sessionId: string, partitionId: number) =>
-    request<void>(
-      "POST",
-      `/sessions/${sessionId}/partitions/${partitionId}/abandon`,
-    ),
+  getPartition: (partitionId: number) =>
+    request<Partition>("GET", `/partitions/${partitionId}`),
+  listRuns: (partitionId: number) =>
+    request<Run[]>("GET", `/partitions/${partitionId}/runs`),
+  startRun: (partitionId: number, body: StartRunRequest) =>
+    request<Run>("POST", `/partitions/${partitionId}/runs`, body),
+  acceptSurvey: (partitionId: number, runId: number) =>
+    request<Partition>("POST", `/partitions/${partitionId}/survey/accept`, { runId }),
+  acceptPlan: (partitionId: number, runId: number) =>
+    request<Partition>("POST", `/partitions/${partitionId}/plan/accept`, { runId }),
+  acceptConstruct: (partitionId: number) =>
+    request<void>("POST", `/partitions/${partitionId}/construct/accept`),
+  abandonPartition: (partitionId: number) =>
+    request<void>("POST", `/partitions/${partitionId}/abandon`),
   getTunnel: () => request<TunnelStatus>("GET", "/tunnel"),
   startTunnel: () => request<TunnelStatus>("POST", "/tunnel"),
   stopTunnel: () => request<void>("DELETE", "/tunnel"),

@@ -20,7 +20,7 @@ async fn run(repo: &Path, args: &[&str]) -> Result<String> {
 }
 
 pub async fn merge_base(repo: &Path, base: &str, source: &str) -> Result<String> {
-    run(repo, &["merge-base", base, source]).await
+    run(repo, &["merge-base", "--end-of-options", base, source]).await
 }
 
 pub async fn diff_text(repo: &Path, from_tree: &str, to_tree: &str) -> Result<String> {
@@ -32,6 +32,7 @@ pub async fn diff_text(repo: &Path, from_tree: &str, to_tree: &str) -> Result<St
             "--no-color",
             "--no-ext-diff",
             "--diff-algorithm=histogram",
+            "--end-of-options",
             from_tree,
             to_tree,
         ])
@@ -49,11 +50,11 @@ pub async fn diff_text(repo: &Path, from_tree: &str, to_tree: &str) -> Result<St
 }
 
 pub async fn rev_parse_tree(repo: &Path, refname: &str) -> Result<String> {
-    run(repo, &["rev-parse", refname]).await
+    run(repo, &["rev-parse", "--verify", "--end-of-options", refname]).await
 }
 
 pub async fn rev_parse(repo: &Path, refname: &str) -> Result<String> {
-    run(repo, &["rev-parse", refname]).await
+    run(repo, &["rev-parse", "--verify", "--end-of-options", refname]).await
 }
 
 pub async fn commit_tree(
@@ -93,6 +94,7 @@ pub async fn branch_create(repo: &Path, name: &str, commit: &str, force: bool) -
     if force {
         args.push("-f");
     }
+    args.push("--end-of-options");
     args.push(name);
     args.push(commit);
     run(repo, &args).await?;

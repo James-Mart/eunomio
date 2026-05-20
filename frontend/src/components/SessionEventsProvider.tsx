@@ -245,7 +245,7 @@ export function SessionEventsProvider({
         if (cancelled || partitions.length === 0) return;
         const runsByPartition = await Promise.all(
           partitions.map((p) =>
-            api.listRuns(sessionId, p.id).catch(() => [] as Run[]),
+            api.listRuns(p.id).catch(() => [] as Run[]),
           ),
         );
         if (cancelled) return;

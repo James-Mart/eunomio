@@ -144,7 +144,7 @@ async fn happy_path_drives_partition_to_accept() {
     let (_, runs) = empty_request(
         &app.router,
         "GET",
-        &format!("/api/sessions/{session_id}/partitions/{partition_id}/runs"),
+        &format!("/api/partitions/{partition_id}/runs"),
     )
     .await;
     let survey_run_id = runs.as_array().unwrap()[0]["id"].as_i64().unwrap();
@@ -152,7 +152,7 @@ async fn happy_path_drives_partition_to_accept() {
     let (status, _) = json_request(
         &app.router,
         "POST",
-        &format!("/api/sessions/{session_id}/partitions/{partition_id}/survey/accept"),
+        &format!("/api/partitions/{partition_id}/survey/accept"),
         json!({ "runId": survey_run_id }),
     )
     .await;
@@ -163,7 +163,7 @@ async fn happy_path_drives_partition_to_accept() {
     let (_, runs) = empty_request(
         &app.router,
         "GET",
-        &format!("/api/sessions/{session_id}/partitions/{partition_id}/runs"),
+        &format!("/api/partitions/{partition_id}/runs"),
     )
     .await;
     let plan_run_id = runs.as_array().unwrap()[0]["id"].as_i64().unwrap();
@@ -171,7 +171,7 @@ async fn happy_path_drives_partition_to_accept() {
     let (status, _) = json_request(
         &app.router,
         "POST",
-        &format!("/api/sessions/{session_id}/partitions/{partition_id}/plan/accept"),
+        &format!("/api/partitions/{partition_id}/plan/accept"),
         json!({ "runId": plan_run_id }),
     )
     .await;
@@ -191,7 +191,7 @@ async fn happy_path_drives_partition_to_accept() {
     let (_, partition_body) = empty_request(
         &app.router,
         "GET",
-        &format!("/api/sessions/{session_id}/partitions/{partition_id}"),
+        &format!("/api/partitions/{partition_id}"),
     )
     .await;
     assert_eq!(
@@ -203,7 +203,7 @@ async fn happy_path_drives_partition_to_accept() {
     let (status, body) = empty_request(
         &app.router,
         "POST",
-        &format!("/api/sessions/{session_id}/partitions/{partition_id}/construct/accept"),
+        &format!("/api/partitions/{partition_id}/construct/accept"),
     )
     .await;
     assert!(
@@ -254,7 +254,7 @@ async fn happy_path_drives_partition_to_accept() {
     let (_, _) = empty_request(
         &app.router,
         "POST",
-        &format!("/api/sessions/{session_id}/partitions/{new_partition_id}/abandon"),
+        &format!("/api/partitions/{new_partition_id}/abandon"),
     )
     .await;
 }
@@ -308,14 +308,14 @@ async fn constructor_blocked_parks_at_review_and_can_re_run() {
     let (_, runs) = empty_request(
         &app.router,
         "GET",
-        &format!("/api/sessions/{session_id}/partitions/{partition_id}/runs"),
+        &format!("/api/partitions/{partition_id}/runs"),
     )
     .await;
     let survey_run_id = runs.as_array().unwrap()[0]["id"].as_i64().unwrap();
     let _ = json_request(
         &app.router,
         "POST",
-        &format!("/api/sessions/{session_id}/partitions/{partition_id}/survey/accept"),
+        &format!("/api/partitions/{partition_id}/survey/accept"),
         json!({ "runId": survey_run_id }),
     )
     .await;
@@ -323,14 +323,14 @@ async fn constructor_blocked_parks_at_review_and_can_re_run() {
     let (_, runs) = empty_request(
         &app.router,
         "GET",
-        &format!("/api/sessions/{session_id}/partitions/{partition_id}/runs"),
+        &format!("/api/partitions/{partition_id}/runs"),
     )
     .await;
     let plan_run_id = runs.as_array().unwrap()[0]["id"].as_i64().unwrap();
     let _ = json_request(
         &app.router,
         "POST",
-        &format!("/api/sessions/{session_id}/partitions/{partition_id}/plan/accept"),
+        &format!("/api/partitions/{partition_id}/plan/accept"),
         json!({ "runId": plan_run_id }),
     )
     .await;
@@ -345,7 +345,7 @@ async fn constructor_blocked_parks_at_review_and_can_re_run() {
     let (status, body) = json_request(
         &app.router,
         "POST",
-        &format!("/api/sessions/{session_id}/partitions/{partition_id}/runs"),
+        &format!("/api/partitions/{partition_id}/runs"),
         json!({ "kind": "construct", "userFeedback": "try harder" }),
     )
     .await;
@@ -392,7 +392,7 @@ async fn abandon_mid_run_cleans_up() {
     let (status, _) = empty_request(
         &app.router,
         "POST",
-        &format!("/api/sessions/{session_id}/partitions/{partition_id}/abandon"),
+        &format!("/api/partitions/{partition_id}/abandon"),
     )
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
@@ -409,7 +409,7 @@ async fn abandon_mid_run_cleans_up() {
     let _ = empty_request(
         &app.router,
         "POST",
-        &format!("/api/sessions/{session_id}/partitions/{new_partition_id}/abandon"),
+        &format!("/api/partitions/{new_partition_id}/abandon"),
     )
     .await;
 }

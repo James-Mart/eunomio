@@ -16,7 +16,6 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 
 type Props = {
-  sessionId: string;
   partitionId: number;
   plan: Plan;
   planRunId: number;
@@ -31,7 +30,6 @@ const STRATEGY_OPTIONS: { value: "auto" | PartitionStrategy; label: string }[] =
 ];
 
 export default function PlanReview({
-  sessionId,
   partitionId,
   plan,
   planRunId,
@@ -46,7 +44,7 @@ export default function PlanReview({
   const accept = async () => {
     setBusy(true);
     try {
-      await api.acceptPlan(sessionId, partitionId, planRunId);
+      await api.acceptPlan(partitionId, planRunId);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Accept failed");
     } finally {
@@ -57,7 +55,7 @@ export default function PlanReview({
   const rerun = async () => {
     setBusy(true);
     try {
-      await api.startRun(sessionId, partitionId, {
+      await api.startRun(partitionId, {
         kind: "plan",
         parentRunId: planRunId,
         userFeedback: feedback.trim() || undefined,

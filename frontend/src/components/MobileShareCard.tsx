@@ -47,11 +47,27 @@ export default function MobileShareCard() {
         attempt = 0;
       };
       source.onmessage = (ev) => {
+        let payload: TunnelStatus;
         try {
-          setStatus(JSON.parse(ev.data) as TunnelStatus);
+          payload = JSON.parse(ev.data) as TunnelStatus;
         } catch (err) {
           console.error("malformed tunnel SSE payload", err, ev.data);
+          return;
         }
+        // SSE payloads are token-redacted; preserve any token already
+        // loaded via the initial REST fetch (or a prior fetch in this
+        // tab). If we're "running" with no token cached anywhere, do
+        // a one-off refetch from the local listener so a freshly
+        // opened tab can recover the token.
+        setStatus((prev) => {
+          const merged: TunnelStatus = { ...(prev ?? {}), ...payload };
+          if (merged.state === "running" && !merged.token && !prev?.token) {
+            api.getTunnel().then((full) => {
+              if (!stopped) setStatus(full);
+            }).catch(() => {});
+          }
+          return merged;
+        });
       };
       source.onerror = () => {
         if (stopped) return;
@@ -115,7 +131,8 @@ export default function MobileShareCard() {
             <CardTitle className="text-base font-semibold">Continue on mobile</CardTitle>
           </div>
           <CardDescription className="text-xs">
-            Scan a QR code on your phone to view this session remotely.
+            Scan a QR code on your phone to access this Eunomia instance remotely. Warning:
+            the link grants full control, not just view access.
           </CardDescription>
         </CardHeader>
         <CardContent className="p-4 pt-2">
@@ -133,8 +150,9 @@ export default function MobileShareCard() {
           <DialogHeader>
             <DialogTitle>Continue on mobile</DialogTitle>
             <DialogDescription>
-              Scan this with your phone&rsquo;s camera. Anyone with this link can view every
-              session for this repo.
+              Scan this with your phone&rsquo;s camera. Anyone with this link has full control
+              of this repo&rsquo;s Eunomia instance &mdash; they can view diffs, accept or
+              abandon partitions, change settings, and trigger API-billing runs.
             </DialogDescription>
           </DialogHeader>
           <ModalBody status={status} />

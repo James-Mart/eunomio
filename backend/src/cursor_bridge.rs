@@ -3,7 +3,7 @@ use anyhow::anyhow;
 use axum::http::StatusCode;
 use rust_embed::Embed;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
@@ -26,7 +26,7 @@ pub async fn list_models(state: &AppState) -> Result<Vec<CursorModelDto>, AppErr
         .cursor_api_key
         .as_deref()
         .ok_or_else(|| unavailable("CURSOR_API_KEY not configured"))?;
-    let binary = ensure_helper_extracted().await?;
+    let binary = ensure_helper_extracted(&state.data_dir).await?;
     let output = tokio::process::Command::new(&binary)
         .arg("list-models")
         .env("CURSOR_API_KEY", api_key)
@@ -96,12 +96,10 @@ fn unavailable(message: &str) -> AppError {
     }
 }
 
-async fn ensure_helper_extracted() -> Result<PathBuf, AppError> {
+async fn ensure_helper_extracted(data_dir: &Path) -> Result<PathBuf, AppError> {
     let version = env!("CARGO_PKG_VERSION");
-    let dir = std::env::temp_dir().join(format!("eunomia-helper-{version}"));
-    tokio::fs::create_dir_all(&dir)
-        .await
-        .map_err(|e| unavailable(&format!("creating helper temp dir: {e}")))?;
+    let dir = data_dir.join("helper").join(version);
+    create_private_dir(&dir).await?;
 
     extract_helper_asset(&dir, HELPER_FILE, true).await?;
     for name in HELPER_NATIVE_FILES {
@@ -111,32 +109,52 @@ async fn ensure_helper_extracted() -> Result<PathBuf, AppError> {
     Ok(dir.join(HELPER_FILE))
 }
 
-async fn extract_helper_asset(
-    dir: &std::path::Path,
-    name: &str,
-    executable: bool,
-) -> Result<(), AppError> {
+async fn create_private_dir(dir: &Path) -> Result<(), AppError> {
+    let dir_owned = dir.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        let mut builder = std::fs::DirBuilder::new();
+        builder.recursive(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            builder.mode(0o700);
+        }
+        builder.create(&dir_owned)
+    })
+    .await
+    .map_err(|e| unavailable(&format!("spawn_blocking for helper dir: {e}")))?
+    .map_err(|e| unavailable(&format!("creating helper dir {}: {e}", dir.display())))
+}
+
+async fn extract_helper_asset(dir: &Path, name: &str, executable: bool) -> Result<(), AppError> {
     let target = dir.join(name);
     if target.exists() {
         return Ok(());
     }
     let asset = HelperAssets::get(name)
         .ok_or_else(|| unavailable(&format!("{name} not embedded in this build")))?;
-    tokio::fs::write(&target, asset.data.as_ref())
+    let tmp = dir.join(format!("{name}.tmp"));
+    tokio::fs::write(&tmp, asset.data.as_ref())
         .await
         .map_err(|e| unavailable(&format!("writing helper asset {name}: {e}")))?;
     if executable {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mut perms = tokio::fs::metadata(&target)
+            let mut perms = tokio::fs::metadata(&tmp)
                 .await
                 .map_err(|e| unavailable(&format!("stat helper asset {name}: {e}")))?
                 .permissions();
             perms.set_mode(0o755);
-            tokio::fs::set_permissions(&target, perms)
+            tokio::fs::set_permissions(&tmp, perms)
                 .await
                 .map_err(|e| unavailable(&format!("chmod helper asset {name}: {e}")))?;
+        }
+    }
+    if let Err(e) = tokio::fs::rename(&tmp, &target).await {
+        let _ = tokio::fs::remove_file(&tmp).await;
+        if !target.exists() {
+            return Err(unavailable(&format!("renaming helper asset {name}: {e}")));
         }
     }
     Ok(())
@@ -191,11 +209,12 @@ pub trait SubagentRunner: Send + Sync {
 
 pub struct CursorHelperRunner {
     api_key: Option<String>,
+    data_dir: PathBuf,
 }
 
 impl CursorHelperRunner {
-    pub fn new(api_key: Option<String>) -> Self {
-        Self { api_key }
+    pub fn new(api_key: Option<String>, data_dir: PathBuf) -> Self {
+        Self { api_key, data_dir }
     }
 }
 
@@ -210,7 +229,7 @@ impl SubagentRunner for CursorHelperRunner {
             .api_key
             .clone()
             .ok_or_else(|| unavailable("CURSOR_API_KEY not configured"))?;
-        let binary = ensure_helper_extracted().await?;
+        let binary = ensure_helper_extracted(&self.data_dir).await?;
 
         let request_json = serde_json::to_vec(&request).map_err(|e| {
             AppError::Internal(anyhow!("serializing helper run request: {e}"))

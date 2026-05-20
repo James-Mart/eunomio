@@ -12,11 +12,12 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use axum::{
-    extract::{Path, State},
-    http::StatusCode,
+    extract::{Path, Request, State},
+    http::{header, StatusCode},
+    middleware::{from_fn, Next},
     response::{
         sse::{Event, KeepAlive, Sse},
-        IntoResponse,
+        IntoResponse, Response,
     },
     routing::{get, patch, post},
     Json, Router,
@@ -54,8 +55,10 @@ pub async fn build_state(
     data_dir: PathBuf,
     cursor_api_key: Option<String>,
 ) -> Result<AppState> {
-    let runner: Arc<dyn SubagentRunner> =
-        Arc::new(CursorHelperRunner::new(cursor_api_key.clone()));
+    let runner: Arc<dyn SubagentRunner> = Arc::new(CursorHelperRunner::new(
+        cursor_api_key.clone(),
+        data_dir.clone(),
+    ));
     build_state_with_runner(repo_root, data_dir, cursor_api_key, runner).await
 }
 
@@ -112,28 +115,25 @@ pub fn router(state: AppState) -> Router {
             post(begin_partition),
         )
         .route("/api/sessions/:id/partitions", get(list_partitions))
+        .route("/api/partitions/:partition_id", get(get_partition))
         .route(
-            "/api/sessions/:id/partitions/:partition_id",
-            get(get_partition),
-        )
-        .route(
-            "/api/sessions/:id/partitions/:partition_id/runs",
+            "/api/partitions/:partition_id/runs",
             get(list_runs).post(start_run),
         )
         .route(
-            "/api/sessions/:id/partitions/:partition_id/survey/accept",
+            "/api/partitions/:partition_id/survey/accept",
             post(accept_survey),
         )
         .route(
-            "/api/sessions/:id/partitions/:partition_id/plan/accept",
+            "/api/partitions/:partition_id/plan/accept",
             post(accept_plan),
         )
         .route(
-            "/api/sessions/:id/partitions/:partition_id/construct/accept",
+            "/api/partitions/:partition_id/construct/accept",
             post(accept_construct),
         )
         .route(
-            "/api/sessions/:id/partitions/:partition_id/abandon",
+            "/api/partitions/:partition_id/abandon",
             post(abandon_partition),
         )
         .route("/api/sessions/:id/events", get(session_events))
@@ -150,12 +150,64 @@ pub fn router(state: AppState) -> Router {
 }
 
 pub async fn serve(state: AppState, port: u16) -> Result<()> {
-    let app = router(state);
+    let app = router(state).layer(from_fn(host_guard));
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     tracing::info!("eunomia listening on http://{}", addr);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+/// Reject requests whose `Host` (or `Origin`, when present) names anything
+/// other than loopback. Defends against CSRF from arbitrary sites the user
+/// has open and against DNS-rebinding reads, since browsers will happily
+/// connect to 127.0.0.1 under an attacker-controlled hostname.
+async fn host_guard(req: Request, next: Next) -> Response {
+    let host_header = req
+        .headers()
+        .get(header::HOST)
+        .and_then(|v| v.to_str().ok());
+    if !host_header.map(is_loopback_host).unwrap_or(false) {
+        return forbidden_host();
+    }
+    if let Some(origin) = req.headers().get(header::ORIGIN).and_then(|v| v.to_str().ok()) {
+        if !origin_is_loopback(origin) {
+            return forbidden_host();
+        }
+    }
+    next.run(req).await
+}
+
+fn forbidden_host() -> Response {
+    (
+        StatusCode::FORBIDDEN,
+        Json(serde_json::json!({ "error": "forbidden host", "code": "forbidden_host" })),
+    )
+        .into_response()
+}
+
+fn is_loopback_host(value: &str) -> bool {
+    let host = strip_host_port(value);
+    matches!(host, "127.0.0.1" | "localhost" | "[::1]" | "::1")
+}
+
+fn origin_is_loopback(origin: &str) -> bool {
+    let rest = origin
+        .strip_prefix("http://")
+        .or_else(|| origin.strip_prefix("https://"));
+    rest.map(is_loopback_host).unwrap_or(false)
+}
+
+fn strip_host_port(value: &str) -> &str {
+    if value.starts_with('[') {
+        if let Some(end) = value.find(']') {
+            return &value[..=end];
+        }
+    }
+    match value.rsplit_once(':') {
+        Some((host, _)) if !host.is_empty() && !host.contains(':') => host,
+        _ => value,
+    }
 }
 
 async fn create_session(
@@ -546,7 +598,7 @@ async fn tunnel_events(
     State(state): State<AppState>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let rx = state.tunnel.subscribe();
-    let initial = state.tunnel.status();
+    let initial = state.tunnel.status_redacted();
     let initial = futures::stream::iter(
         serde_json::to_string(&initial)
             .ok()
@@ -607,14 +659,14 @@ struct ListPartitionsQuery {
 
 async fn get_partition(
     State(state): State<AppState>,
-    Path((_session_id, partition_id)): Path<(String, i64)>,
+    Path(partition_id): Path<i64>,
 ) -> Result<Json<Partition>, AppError> {
     Ok(Json(state.coordinator.get_partition(&state, partition_id).await?))
 }
 
 async fn start_run(
     State(state): State<AppState>,
-    Path((_session_id, partition_id)): Path<(String, i64)>,
+    Path(partition_id): Path<i64>,
     Json(req): Json<StartRunRequest>,
 ) -> Result<(StatusCode, Json<Run>), AppError> {
     let run = state.coordinator.start_run(&state, partition_id, req).await?;
@@ -623,14 +675,14 @@ async fn start_run(
 
 async fn list_runs(
     State(state): State<AppState>,
-    Path((_session_id, partition_id)): Path<(String, i64)>,
+    Path(partition_id): Path<i64>,
 ) -> Result<Json<Vec<Run>>, AppError> {
     Ok(Json(state.coordinator.list_runs(&state, partition_id).await?))
 }
 
 async fn accept_survey(
     State(state): State<AppState>,
-    Path((_session_id, partition_id)): Path<(String, i64)>,
+    Path(partition_id): Path<i64>,
     Json(req): Json<AcceptSurveyRequest>,
 ) -> Result<Json<Partition>, AppError> {
     Ok(Json(
@@ -640,7 +692,7 @@ async fn accept_survey(
 
 async fn accept_plan(
     State(state): State<AppState>,
-    Path((_session_id, partition_id)): Path<(String, i64)>,
+    Path(partition_id): Path<i64>,
     Json(req): Json<AcceptPlanRequest>,
 ) -> Result<Json<Partition>, AppError> {
     Ok(Json(
@@ -650,7 +702,7 @@ async fn accept_plan(
 
 async fn accept_construct(
     State(state): State<AppState>,
-    Path((_session_id, partition_id)): Path<(String, i64)>,
+    Path(partition_id): Path<i64>,
 ) -> Result<StatusCode, AppError> {
     state.coordinator.accept_construct(&state, partition_id).await?;
     Ok(StatusCode::NO_CONTENT)
@@ -658,10 +710,46 @@ async fn accept_construct(
 
 async fn abandon_partition(
     State(state): State<AppState>,
-    Path((_session_id, partition_id)): Path<(String, i64)>,
+    Path(partition_id): Path<i64>,
 ) -> Result<StatusCode, AppError> {
     state.coordinator.abandon_partition(&state, partition_id).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[cfg(test)]
+mod host_guard_tests {
+    use super::*;
+
+    #[test]
+    fn allows_loopback_hosts() {
+        assert!(is_loopback_host("127.0.0.1:3001"));
+        assert!(is_loopback_host("127.0.0.1"));
+        assert!(is_loopback_host("localhost:5173"));
+        assert!(is_loopback_host("localhost"));
+        assert!(is_loopback_host("[::1]:3001"));
+        assert!(is_loopback_host("[::1]"));
+        assert!(is_loopback_host("::1"));
+    }
+
+    #[test]
+    fn rejects_non_loopback_hosts() {
+        assert!(!is_loopback_host("example.com"));
+        assert!(!is_loopback_host("example.com:3001"));
+        assert!(!is_loopback_host("evil.com"));
+        assert!(!is_loopback_host("0.0.0.0"));
+        assert!(!is_loopback_host("192.168.1.1"));
+        assert!(!is_loopback_host(""));
+    }
+
+    #[test]
+    fn origin_loopback_classification() {
+        assert!(origin_is_loopback("http://127.0.0.1:3001"));
+        assert!(origin_is_loopback("http://localhost:5173"));
+        assert!(origin_is_loopback("https://[::1]:8080"));
+        assert!(!origin_is_loopback("http://evil.com"));
+        assert!(!origin_is_loopback("evil.com"));
+        assert!(!origin_is_loopback("null"));
+    }
 }
 
 async fn session_events(
