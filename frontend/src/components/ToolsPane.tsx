@@ -15,6 +15,7 @@ type Props = {
   sessionId: string;
   nodeId: string | null;
   nodeTitle: string | null;
+  nodeDescription: string | null;
   activePartition: Partition | null;
   isCandidateSliceSelected: boolean;
   onPartitionStarted: (p: Partition) => void;
@@ -26,6 +27,7 @@ export default function ToolsPane({
   sessionId,
   nodeId,
   nodeTitle,
+  nodeDescription,
   activePartition,
   isCandidateSliceSelected,
   onPartitionStarted,
@@ -88,6 +90,7 @@ export default function ToolsPane({
             sessionId={sessionId}
             nodeId={nodeId!}
             nodeTitle={nodeTitle!}
+            nodeDescription={nodeDescription ?? ""}
             onChange={onChange}
           />
         </TabsContent>

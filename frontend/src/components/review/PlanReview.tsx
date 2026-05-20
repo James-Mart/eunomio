@@ -3,6 +3,7 @@ import { CircleAlert, PauseCircle } from "lucide-react";
 import { toast } from "sonner";
 
 import { api, type Plan, type PartitionStrategy } from "@/lib/api";
+import { useApplyPartitionSnapshot } from "@/components/SessionEventsProvider";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -25,7 +26,7 @@ type Props = {
 
 const STRATEGY_OPTIONS: { value: "auto" | PartitionStrategy; label: string }[] = [
   { value: "auto", label: "Auto (let planner choose)" },
-  { value: "semantic", label: "Semantic" },
+  { value: "synthetic", label: "Synthetic" },
   { value: "vertical", label: "Vertical" },
   { value: "horizontal", label: "Horizontal" },
 ];
@@ -41,11 +42,13 @@ export default function PlanReview({
     "auto" | PartitionStrategy
   >("auto");
   const [busy, setBusy] = useState(false);
+  const applyPartitionSnapshot = useApplyPartitionSnapshot();
 
   const accept = async () => {
     setBusy(true);
     try {
-      await api.acceptPlan(partitionId, planRunId);
+      const updated = await api.acceptPlan(partitionId, planRunId);
+      applyPartitionSnapshot(updated);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Accept failed");
     } finally {

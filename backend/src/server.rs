@@ -14,7 +14,7 @@ use anyhow::{Context, Result};
 use axum::{
     extract::{Path, Request, State},
     http::{header, StatusCode},
-    middleware::{from_fn, Next},
+    middleware::{from_fn_with_state, Next},
     response::{
         sse::{Event, KeepAlive, Sse},
         IntoResponse, Response,
@@ -37,7 +37,7 @@ pub struct AppStateInner {
     pub data_dir: PathBuf,
     pub db: Connection,
     pub cursor_api_key: Option<String>,
-    pub cursor_models: OnceCell<Vec<CursorModelDto>>,
+    pub cursor_models: OnceCell<Vec<CursorModel>>,
     pub partition_settings: PartitionSettingsStore,
     pub coordinator: Coordinator,
     pub tunnel: TunnelRegistry,
@@ -156,7 +156,7 @@ pub fn router(state: AppState) -> Router {
 }
 
 pub async fn serve(state: AppState, port: u16) -> Result<()> {
-    let app = router(state).layer(from_fn(host_guard));
+    let app = router(state.clone()).layer(from_fn_with_state(state, host_guard));
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     tracing::info!("eunomia listening on http://{}", addr);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
@@ -168,7 +168,17 @@ pub async fn serve(state: AppState, port: u16) -> Result<()> {
 /// other than loopback. Defends against CSRF from arbitrary sites the user
 /// has open and against DNS-rebinding reads, since browsers will happily
 /// connect to 127.0.0.1 under an attacker-controlled hostname.
-async fn host_guard(req: Request, next: Next) -> Response {
+///
+/// In `--dev-tunnel` mode we additionally accept `Origin` headers that name a
+/// `*.trycloudflare.com` subdomain. The browser loads the UI from the public
+/// cloudflared URL and Vite proxies `/api/*` to the backend with
+/// `changeOrigin: true` (which rewrites `Host` to loopback) but leaves the
+/// original `Origin` intact. Without this exemption every mutating request
+/// through the dev tunnel 403s; with it, the production CSRF/DNS-rebinding
+/// defence still applies to every other deployment. The dev tunnel skips the
+/// share-token gate by design, so allowing this origin does not weaken any
+/// guarantee that wasn't already waived for dev.
+async fn host_guard(State(state): State<AppState>, req: Request, next: Next) -> Response {
     let host_header = req
         .headers()
         .get(header::HOST)
@@ -177,7 +187,8 @@ async fn host_guard(req: Request, next: Next) -> Response {
         return forbidden_host();
     }
     if let Some(origin) = req.headers().get(header::ORIGIN).and_then(|v| v.to_str().ok()) {
-        if !origin_is_loopback(origin) {
+        let dev_origin_ok = state.tunnel.dev_mode() && origin_is_dev_tunnel(origin);
+        if !origin_is_loopback(origin) && !dev_origin_ok {
             return forbidden_host();
         }
     }
@@ -204,6 +215,23 @@ fn origin_is_loopback(origin: &str) -> bool {
     rest.map(is_loopback_host).unwrap_or(false)
 }
 
+/// Matches origins of the form `https://<sub>.trycloudflare.com`, where
+/// `<sub>` is a single non-empty label of ASCII letters, digits, or hyphens
+/// (the format cloudflared's Quick Tunnel issues, and the same shape matched
+/// by the URL regex in `tunnel.rs`). Used only when `--dev-tunnel` is active.
+fn origin_is_dev_tunnel(origin: &str) -> bool {
+    let Some(rest) = origin.strip_prefix("https://") else {
+        return false;
+    };
+    let host = strip_host_port(rest);
+    let Some(sub) = host.strip_suffix(".trycloudflare.com") else {
+        return false;
+    };
+    !sub.is_empty()
+        && !sub.contains('.')
+        && sub.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+}
+
 fn strip_host_port(value: &str) -> &str {
     if value.starts_with('[') {
         if let Some(end) = value.find(']') {
@@ -219,11 +247,11 @@ fn strip_host_port(value: &str) -> &str {
 async fn create_session(
     State(state): State<AppState>,
     Json(req): Json<CreateSessionRequest>,
-) -> Result<(StatusCode, Json<SessionDto>), AppError> {
+) -> Result<(StatusCode, Json<Session>), AppError> {
     let base_ref = req.base_ref.clone();
     let source_ref = req.source_ref.clone();
     let (created, outcome) = sessions::create(&state, req).await?;
-    let dto = SessionDto {
+    let dto = Session {
         id: created.id,
         base_ref,
         source_ref,
@@ -239,9 +267,9 @@ async fn create_session(
 
 async fn list_sessions(
     State(state): State<AppState>,
-) -> Result<Json<Vec<SessionDto>>, AppError> {
+) -> Result<Json<Vec<Session>>, AppError> {
     let repo_root = state.repo_root.to_string_lossy().to_string();
-    let rows: Vec<SessionDto> = state
+    let rows: Vec<Session> = state
         .db
         .call(move |conn| {
             let mut stmt = conn.prepare(
@@ -250,7 +278,7 @@ async fn list_sessions(
             )?;
             let rows = stmt
                 .query_map(tokio_rusqlite::params![repo_root], |row| {
-                    Ok(SessionDto {
+                    Ok(Session {
                         id: row.get(0)?,
                         base_ref: row.get(1)?,
                         source_ref: row.get(2)?,
@@ -268,9 +296,9 @@ async fn list_sessions(
 async fn get_session(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<Json<SessionDto>, AppError> {
+) -> Result<Json<Session>, AppError> {
     let repo_root = state.repo_root.to_string_lossy().to_string();
-    let row: Option<SessionDto> = state
+    let row: Option<Session> = state
         .db
         .call(move |conn| {
             let mut stmt = conn.prepare(
@@ -279,7 +307,7 @@ async fn get_session(
             )?;
             let mut rows = stmt.query(tokio_rusqlite::params![id, repo_root])?;
             if let Some(row) = rows.next()? {
-                Ok(Some(SessionDto {
+                Ok(Some(Session {
                     id: row.get(0)?,
                     base_ref: row.get(1)?,
                     source_ref: row.get(2)?,
@@ -297,9 +325,9 @@ async fn get_session(
 async fn get_graph(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> Result<Json<GraphDto>, AppError> {
+) -> Result<Json<Graph>, AppError> {
     let repo_root = state.repo_root.to_string_lossy().to_string();
-    let nodes: Vec<NodeDto> = state
+    let nodes: Vec<GraphNode> = state
         .db
         .call(move |conn| {
             let mut session_stmt =
@@ -312,17 +340,18 @@ async fn get_graph(
                 return Ok(Vec::new());
             }
             let mut stmt = conn.prepare(
-                "SELECT node_id, parent_node_id, tree_sha, commit_sha, title \
+                "SELECT node_id, parent_node_id, tree_sha, commit_sha, title, description \
                  FROM nodes WHERE session_id = ?1 ORDER BY created_at",
             )?;
             let rows = stmt
                 .query_map(tokio_rusqlite::params![id], |row| {
-                    Ok(NodeDto {
+                    Ok(GraphNode {
                         node_id: row.get(0)?,
                         parent_node_id: row.get(1)?,
                         tree_sha: row.get(2)?,
                         commit_sha: row.get(3)?,
                         title: row.get(4)?,
+                        description: row.get(5)?,
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
@@ -334,37 +363,37 @@ async fn get_graph(
         return Err(AppError::NotFound);
     }
 
-    let edges: Vec<GraphEdgeDto> = nodes
+    let edges: Vec<GraphEdge> = nodes
         .iter()
         .filter_map(|n| {
-            n.parent_node_id.as_ref().map(|p| GraphEdgeDto {
+            n.parent_node_id.as_ref().map(|p| GraphEdge {
                 from: p.clone(),
                 to: n.node_id.clone(),
             })
         })
         .collect();
-    Ok(Json(GraphDto { nodes, edges }))
+    Ok(Json(Graph { nodes, edges }))
 }
 
 async fn get_edge(
     State(state): State<AppState>,
     Path((session_id, target_node_id)): Path<(String, String)>,
-) -> Result<Json<EdgeDto>, AppError> {
+) -> Result<Json<Edge>, AppError> {
     let repo_root = state.repo_root.to_string_lossy().to_string();
     let session_id_for_lookup = session_id.clone();
     let target_for_lookup = target_node_id.clone();
-    let lookup: Option<(String, Option<String>, Option<String>)> = state
+    let lookup: Option<(String, Option<String>, Option<String>, String)> = state
         .db
         .call(move |conn| {
-            let mut session_stmt =
-                conn.prepare("SELECT 1 FROM sessions WHERE id = ?1 AND repo_root = ?2")?;
-            let session_present = session_stmt
-                .query(tokio_rusqlite::params![session_id_for_lookup, repo_root])?
-                .next()?
-                .is_some();
-            if !session_present {
+            let mut session_stmt = conn.prepare(
+                "SELECT final_tree FROM sessions WHERE id = ?1 AND repo_root = ?2",
+            )?;
+            let mut session_rows = session_stmt
+                .query(tokio_rusqlite::params![session_id_for_lookup, repo_root])?;
+            let Some(session_row) = session_rows.next()? else {
                 return Ok(None);
-            }
+            };
+            let final_tree: String = session_row.get(0)?;
             let mut target_stmt = conn.prepare(
                 "SELECT tree_sha, parent_node_id FROM nodes WHERE session_id = ?1 AND node_id = ?2",
             )?;
@@ -390,25 +419,35 @@ async fn get_edge(
                 }
                 None => None,
             };
-            Ok(Some((target_tree, parent_node_id, parent_tree)))
+            Ok(Some((target_tree, parent_node_id, parent_tree, final_tree)))
         })
         .await?;
 
-    let Some((target_tree, parent_node_id, parent_tree)) = lookup else {
+    let Some((target_tree, parent_node_id, parent_tree, final_tree)) = lookup else {
         return Err(AppError::NotFound);
     };
 
-    let diff = match (&parent_node_id, &parent_tree) {
+    let (diff, synthesized) = match (&parent_node_id, &parent_tree) {
         (Some(_), Some(parent_tree)) => {
-            crate::git::diff_text(&state.repo_root, parent_tree, &target_tree).await?
+            let diff =
+                crate::git::diff_text(&state.repo_root, parent_tree, &target_tree).await?;
+            let synthesized = crate::synthesized_content::compute(
+                &state.repo_root,
+                parent_tree,
+                &target_tree,
+                &final_tree,
+            )
+            .await?;
+            (diff, synthesized)
         }
-        _ => String::new(),
+        _ => (String::new(), Default::default()),
     };
 
-    Ok(Json(EdgeDto {
+    Ok(Json(Edge {
         target_node_id,
         parent_node_id,
         diff,
+        synthesized,
     }))
 }
 
@@ -417,30 +456,38 @@ async fn get_edge(
 struct DiffQuery {
     from_tree: String,
     to_tree: String,
+    #[serde(default)]
+    reference_tree: Option<String>,
 }
 
 async fn get_diff(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
     axum::extract::Query(q): axum::extract::Query<DiffQuery>,
-) -> Result<Json<DiffDto>, AppError> {
+) -> Result<Json<Diff>, AppError> {
     let repo_root = state.repo_root.to_string_lossy().to_string();
     let id_for_lookup = session_id.clone();
     let from_tree_lookup = q.from_tree.clone();
     let to_tree_lookup = q.to_tree.clone();
-    let allowed = state
+    let reference_tree_lookup = q.reference_tree.clone();
+    let lookup: Option<String> = state
         .db
         .call(move |conn| {
-            let mut session_stmt =
-                conn.prepare("SELECT 1 FROM sessions WHERE id = ?1 AND repo_root = ?2")?;
-            let session_present = session_stmt
-                .query(tokio_rusqlite::params![id_for_lookup, repo_root])?
-                .next()?
-                .is_some();
-            if !session_present {
-                return Ok(false);
+            let mut session_stmt = conn.prepare(
+                "SELECT final_tree FROM sessions WHERE id = ?1 AND repo_root = ?2",
+            )?;
+            let mut session_rows = session_stmt
+                .query(tokio_rusqlite::params![id_for_lookup, repo_root])?;
+            let Some(session_row) = session_rows.next()? else {
+                return Ok(None);
+            };
+            let final_tree: String = session_row.get(0)?;
+            let mut trees_to_check: Vec<String> =
+                vec![from_tree_lookup.clone(), to_tree_lookup.clone()];
+            if let Some(ref r) = reference_tree_lookup {
+                trees_to_check.push(r.clone());
             }
-            for tree in [&from_tree_lookup, &to_tree_lookup] {
+            for tree in &trees_to_check {
                 let mut found = false;
                 let mut nodes_stmt = conn.prepare(
                     "SELECT 1 FROM nodes WHERE session_id = ?1 AND tree_sha = ?2 LIMIT 1",
@@ -465,20 +512,29 @@ async fn get_diff(
                     }
                 }
                 if !found {
-                    return Ok(false);
+                    return Ok(None);
                 }
             }
-            Ok(true)
+            Ok(Some(final_tree))
         })
         .await?;
-    if !allowed {
+    let Some(final_tree) = lookup else {
         return Err(AppError::NotFound);
-    }
+    };
     let diff = crate::git::diff_text(&state.repo_root, &q.from_tree, &q.to_tree).await?;
-    Ok(Json(DiffDto {
+    let reference_tree = q.reference_tree.as_deref().unwrap_or(&final_tree);
+    let synthesized = crate::synthesized_content::compute(
+        &state.repo_root,
+        &q.from_tree,
+        &q.to_tree,
+        reference_tree,
+    )
+    .await?;
+    Ok(Json(Diff {
         from_tree: q.from_tree,
         to_tree: q.to_tree,
         diff,
+        synthesized,
     }))
 }
 
@@ -486,12 +542,12 @@ async fn rename_node(
     State(state): State<AppState>,
     Path((session_id, node_id)): Path<(String, String)>,
     Json(req): Json<RenameNodeRequest>,
-) -> Result<Json<NodeDto>, AppError> {
+) -> Result<Json<GraphNode>, AppError> {
     if req.title.trim().is_empty() {
         return Err(AppError::BadRequest("title must be non-empty".into()));
     }
     let repo_root = state.repo_root.to_string_lossy().to_string();
-    let updated: Option<NodeDto> = state
+    let updated: Option<GraphNode> = state
         .db
         .call(move |conn| {
             let mut session_stmt =
@@ -511,17 +567,18 @@ async fn rename_node(
                 return Ok(None);
             }
             let mut stmt = conn.prepare(
-                "SELECT node_id, parent_node_id, tree_sha, commit_sha, title \
+                "SELECT node_id, parent_node_id, tree_sha, commit_sha, title, description \
                  FROM nodes WHERE session_id = ?1 AND node_id = ?2",
             )?;
             let mut rows = stmt.query(tokio_rusqlite::params![session_id, node_id])?;
             if let Some(row) = rows.next()? {
-                Ok(Some(NodeDto {
+                Ok(Some(GraphNode {
                     node_id: row.get(0)?,
                     parent_node_id: row.get(1)?,
                     tree_sha: row.get(2)?,
                     commit_sha: row.get(3)?,
                     title: row.get(4)?,
+                    description: row.get(5)?,
                 }))
             } else {
                 Ok(None)
@@ -561,7 +618,7 @@ async fn patch_partition_settings(
 
 async fn get_cursor_models(
     State(state): State<AppState>,
-) -> Result<Json<CursorModelsDto>, AppError> {
+) -> Result<Json<CursorModels>, AppError> {
     if state.cursor_api_key.is_none() {
         return Err(AppError::Unrecoverable {
             status: StatusCode::SERVICE_UNAVAILABLE,
@@ -573,23 +630,23 @@ async fn get_cursor_models(
         .cursor_models
         .get_or_try_init(|| crate::cursor_bridge::list_models(&state))
         .await?;
-    Ok(Json(CursorModelsDto {
+    Ok(Json(CursorModels {
         models: models.clone(),
     }))
 }
 
-async fn get_repo_info(State(state): State<AppState>) -> Result<Json<RepoInfoDto>, AppError> {
+async fn get_repo_info(State(state): State<AppState>) -> Result<Json<RepoInfo>, AppError> {
     let current_branch = crate::git::current_branch(&state.repo_root).await?;
-    Ok(Json(RepoInfoDto { current_branch }))
+    Ok(Json(RepoInfo { current_branch }))
 }
 
-async fn get_tunnel(State(state): State<AppState>) -> Json<TunnelStatusDto> {
+async fn get_tunnel(State(state): State<AppState>) -> Json<TunnelStatus> {
     Json(state.tunnel.status())
 }
 
 async fn start_tunnel(
     State(state): State<AppState>,
-) -> Result<Json<TunnelStatusDto>, AppError> {
+) -> Result<Json<TunnelStatus>, AppError> {
     let auth_router = router(state.clone());
     let dto = state.tunnel.start(auth_router).await?;
     Ok(Json(dto))
@@ -766,6 +823,48 @@ mod host_guard_tests {
         assert!(!origin_is_loopback("http://evil.com"));
         assert!(!origin_is_loopback("evil.com"));
         assert!(!origin_is_loopback("null"));
+    }
+
+    #[test]
+    fn accepts_dev_tunnel_origins() {
+        assert!(origin_is_dev_tunnel(
+            "https://tee-left-stood-ping.trycloudflare.com"
+        ));
+        assert!(origin_is_dev_tunnel("https://abc123.trycloudflare.com"));
+        assert!(origin_is_dev_tunnel(
+            "https://a-b-c-1-2-3.trycloudflare.com"
+        ));
+    }
+
+    #[test]
+    fn rejects_non_dev_tunnel_origins() {
+        // http:// is rejected — quick tunnels are always https.
+        assert!(!origin_is_dev_tunnel(
+            "http://tee-left-stood-ping.trycloudflare.com"
+        ));
+        // Bare apex is rejected (no subdomain).
+        assert!(!origin_is_dev_tunnel("https://trycloudflare.com"));
+        assert!(!origin_is_dev_tunnel("https://.trycloudflare.com"));
+        // Multi-label subdomain is rejected — quick tunnels are single-label.
+        assert!(!origin_is_dev_tunnel(
+            "https://foo.bar.trycloudflare.com"
+        ));
+        // Suffix-spoofing must not match.
+        assert!(!origin_is_dev_tunnel(
+            "https://attacker-trycloudflare.com"
+        ));
+        assert!(!origin_is_dev_tunnel(
+            "https://sub.trycloudflare.com.evil.com"
+        ));
+        // Disallowed characters in the label.
+        assert!(!origin_is_dev_tunnel(
+            "https://has_underscore.trycloudflare.com"
+        ));
+        assert!(!origin_is_dev_tunnel("https://has space.trycloudflare.com"));
+        // Other schemes / shapes.
+        assert!(!origin_is_dev_tunnel("ftp://sub.trycloudflare.com"));
+        assert!(!origin_is_dev_tunnel("https://evil.com"));
+        assert!(!origin_is_dev_tunnel("null"));
     }
 }
 

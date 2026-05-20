@@ -37,6 +37,13 @@ struct Cli {
     /// Hidden from --help.
     #[arg(long, hide = true)]
     dev_tunnel: bool,
+
+    /// With `--dev-tunnel`: auto-start the cloudflared tunnel at boot and
+    /// print the trycloudflare URL to stdout. Lets `npm run dev` re-share
+    /// automatically on every backend rebuild without UI access.
+    /// Hidden from --help.
+    #[arg(long, hide = true, requires = "dev_tunnel")]
+    start_tunnel: bool,
 }
 
 #[tokio::main]
@@ -109,6 +116,19 @@ async fn main() -> Result<()> {
 
     let state =
         eunomia::server::build_state(repo_root, data_dir, cursor_api_key, args.dev_tunnel).await?;
+
+    if args.start_tunnel {
+        let dto = state
+            .tunnel
+            .start(eunomia::server::router(state.clone()))
+            .await
+            .map_err(|e| anyhow::anyhow!("--start-tunnel: {e:?}"))?;
+        let url = dto
+            .url
+            .context("--start-tunnel: tunnel reported running but no URL")?;
+        println!("{url}");
+    }
+
     eunomia::server::serve(state, args.port).await
 }
 

@@ -81,11 +81,7 @@ export default function PartitionTab({
     activeLifecycle?.construct,
   ]);
 
-  const states: LifecycleStates = {
-    survey: activeLifecycle?.survey ?? "pending",
-    plan: activeLifecycle?.plan ?? "pending",
-    construct: activeLifecycle?.construct ?? "pending",
-  };
+  const states = deriveStepperStates(activeLifecycle);
 
   const phase = derivePhase(activeLifecycle);
 
@@ -193,9 +189,22 @@ function derivePhase(lifecycle: Lifecycle | undefined): Phase {
   if (lifecycle.cancelledAt) return "cancelled";
   if (lifecycle.finishedAt) return "finished";
   if (lifecycle.construct === "awaiting_review") return "awaitingConstruct";
+  if (lifecycle.construct === "running") return "running";
   if (lifecycle.plan === "awaiting_review") return "awaitingPlan";
+  if (lifecycle.plan === "running") return "running";
   if (lifecycle.survey === "awaiting_review") return "awaitingSurvey";
   return "running";
+}
+
+function deriveStepperStates(lc: Lifecycle | undefined): LifecycleStates {
+  const survey = lc?.survey ?? "pending";
+  const plan = lc?.plan ?? "pending";
+  const construct = lc?.construct ?? "pending";
+  return {
+    survey: plan !== "pending" || construct !== "pending" ? "done" : survey,
+    plan: construct !== "pending" ? "done" : plan,
+    construct,
+  };
 }
 
 function BeginView({

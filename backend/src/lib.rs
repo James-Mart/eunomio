@@ -9,5 +9,6 @@ pub mod partition_settings;
 pub mod server;
 pub mod sessions;
 pub mod subagents;
+pub mod synthesized_content;
 pub mod tunnel;
 pub mod types;

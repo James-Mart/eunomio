@@ -155,14 +155,14 @@ subagents do the work:
   structured ChangeSurvey: a summary plus a list of independent **themes**
   it identified. Read-only.
 - **Planner** — reads the ChangeSurvey plus the diff, **decides the
-  Partition strategy** (Semantic / Vertical / Horizontal — see below), and
+  Partition strategy** (Synthetic / Vertical / Horizontal — see below), and
   emits a Plan: a `strategy` value, a one-sentence rationale, and **exactly
   two edge descriptions** in order. `edges[0]` is the Slice the Constructor
   will build; `edges[1]` is the leftover edge (informational; never
   explicitly constructed because its tree is the target's existing tree).
   Both edge titles will become commit subjects on branch creation. Read-only.
-- **Constructor** — given the accepted Plan, edits the Partition's synthesis
-  worktree so that the worktree tree matches the Slice the Plan describes.
+- **Constructor** — given the accepted Plan, edits the Partition's worktree
+  so that the worktree tree matches the Slice the Plan describes.
   Returns exactly one line: `OK` or `BLOCKED: <reason>`. The only writable
   subagent.
 
@@ -177,7 +177,7 @@ materialise diffs for subagents do the same.
 
 | Strategy       | Intent                                                                                                       | Slice shape                                                                |
 | -------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
-| **Semantic**   | Extract one topically coherent theme.                                                                         | A cohesive cluster of changes that reviews well on its own.                |
+| **Synthetic**  | Extract one topically coherent theme that requires a synthesized intermediate to separate cleanly from the rest. | A slice tree containing content in neither BeforeTree nor TargetTree, chosen so the slice expresses the theme without applying any other. |
 | **Vertical**   | Extract a thin end-to-end tracer-bullet slice that cuts through every layer touched by the diff.              | The slice and the leftover both make end-to-end sense in isolation.         |
 | **Horizontal** | Extract one architectural layer.                                                                              | The slice owns one layer; the leftover owns the other layers in foundation order. |
 
@@ -238,7 +238,7 @@ A Partition row is keyed by an autoincrement `id` and carries:
 - `candidate_slice_tree_sha`, `candidate_slice_commit_sha` (nullable; set
   when the Constructor returns OK and `afterConstruct` is on, or just before
   Acceptance when it's off)
-- `worktree_path` — the Partition's own synthesis worktree (see §4)
+- `worktree_path` — the Partition's own worktree (see §4)
 
 The row exists only between Begin and a terminal action. Acceptance and
 Abandon both delete it. The Session's record that a Partition ever
@@ -312,12 +312,12 @@ The base commit and final commit used in the graph are **fresh
 commits. This decouples Eunomia's history from the user's branch history and
 guarantees the parent chain of Nodes is exactly what Eunomia wrote.
 
-### Per-Partition synthesis worktrees
+### Per-Partition worktrees
 
 Each pending Partition owns its own git worktree:
 
 ```
-<DATA_DIR>/worktrees/<sessionId>/<partitionId>/synthesis/
+<DATA_DIR>/worktrees/<sessionId>/<partitionId>/worktree/
 ```
 
 It is added with `git worktree add --detach <path> <parent.commit_sha>` in
@@ -447,14 +447,14 @@ history is self-contained and shareable.
   created, it can itself be the target of future Partitions.
 - A given target Node can have many Partitions pending at once; Accepting
   any one of them auto-Abandons the others.
-- Branch creation never modifies the graph or any synthesis worktree.
+- Branch creation never modifies the graph or any Partition worktree.
 
 ---
 
 ## 5. Subagents
 
 Three single-purpose AI agents, invoked via the Cursor SDK with `cwd` set
-to the Partition's synthesis worktree.
+to the Partition's worktree.
 
 | Agent         | Reads                                                                                   | Writes                | Output                                                                                                                                                  |
 | ------------- | --------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -469,17 +469,21 @@ The Constructor is the only writable agent. Its prompt instructs it to:
 - Treat `git show <target.tree>:<path>` as the source of truth under
   `Vertical` and `Horizontal` strategies: every line written must come from
   TargetTree, the strategy is a strict subset of the original diff's hunks,
-  no intermediate code states are invented.
-- Under `Semantic` strategy the "no invented code" rule is **relaxed**:
-  the Constructor may synthesize intermediate code states that appear in
-  neither BeforeTree nor TargetTree, where required to apply one theme
-  cleanly without applying another. The composition of slice + leftover
-  must still reach TargetTree exactly; intermediates are minimal and
-  exist only inside the slice's tree.
-- If the slice the Plan describes is not extractable without violating the
-  strategy's scope rules (e.g. a Vertical slice would require importing
-  hunks the leftover owns; a Semantic slice would require touching a theme
-  not in scope), return `BLOCKED: <reason>` instead.
+  no intermediate code states are synthesized.
+- Under `Synthetic` strategy the source-of-truth rule is different:
+  the slice's tree must contain a synthesized intermediate — content
+  present in neither BeforeTree nor TargetTree — chosen so the slice
+  expresses one theme without applying any other. The composition of
+  slice + leftover must still reach TargetTree exactly; the
+  intermediate is the smallest one that achieves theme isolation and
+  exists only inside the slice's tree.
+- If the slice the Plan describes is not extractable under its
+  strategy, return `BLOCKED: <reason>` instead. Triggers include:
+  a Vertical slice that would require importing hunks the leftover
+  owns; a Synthetic slice that would require pulling in another
+  theme's intent; and — specific to Synthetic — a slice that does not
+  need a synthesized intermediate at all, which means the Planner
+  should re-plan it as `Vertical` or `Horizontal`.
 
 ### Subagent definitions on disk
 
@@ -578,7 +582,7 @@ executing at a time).
 
 - `POST /api/sessions/:id/edges/:targetNodeId/partition` — Begin a new
   Partition. No body. Creates the row, creates the Partition's worktree at
-  `<DATA_DIR>/worktrees/<id>/<partitionId>/synthesis/`. Returns the new
+  `<DATA_DIR>/worktrees/<id>/<partitionId>/worktree/`. Returns the new
   `Partition` with its `partitionId`.
 - `GET /api/sessions/:id/partitions?targetNodeId=...` — list pending
   Partitions, optionally filtered by target.

@@ -1,6 +1,6 @@
 # Partition mutates the graph in place; no leaf-alternative preservation
 
-A Partition adds exactly one new Slice Node between the target Node and its prior parent, reparents the target onto the Slice, rewrites the target's Title to the Planner's description of the leftover edge, and removes its synthesis worktree. The original target is **not** preserved as a leaf alternative; the graph after a Partition is a strictly linear extension of the chain, not a branching DAG.
+A Partition adds exactly one new Slice Node between the target Node and its prior parent, reparents the target onto the Slice, rewrites the target's Title to the Planner's description of the leftover edge, and removes its Partition worktree. The original target is **not** preserved as a leaf alternative; the graph after a Partition is a strictly linear extension of the chain, not a branching DAG.
 
 The alternative we rejected was preserving the original target as a leaf alternative parented on its original parent — letting the user always inspect "what the chain looked like before this Partition." This is a real and legible feature in isolation; it shapes a graph that grows monotonically and never loses information.
 

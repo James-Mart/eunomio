@@ -20,15 +20,54 @@ const STEPS: { name: PhaseName; label: string; icon: LucideIcon }[] = [
 export type LifecycleStateValue = PhaseState | "pending" | "done";
 export type LifecycleStates = Record<PhaseName, LifecycleStateValue>;
 
-export function LifecycleStepper({ states }: { states: LifecycleStates }) {
+const PHASE_ORDER: readonly PhaseName[] = ["survey", "plan", "construct"];
+
+export function lifecycleStatesFromPhase(
+  phase: PhaseName,
+  phaseState: PhaseState,
+): LifecycleStates {
+  const activeIdx = PHASE_ORDER.indexOf(phase);
+  const out = {} as LifecycleStates;
+  PHASE_ORDER.forEach((name, idx) => {
+    if (idx < activeIdx) out[name] = "done";
+    else if (idx === activeIdx) out[name] = phaseState;
+    else out[name] = "pending";
+  });
+  return out;
+}
+
+export function LifecycleStepper({
+  states,
+  compact = false,
+}: {
+  states: LifecycleStates;
+  compact?: boolean;
+}) {
   return (
-    <ol className="flex w-full items-center gap-2" aria-label="Partition lifecycle">
+    <ol
+      className={cn(
+        "flex items-center",
+        compact ? "gap-1" : "w-full gap-2",
+      )}
+      aria-label="Partition lifecycle"
+    >
       {STEPS.map((step, idx) => {
         const state = states[step.name];
-        const showSeparator = idx < STEPS.length - 1;
+        const showSeparator = !compact && idx < STEPS.length - 1;
         return (
-          <li key={step.name} className="flex flex-1 items-center gap-2">
-            <Step label={step.label} icon={step.icon} state={state} />
+          <li
+            key={step.name}
+            className={cn(
+              "flex items-center",
+              compact ? "" : "flex-1 gap-2",
+            )}
+          >
+            <Step
+              label={step.label}
+              icon={step.icon}
+              state={state}
+              compact={compact}
+            />
             {showSeparator && <div className="h-px flex-1 bg-border" aria-hidden />}
           </li>
         );
@@ -41,16 +80,27 @@ function Step({
   label,
   icon: Icon,
   state,
+  compact,
 }: {
   label: string;
   icon: LucideIcon;
   state: LifecycleStateValue;
+  compact: boolean;
 }) {
   const StatusIcon = statusIconFor(state, Icon);
   const color = colorFor(state);
+  const pulse = state === "running" ? "animate-pulse" : "";
+  if (compact) {
+    return (
+      <StatusIcon
+        className={cn("h-4 w-4 shrink-0", color, pulse)}
+        aria-label={`${label}: ${state}`}
+      />
+    );
+  }
   return (
     <div className="flex items-center gap-1.5 whitespace-nowrap">
-      <StatusIcon className={cn("h-4 w-4 shrink-0", color)} aria-hidden />
+      <StatusIcon className={cn("h-4 w-4 shrink-0", color, pulse)} aria-hidden />
       <span className={cn("text-xs md:text-sm", color)}>{label}</span>
     </div>
   );
@@ -72,14 +122,14 @@ function statusIconFor(state: LifecycleStateValue, fallback: LucideIcon): Lucide
 function colorFor(state: LifecycleStateValue): string {
   switch (state) {
     case "pending":
-      return "text-muted-foreground";
+      return "text-muted-foreground/50";
     case "running":
-      return "text-primary";
+      return "text-amber-500";
     case "awaiting_review":
-      return "text-primary";
+      return "text-red-500";
     case "done":
-      return "text-emerald-600";
+      return "text-emerald-500";
     case "error":
-      return "text-destructive";
+      return "text-red-500";
   }
 }

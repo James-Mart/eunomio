@@ -67,7 +67,7 @@ flowchart TD
 
 **Abandon.** A one-click action available from every non-terminal state, including with a run in flight. Sends `SIGTERM` to the helper subprocess so the SDK's server-side compute stops billing as quickly as possible (SIGKILL would leave it running until natural completion), deletes the Partition row, and removes the Partition's worktree.
 
-**Parallel Partitions.** Each Partition owns its own synthesis worktree, so Constructors from different Partitions run literally in parallel. The constraint is one actively-running phase per `(session, target)` at any moment; sibling Partitions on the same target sit at their review gates while one of them executes.
+**Parallel Partitions.** Each Partition owns its own worktree, so Constructors from different Partitions run literally in parallel. The constraint is one actively-running phase per `(session, target)` at any moment; sibling Partitions on the same target sit at their review gates while one of them executes.
 
 ## Graph mutation per partition
 
@@ -130,7 +130,7 @@ To put it on your PATH, symlink it to a directory already on `$PATH`:
 ln -sf /path/to/eunomia/target/release/eunomia ~/.local/bin/eunomia
 ```
 
-State (SQLite DB + per-Partition synthesis worktrees) lives in `~/.eunomia/`, shared across every repo a user runs Eunomia against.
+State (SQLite DB + per-Partition worktrees) lives in `~/.eunomia/`, shared across every repo a user runs Eunomia against.
 
 ### Trust model
 

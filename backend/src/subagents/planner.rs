@@ -17,7 +17,7 @@ pub enum PlanOutput {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum PlanStrategy {
-    Semantic,
+    Synthetic,
     Vertical,
     Horizontal,
 }
@@ -175,7 +175,7 @@ mod tests {
         let raw = r#"```json
 {
   "outcome": "split",
-  "strategy": "semantic",
+  "strategy": "synthetic",
   "strategyRationale": "the diff has two clearly separated concerns",
   "edges": [
     { "id": "slice", "title": "Add config loader", "description": "Extract loader." },
@@ -186,7 +186,7 @@ mod tests {
         let parsed = parse_output(raw).unwrap();
         match parsed {
             PlanOutput::Split { strategy, edges, .. } => {
-                assert_eq!(strategy, PlanStrategy::Semantic);
+                assert_eq!(strategy, PlanStrategy::Synthetic);
                 assert_eq!(edges.len(), 2);
                 assert_eq!(edges[0].id, "slice");
             }

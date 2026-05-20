@@ -165,16 +165,16 @@ impl Coordinator {
                         .and_then(|n| n.to_str())
                         .unwrap_or("");
                     let pid_opt = name.parse::<i64>().ok();
-                    let synthesis = part_path.join("synthesis");
-                    if !synthesis.exists() {
+                    let worktree = part_path.join("worktree");
+                    if !worktree.exists() {
                         continue;
                     }
                     let alive = pid_opt.map(|p| alive_ids.contains(&p)).unwrap_or(false);
                     if alive {
                         continue;
                     }
-                    tracing::info!(path = %synthesis.display(), "removing orphan partition worktree");
-                    if let Err(e) = git::worktree_remove(&state.repo_root, &synthesis).await {
+                    tracing::info!(path = %worktree.display(), "removing orphan partition worktree");
+                    if let Err(e) = git::worktree_remove(&state.repo_root, &worktree).await {
                         tracing::warn!(error = %e, "removing orphan worktree failed");
                     }
                     let _ = tokio::fs::remove_dir_all(&part_path).await;
@@ -249,7 +249,7 @@ impl Coordinator {
 
         let worktree_path = worktree_root
             .join(inserted_id.to_string())
-            .join("synthesis");
+            .join("worktree");
         if let Some(parent_dir) = worktree_path.parent() {
             tokio::fs::create_dir_all(parent_dir)
                 .await
@@ -531,7 +531,7 @@ impl Coordinator {
             }
         };
         let strategy_str = match strategy {
-            PlanStrategy::Semantic => "semantic",
+            PlanStrategy::Synthetic => "synthetic",
             PlanStrategy::Vertical => "vertical",
             PlanStrategy::Horizontal => "horizontal",
         };
@@ -624,7 +624,9 @@ impl Coordinator {
         let slice_node_id = Uuid::new_v4().to_string();
         let now = unix_seconds();
         let slice_title = edges[0].title.clone();
+        let slice_description = edges[0].description.clone();
         let leftover_title = edges[1].title.clone();
+        let leftover_description = edges[1].description.clone();
         let remaining_depth = row.remaining_depth;
 
         let session_id_db = session_id.clone();
@@ -632,7 +634,9 @@ impl Coordinator {
         let parent_node_id_db = parent.node_id.clone();
         let slice_id_db = slice_node_id.clone();
         let slice_title_db = slice_title.clone();
+        let slice_description_db = slice_description.clone();
         let leftover_title_db = leftover_title.clone();
+        let leftover_description_db = leftover_description.clone();
         let candidate_tree_db = candidate_tree.clone();
         let candidate_commit_db = candidate_commit.clone();
         let sibling_ids: Vec<i64> = siblings.iter().map(|s| s.id).collect();
@@ -641,8 +645,8 @@ impl Coordinator {
             .call(move |conn| {
                 let tx = conn.transaction()?;
                 tx.execute(
-                    "INSERT INTO nodes (session_id, node_id, parent_node_id, tree_sha, commit_sha, title, created_at) \
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    "INSERT INTO nodes (session_id, node_id, parent_node_id, tree_sha, commit_sha, title, description, created_at) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                     tokio_rusqlite::params![
                         session_id_db,
                         slice_id_db,
@@ -650,12 +654,13 @@ impl Coordinator {
                         candidate_tree_db,
                         candidate_commit_db,
                         slice_title_db,
+                        slice_description_db,
                         now
                     ],
                 )?;
                 tx.execute(
-                    "UPDATE nodes SET parent_node_id = ?1, title = ?2 WHERE session_id = ?3 AND node_id = ?4",
-                    tokio_rusqlite::params![slice_id_db, leftover_title_db, session_id_db, target_id_db],
+                    "UPDATE nodes SET parent_node_id = ?1, title = ?2, description = ?3 WHERE session_id = ?4 AND node_id = ?5",
+                    tokio_rusqlite::params![slice_id_db, leftover_title_db, leftover_description_db, session_id_db, target_id_db],
                 )?;
                 let mut all_ids = sibling_ids.clone();
                 all_ids.push(partition_id);
@@ -1668,7 +1673,7 @@ fn parse_phase_state(s: &str) -> Option<PhaseState> {
 
 fn parse_strategy(s: &str) -> Option<PartitionStrategy> {
     match s {
-        "semantic" => Some(PartitionStrategy::Semantic),
+        "synthetic" => Some(PartitionStrategy::Synthetic),
         "vertical" => Some(PartitionStrategy::Vertical),
         "horizontal" => Some(PartitionStrategy::Horizontal),
         _ => None,

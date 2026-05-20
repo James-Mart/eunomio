@@ -1,3 +1,4 @@
+use crate::synthesized_content::SynthesizedRanges;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
@@ -9,7 +10,7 @@ pub struct CreateSessionRequest {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SessionDto {
+pub struct Session {
     pub id: String,
     pub base_ref: String,
     pub source_ref: String,
@@ -19,42 +20,45 @@ pub struct SessionDto {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct NodeDto {
+pub struct GraphNode {
     pub node_id: String,
     pub parent_node_id: Option<String>,
     pub tree_sha: String,
     pub commit_sha: String,
     pub title: String,
+    pub description: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GraphEdgeDto {
+pub struct GraphEdge {
     pub from: String,
     pub to: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GraphDto {
-    pub nodes: Vec<NodeDto>,
-    pub edges: Vec<GraphEdgeDto>,
+pub struct Graph {
+    pub nodes: Vec<GraphNode>,
+    pub edges: Vec<GraphEdge>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct EdgeDto {
+pub struct Edge {
     pub target_node_id: String,
     pub parent_node_id: Option<String>,
     pub diff: String,
+    pub synthesized: SynthesizedRanges,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DiffDto {
+pub struct Diff {
     pub from_tree: String,
     pub to_tree: String,
     pub diff: String,
+    pub synthesized: SynthesizedRanges,
 }
 
 #[derive(Debug, Deserialize)]
@@ -196,7 +200,7 @@ pub struct PartitionSettingsPatch {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum PartitionStrategy {
-    Semantic,
+    Synthetic,
     Vertical,
     Horizontal,
 }
@@ -204,7 +208,7 @@ pub enum PartitionStrategy {
 impl PartitionStrategy {
     pub fn as_str(&self) -> &'static str {
         match self {
-            PartitionStrategy::Semantic => "semantic",
+            PartitionStrategy::Synthetic => "synthetic",
             PartitionStrategy::Vertical => "vertical",
             PartitionStrategy::Horizontal => "horizontal",
         }
@@ -486,19 +490,19 @@ pub enum SseEvent {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CursorModelDto {
+pub struct CursorModel {
     pub id: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CursorModelsDto {
-    pub models: Vec<CursorModelDto>,
+pub struct CursorModels {
+    pub models: Vec<CursorModel>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RepoInfoDto {
+pub struct RepoInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub current_branch: Option<String>,
 }
@@ -513,7 +517,7 @@ pub enum TunnelStateName {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TunnelStatusDto {
+pub struct TunnelStatus {
     pub state: TunnelStateName,
     pub token_required: bool,
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -1,4 +1,4 @@
-use crate::{error::AppError, server::AppState, types::CursorModelDto};
+use crate::{error::AppError, server::AppState, types::CursorModel};
 use anyhow::anyhow;
 use axum::http::StatusCode;
 use rust_embed::Embed;
@@ -21,7 +21,7 @@ const HELPER_FILE: &str = "cursor-helper";
 /// so `helper/src/bindings-loader.cjs` can find them next to `process.execPath`.
 const HELPER_NATIVE_FILES: &[&str] = &["node_sqlite3.node"];
 
-pub async fn list_models(state: &AppState) -> Result<Vec<CursorModelDto>, AppError> {
+pub async fn list_models(state: &AppState) -> Result<Vec<CursorModel>, AppError> {
     let api_key = state
         .cursor_api_key
         .as_deref()
@@ -52,7 +52,7 @@ pub async fn list_models(state: &AppState) -> Result<Vec<CursorModelDto>, AppErr
 
 #[derive(serde::Deserialize)]
 struct ListModelsResponse {
-    models: Vec<CursorModelDto>,
+    models: Vec<CursorModel>,
 }
 
 /// Build a human-readable suffix for the `helper_exited` error message that

@@ -37,6 +37,7 @@ pub async fn diff_text(repo: &Path, from_tree: &str, to_tree: &str) -> Result<St
             "--no-color",
             "--no-ext-diff",
             "--diff-algorithm=histogram",
+            "--unified=1000000",
             "--end-of-options",
             from_tree,
             to_tree,

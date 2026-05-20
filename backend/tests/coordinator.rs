@@ -115,7 +115,7 @@ async fn wait_for_phase(
 async fn happy_path_drives_partition_to_accept() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
         survey_script(),
-        plan_script("semantic"),
+        plan_script("synthetic"),
         construct_ok_script(),
     ]));
     let app = TestApp::spawn_with_runner(runner.clone()).await;
@@ -139,7 +139,7 @@ async fn happy_path_drives_partition_to_accept() {
         .join("worktrees")
         .join(&session_id)
         .join(partition_id.to_string())
-        .join("synthesis");
+        .join("worktree");
     assert!(worktree_root.exists(), "worktree should exist after begin");
 
     let started = next_event(&mut rx).await;
@@ -326,7 +326,7 @@ async fn parallel_begins_on_same_target_succeed() {
 async fn constructor_blocked_parks_at_review_and_can_re_run() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
         survey_script(),
-        plan_script("semantic"),
+        plan_script("synthetic"),
         construct_blocked_script("can't slice without leftover hunks"),
         construct_ok_script(),
     ]));
@@ -421,7 +421,7 @@ async fn abandon_mid_run_cleans_up() {
         .join("worktrees")
         .join(&session_id)
         .join(partition_id.to_string())
-        .join("synthesis");
+        .join("worktree");
     assert!(worktree_root.exists());
 
     let _ = next_event(&mut rx).await;
@@ -455,7 +455,7 @@ async fn abandon_mid_run_cleans_up() {
 async fn hitl_off_drives_full_chain_without_explicit_accepts() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
         survey_script(),
-        plan_script("semantic"),
+        plan_script("synthetic"),
         construct_ok_script(),
     ]));
     let app = TestApp::spawn_with_runner(runner.clone()).await;
@@ -623,7 +623,7 @@ async fn drive_partition_to_construct_review(
 async fn sibling_accept_auto_abandons_other() {
     let runner = Arc::new(KindAwareRunner::new(
         vec![survey_script(), survey_script()],
-        vec![plan_script("semantic"), plan_script("vertical")],
+        vec![plan_script("synthetic"), plan_script("vertical")],
         vec![construct_ok_script(), construct_ok_script()],
     ));
     let app = TestApp::spawn_with_runner(runner.clone()).await;
@@ -697,7 +697,7 @@ async fn sibling_accept_auto_abandons_other() {
 async fn cancel_run_mid_construct_preserves_partition() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
         survey_script(),
-        plan_script("semantic"),
+        plan_script("synthetic"),
         vec![HelperEvent::SdkMessage {
             run_id: 0,
             message: json!({"text": "thinking"}),
@@ -889,7 +889,7 @@ async fn second_start_run_while_in_flight_returns_409() {
 async fn invalid_run_kind_returns_409() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
         survey_script(),
-        plan_script("semantic"),
+        plan_script("synthetic"),
     ]));
     let app = TestApp::spawn_with_runner(runner.clone()).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
@@ -934,7 +934,7 @@ async fn invalid_run_kind_returns_409() {
 async fn back_edge_construct_to_plan_on_blocked_run() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
         survey_script(),
-        plan_script("semantic"),
+        plan_script("synthetic"),
         construct_blocked_script("can't slice"),
         plan_script("vertical"),
     ]));
@@ -1009,7 +1009,7 @@ async fn back_edge_construct_to_plan_on_blocked_run() {
 async fn back_edge_construct_to_plan_on_ok_candidate() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
         survey_script(),
-        plan_script("semantic"),
+        plan_script("synthetic"),
         construct_ok_script(),
         plan_script("vertical"),
     ]));
@@ -1153,7 +1153,7 @@ async fn rerun_planner_from_indivisible_succeeds() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
         survey_script(),
         plan_indivisible_script("indivisible at first"),
-        plan_script("semantic"),
+        plan_script("synthetic"),
     ]));
     let app = TestApp::spawn_with_runner(runner.clone()).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
@@ -1292,9 +1292,9 @@ async fn fanout_count_2_spawns_children_no_grandchildren() {
     let runner = Arc::new(KindAwareRunner::new(
         vec![survey_script(), survey_script(), survey_script()],
         vec![
-            plan_script("semantic"),
-            plan_script("semantic"),
-            plan_script("semantic"),
+            plan_script("synthetic"),
+            plan_script("synthetic"),
+            plan_script("synthetic"),
         ],
         vec![
             construct_ok_script(),
@@ -1362,7 +1362,7 @@ async fn fanout_auto_cascading_indivisible() {
     let runner = Arc::new(KindAwareRunner::new(
         vec![survey_script(), survey_script(), survey_script()],
         vec![
-            plan_script("semantic"),
+            plan_script("synthetic"),
             plan_indivisible_script("indivisible-a"),
             plan_indivisible_script("indivisible-b"),
         ],

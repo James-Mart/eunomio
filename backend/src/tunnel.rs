@@ -5,7 +5,7 @@
 // extraction, since Cloudflare publishes asset-level hashes).
 use crate::{
     error::AppError,
-    types::{TunnelStateName, TunnelStatusDto},
+    types::{TunnelStateName, TunnelStatus},
 };
 use anyhow::{anyhow, Context, Result};
 use sha2::{Digest, Sha256};
@@ -46,7 +46,7 @@ pub struct TunnelRegistry {
 
 struct Inner {
     state: Mutex<TunnelState>,
-    events: broadcast::Sender<TunnelStatusDto>,
+    events: broadcast::Sender<TunnelStatus>,
     data_dir: PathBuf,
     start_gate: tokio::sync::Mutex<()>,
     dev_mode: bool,
@@ -79,23 +79,30 @@ impl TunnelRegistry {
         }
     }
 
-    pub fn status(&self) -> TunnelStatusDto {
+    pub fn status(&self) -> TunnelStatus {
         let state = self.inner.state.lock().unwrap();
         snapshot(&state, self.inner.dev_mode)
     }
 
+    /// True when the backend was launched with `--dev-tunnel`. Callers use
+    /// this to relax loopback-only checks for requests that arrive from the
+    /// active trycloudflare URL via the Vite dev proxy.
+    pub fn dev_mode(&self) -> bool {
+        self.inner.dev_mode
+    }
+
     /// Same as [`Self::status`] with the share token stripped. Use this for
     /// anything that might be observed via the tunnel itself.
-    pub fn status_redacted(&self) -> TunnelStatusDto {
+    pub fn status_redacted(&self) -> TunnelStatus {
         let state = self.inner.state.lock().unwrap();
         snapshot_redacted(&state, self.inner.dev_mode)
     }
 
-    pub fn subscribe(&self) -> broadcast::Receiver<TunnelStatusDto> {
+    pub fn subscribe(&self) -> broadcast::Receiver<TunnelStatus> {
         self.inner.events.subscribe()
     }
 
-    pub async fn start(&self, router: Router) -> Result<TunnelStatusDto, AppError> {
+    pub async fn start(&self, router: Router) -> Result<TunnelStatus, AppError> {
         let _gate = self.inner.start_gate.lock().await;
         {
             let state = self.inner.state.lock().unwrap();
@@ -137,7 +144,7 @@ impl TunnelRegistry {
             (port, Some(token), Some(tx))
         };
 
-        let (ready_tx, ready_rx) = oneshot::channel::<Result<TunnelStatusDto, AppError>>();
+        let (ready_tx, ready_rx) = oneshot::channel::<Result<TunnelStatus, AppError>>();
         let (stop_tx, stop_rx) = oneshot::channel::<()>();
         let inner = self.inner.clone();
         tokio::spawn(async move {
@@ -199,10 +206,10 @@ impl TunnelRegistry {
     }
 }
 
-fn snapshot(state: &TunnelState, dev_mode: bool) -> TunnelStatusDto {
+fn snapshot(state: &TunnelState, dev_mode: bool) -> TunnelStatus {
     let token_required = !dev_mode;
     match state {
-        TunnelState::Idle => TunnelStatusDto {
+        TunnelState::Idle => TunnelStatus {
             state: TunnelStateName::Idle,
             token_required,
             url: None,
@@ -210,7 +217,7 @@ fn snapshot(state: &TunnelState, dev_mode: bool) -> TunnelStatusDto {
             started_at: None,
             error_message: None,
         },
-        TunnelState::Running(r) => TunnelStatusDto {
+        TunnelState::Running(r) => TunnelStatus {
             state: TunnelStateName::Running,
             token_required,
             url: Some(r.url.clone()),
@@ -218,7 +225,7 @@ fn snapshot(state: &TunnelState, dev_mode: bool) -> TunnelStatusDto {
             started_at: Some(r.started_at),
             error_message: None,
         },
-        TunnelState::Error { message, at } => TunnelStatusDto {
+        TunnelState::Error { message, at } => TunnelStatus {
             state: TunnelStateName::Error,
             token_required,
             url: None,
@@ -233,7 +240,7 @@ fn snapshot(state: &TunnelState, dev_mode: bool) -> TunnelStatusDto {
 /// broadcast that may be observed via the tunnel itself (so a holder
 /// of the token cannot use the SSE stream to see future tokens after
 /// rotation).
-fn snapshot_redacted(state: &TunnelState, dev_mode: bool) -> TunnelStatusDto {
+fn snapshot_redacted(state: &TunnelState, dev_mode: bool) -> TunnelStatus {
     let mut dto = snapshot(state, dev_mode);
     dto.token = None;
     dto
@@ -245,7 +252,7 @@ async fn supervise(
     binary: PathBuf,
     target_port: u16,
     token: Option<Uuid>,
-    ready_tx: oneshot::Sender<Result<TunnelStatusDto, AppError>>,
+    ready_tx: oneshot::Sender<Result<TunnelStatus, AppError>>,
     stop_tx: oneshot::Sender<()>,
     stop_rx: oneshot::Receiver<()>,
     serve_shutdown_tx: Option<oneshot::Sender<()>>,
@@ -316,7 +323,7 @@ async fn supervise(
 
 fn fail_startup(
     inner: &Arc<Inner>,
-    ready_tx: oneshot::Sender<Result<TunnelStatusDto, AppError>>,
+    ready_tx: oneshot::Sender<Result<TunnelStatus, AppError>>,
     serve_shutdown_tx: Option<oneshot::Sender<()>>,
     err: anyhow::Error,
 ) {

@@ -16,11 +16,15 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { api, type Graph, type GraphNode, type Partition } from "@/lib/api";
-import NodeCard, {
-  type BadgeState,
-  type NodeCardData,
-} from "@/components/NodeCard";
+import {
+  api,
+  type Graph,
+  type GraphNode,
+  type Partition,
+  type PhaseName,
+  type PhaseState,
+} from "@/lib/api";
+import NodeCard, { type NodeCardData } from "@/components/NodeCard";
 import EdgePane from "@/components/EdgePane";
 import ToolsCardList from "@/components/ToolsCardList";
 import ToolsPane from "@/components/ToolsPane";
@@ -98,9 +102,11 @@ type CanonicalLayout = {
   edges: FlowEdge[];
 };
 
+type PhaseStatus = { phase: PhaseName; phaseState: PhaseState };
+
 function canonicalLayout(
   chain: Chain,
-  badgeByNode: Map<string, BadgeState>,
+  phaseStatusByNode: Map<string, PhaseStatus>,
 ): CanonicalLayout {
   const total = chain.ordered.length;
   const nodes: Node<NodeCardData>[] = chain.ordered.map((n, idx) => ({
@@ -110,7 +116,7 @@ function canonicalLayout(
     data: {
       node: n,
       positionLabel: chain.positionByNodeId.get(n.nodeId) ?? "",
-      badgeState: badgeByNode.get(n.nodeId) ?? "none",
+      phaseStatus: phaseStatusByNode.get(n.nodeId) ?? null,
     },
   }));
   const edges: FlowEdge[] = chain.ordered
@@ -163,12 +169,14 @@ function candidateLayout(
     treeSha: partition.candidateSliceTreeSha,
     commitSha: partition.candidateSliceCommitSha,
     title: planEdges[0].title,
+    description: planEdges[0].description,
   };
   const renamedTarget: GraphNode = {
     ...target,
     nodeId: CANDIDATE_TARGET_PREFIX + target.nodeId,
     parentNodeId: CANDIDATE_SLICE_ID,
     title: planEdges[1].title,
+    description: planEdges[1].description,
   };
 
   const isSeedFinal =
@@ -347,16 +355,14 @@ function SessionInner({ sessionId }: { sessionId: string }) {
     [partitions, candidatePartitionId],
   );
 
-  const badgeByNode = useMemo(() => {
-    const m = new Map<string, BadgeState>();
+  const phaseStatusByNode = useMemo(() => {
+    const m = new Map<string, PhaseStatus>();
     for (const p of partitions) {
-      const next: BadgeState =
-        p.phaseState === "awaiting_review" || p.phaseState === "error"
-          ? "awaiting"
-          : "running";
-      const prev = m.get(p.targetNodeId);
-      if (prev === "awaiting") continue;
-      m.set(p.targetNodeId, next);
+      const existing = m.get(p.targetNodeId);
+      const urgent = (s: PhaseState) => s !== "running";
+      if (!existing || (!urgent(existing.phaseState) && urgent(p.phaseState))) {
+        m.set(p.targetNodeId, { phase: p.phase, phaseState: p.phaseState });
+      }
     }
     return m;
   }, [partitions]);
@@ -367,9 +373,9 @@ function SessionInner({ sessionId }: { sessionId: string }) {
       const lay = candidateLayout(chain, candidatePartition, graph);
       if (lay) return { kind: "candidate" as const, ...lay };
     }
-    const lay = canonicalLayout(chain, badgeByNode);
+    const lay = canonicalLayout(chain, phaseStatusByNode);
     return { kind: "canonical" as const, ...lay };
-  }, [chain, graph, candidatePartition, badgeByNode]);
+  }, [chain, graph, candidatePartition, phaseStatusByNode]);
 
   const didInitSelectionRef = useRef(false);
   useEffect(() => {
@@ -498,7 +504,7 @@ function SessionInner({ sessionId }: { sessionId: string }) {
               {partitions.map((p) => {
                 const targetPos =
                   chain.positionByNodeId.get(p.targetNodeId) ?? "?";
-                const strategy = p.strategy ?? "semantic";
+                const strategy = p.strategy ?? "synthetic";
                 return (
                   <SelectItem key={p.id} value={String(p.id)}>
                     Partition on Node {targetPos} ({strategy}, {phaseLabel(p)})
@@ -544,6 +550,7 @@ function SessionInner({ sessionId }: { sessionId: string }) {
       sessionId={id}
       nodeId={selectedCanonicalNode?.nodeId ?? null}
       nodeTitle={selectedCanonicalNode?.title ?? null}
+      nodeDescription={selectedCanonicalNode?.description ?? null}
       activePartition={candidatePartition}
       isCandidateSliceSelected={isCandidateSliceSelected}
       onPartitionStarted={onPartitionStarted}
@@ -604,6 +611,7 @@ function SessionInner({ sessionId }: { sessionId: string }) {
                   sessionId={id}
                   nodeId={selectedCanonicalNode?.nodeId ?? null}
                   nodeTitle={selectedCanonicalNode?.title ?? null}
+                  nodeDescription={selectedCanonicalNode?.description ?? null}
                   activePartition={candidatePartition}
                   isCandidateSliceSelected={isCandidateSliceSelected}
                   onPartitionStarted={onPartitionStarted}
@@ -661,6 +669,7 @@ function renderDiffPane({
           sessionId={id}
           fromTree={parent.treeSha}
           toTree={slice.treeSha}
+          referenceTree={layout.renamedTargetNode.treeSha}
         />
       );
     }
@@ -673,6 +682,7 @@ function renderDiffPane({
           sessionId={id}
           fromTree={slice.treeSha}
           toTree={renamed.treeSha}
+          referenceTree={renamed.treeSha}
         />
       );
     }
@@ -699,7 +709,7 @@ function renderDiffPane({
 
 function DiffPaneEmpty() {
   return (
-    <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
+    <div className="flex h-full items-center justify-center bg-background p-6 text-sm text-muted-foreground">
       Select a node or partition to view diff.
     </div>
   );

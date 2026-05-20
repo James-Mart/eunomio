@@ -44,7 +44,7 @@ type RerunMode = "constructor" | "planner";
 
 const STRATEGY_OPTIONS: { value: "auto" | PartitionStrategy; label: string }[] = [
   { value: "auto", label: "Auto (let planner choose)" },
-  { value: "semantic", label: "Semantic" },
+  { value: "synthetic", label: "Synthetic" },
   { value: "vertical", label: "Vertical" },
   { value: "horizontal", label: "Horizontal" },
 ];

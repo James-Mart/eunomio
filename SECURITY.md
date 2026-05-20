@@ -9,7 +9,7 @@ boundaries.
 The Eunomia HTTP listener binds `127.0.0.1` only. The local OS user that ran
 `eunomia` is the trust boundary: any process executing as that user can
 already read the source tree, the SQLite state under `~/.eunomia/`, and the
-synthesis worktrees, so the API does not add an authentication layer on top.
+Partition worktrees, so the API does not add an authentication layer on top.
 
 A host guard middleware on the local listener rejects requests whose `Host`
 header (or `Origin` header, when present) is not `127.0.0.1`, `localhost`, or
@@ -47,7 +47,11 @@ Operational notes:
   `GET /api/tunnel`, which is reachable only on the host-gated local listener.
 - The hidden `--dev-tunnel` flag, set only by `npm run dev`'s backend
   invocation, points cloudflared at the Vite dev server on `:5173` and skips
-  the share-token gate entirely. See the "Dev escape hatch" section of
+  the share-token gate entirely. The companion `--start-tunnel` flag (also
+  hidden, `requires = "dev_tunnel"`) auto-runs that same path at boot and
+  prints the URL on stdout, so a backend rebuild re-shares without UI
+  access. Same dev path, same `:5173` target, same lack of share token; no
+  new trust boundaries. See the "Dev escape hatch" section of
   [`docs/adr/0003-public-url-token-tunnel.md`](docs/adr/0003-public-url-token-tunnel.md).
 
 ## Subagents are unsandboxed local processes
@@ -55,7 +59,7 @@ Operational notes:
 Subagents (Surveyor, Planner, Constructor) run via the embedded `cursor-helper`
 Node binary. The helper inherits Eunomia's filesystem and network access, so a
 malicious or prompt-injected agent can do anything the eunomia process can do —
-including read shell history, write outside the synthesis worktree, exfiltrate
+including read shell history, write outside the Partition worktree, exfiltrate
 secrets, or make outbound network calls. The Constructor in particular
 interprets attacker-influenced content (commit messages, diff hunks) under the
 soft constraint of [`subagents/constructor.md`](subagents/constructor.md) only.

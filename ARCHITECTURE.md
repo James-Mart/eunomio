@@ -28,7 +28,7 @@ Restarting `eunomia` (the most common dev event) leaves Vite running — the bro
 ## State
 
 - `~/.eunomia/eunomia.db` — SQLite, shared across every git repo you've ever pointed eunomia at. Sessions are scoped by `repo_root`.
-- `~/.eunomia/worktrees/<sessionId>/<partitionId>/synthesis/` — detached git worktrees, one per pending Partition.
+- `~/.eunomia/worktrees/<sessionId>/<partitionId>/worktree/` — detached git worktrees, one per pending Partition.
 - `~/.eunomia/bin/cloudflared` — auto-downloaded when the user first starts the in-app tunnel (skipped if `cloudflared` is on `$PATH`).
 - `REPO_ROOT` (the git repo eunomia operates on) is **whatever directory the axum process was started from**. `dev.sh` sets that to its first positional arg, defaulting to `$PWD`.
 

@@ -13,6 +13,7 @@ type Props = {
   sessionId: string;
   nodeId: string | null;
   nodeTitle: string | null;
+  nodeDescription: string | null;
   activePartition: Partition | null;
   isCandidateSliceSelected: boolean;
   onPartitionStarted: (p: Partition) => void;
@@ -24,6 +25,7 @@ export default function ToolsCardList({
   sessionId,
   nodeId,
   nodeTitle,
+  nodeDescription,
   activePartition,
   isCandidateSliceSelected,
   onPartitionStarted,
@@ -35,7 +37,7 @@ export default function ToolsCardList({
 
   if (activePartition === null && nodeId === null) {
     return (
-      <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
+      <div className="flex h-full items-center justify-center bg-background p-6 text-sm text-muted-foreground">
         Select a node or partition to view tools.
       </div>
     );
@@ -80,6 +82,7 @@ export default function ToolsCardList({
               sessionId={sessionId}
               nodeId={nodeId!}
               nodeTitle={nodeTitle!}
+              nodeDescription={nodeDescription ?? ""}
               onChange={onChange}
             />
           </CardContent>

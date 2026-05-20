@@ -3,6 +3,7 @@ import { PauseCircle } from "lucide-react";
 import { toast } from "sonner";
 
 import { api, type ChangeSurvey } from "@/lib/api";
+import { useApplyPartitionSnapshot } from "@/components/SessionEventsProvider";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -24,11 +25,13 @@ export default function SurveyReview({
 }: Props) {
   const [feedback, setFeedback] = useState("");
   const [busy, setBusy] = useState(false);
+  const applyPartitionSnapshot = useApplyPartitionSnapshot();
 
   const accept = async () => {
     setBusy(true);
     try {
-      await api.acceptSurvey(partitionId, surveyRunId);
+      const updated = await api.acceptSurvey(partitionId, surveyRunId);
+      applyPartitionSnapshot(updated);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Accept failed");
     } finally {

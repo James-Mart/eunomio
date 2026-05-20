@@ -12,22 +12,40 @@ export type GraphNode = {
   treeSha: string;
   commitSha: string;
   title: string;
+  description: string;
 };
 
 export type GraphEdge = { from: string; to: string };
 
 export type Graph = { nodes: GraphNode[]; edges: GraphEdge[] };
 
+export type LineRanges = {
+  line: number;
+  spans: [number, number][];
+};
+
+export type FileLineRanges = {
+  path: string;
+  lines: LineRanges[];
+};
+
+export type SynthesizedRanges = {
+  child: FileLineRanges[];
+  parent: FileLineRanges[];
+};
+
 export type Edge = {
   targetNodeId: string;
   parentNodeId: string | null;
   diff: string;
+  synthesized: SynthesizedRanges;
 };
 
 export type Diff = {
   fromTree: string;
   toTree: string;
   diff: string;
+  synthesized: SynthesizedRanges;
 };
 
 export type BranchResult = { branchName: string; commitSha: string };
@@ -68,7 +86,7 @@ export interface PartitionSettingsPatch {
   constructor?: SubagentSettings;
 }
 
-export type PartitionStrategy = "semantic" | "vertical" | "horizontal";
+export type PartitionStrategy = "synthetic" | "vertical" | "horizontal";
 export type StrategyOverride = PartitionStrategy | "auto";
 
 export type PhaseName = "survey" | "plan" | "construct";
@@ -201,11 +219,19 @@ export const api = {
   getGraph: (id: string) => request<Graph>("GET", `/sessions/${id}/graph`),
   getEdge: (sessionId: string, targetNodeId: string) =>
     request<Edge>("GET", `/sessions/${sessionId}/edges/${targetNodeId}`),
-  getDiff: (sessionId: string, fromTree: string, toTree: string) =>
-    request<Diff>(
+  getDiff: (
+    sessionId: string,
+    fromTree: string,
+    toTree: string,
+    referenceTree?: string,
+  ) => {
+    const params = new URLSearchParams({ fromTree, toTree });
+    if (referenceTree) params.set("referenceTree", referenceTree);
+    return request<Diff>(
       "GET",
-      `/sessions/${sessionId}/diff?fromTree=${encodeURIComponent(fromTree)}&toTree=${encodeURIComponent(toTree)}`,
-    ),
+      `/sessions/${sessionId}/diff?${params.toString()}`,
+    );
+  },
   renameNode: (sessionId: string, nodeId: string, title: string) =>
     request<GraphNode>("PATCH", `/sessions/${sessionId}/nodes/${nodeId}`, { title }),
   branchFromNode: (sessionId: string, nodeId: string, branchName: string, force = false) =>

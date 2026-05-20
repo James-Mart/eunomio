@@ -84,7 +84,7 @@ mod tests {
                 before_tree: "B".into(),
                 target_tree: "T".into(),
                 worktree_head_tree: "B".into(),
-                strategy: "semantic".into(),
+                strategy: "synthetic".into(),
                 slice_title: "Add loader".into(),
                 slice_description: "Extracts the loader module".into(),
                 user_feedback: "".into(),
@@ -92,7 +92,7 @@ mod tests {
             &defs,
         );
         assert!(out.contains("Add loader"));
-        assert!(out.contains("semantic"));
+        assert!(out.contains("synthetic"));
         assert!(out.contains("(none)"));
     }
 

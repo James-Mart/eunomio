@@ -25,7 +25,7 @@ export type ConstructPayload =
 export type PlanPayload =
   | {
       outcome: "split";
-      strategy: "semantic" | "vertical" | "horizontal";
+      strategy: "synthetic" | "vertical" | "horizontal";
       strategyRationale: string;
       edges: { id: string; title: string; description: string }[];
     }
@@ -190,6 +190,19 @@ class SessionStore {
     if (!this.state.lifecycles.has(partitionId)) return;
     const next = new Map(this.state.lifecycles);
     next.delete(partitionId);
+    this.state = { ...this.state, lifecycles: next };
+    this.emit();
+    for (const l of this.constructListeners) l();
+  }
+
+  applyPartitionSnapshot(p: Partition) {
+    const cur = this.state.lifecycles.get(p.id);
+    const next = new Map(this.state.lifecycles);
+    if (!cur) {
+      next.set(p.id, buildLifecycleFromSnapshot(p, []));
+    } else {
+      next.set(p.id, { ...cur, [p.phase]: p.phaseState });
+    }
     this.state = { ...this.state, lifecycles: next };
     this.emit();
     for (const l of this.constructListeners) l();
@@ -394,6 +407,11 @@ export function useHydratePartition(): (p: Partition) => void {
     (p: Partition) => store.hydrate([buildLifecycleFromSnapshot(p, [])]),
     [store],
   );
+}
+
+export function useApplyPartitionSnapshot(): (p: Partition) => void {
+  const store = useStore();
+  return useCallback((p: Partition) => store.applyPartitionSnapshot(p), [store]);
 }
 
 export function useConstructSubscription(cb: () => void): void {

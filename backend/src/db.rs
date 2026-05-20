@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS nodes (
   tree_sha TEXT NOT NULL,
   commit_sha TEXT NOT NULL,
   title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL,
   PRIMARY KEY (session_id, node_id)
 );
