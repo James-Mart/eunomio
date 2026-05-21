@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs";
+import { processFile, type FileDiffMetadata } from "@pierre/diffs";
 import { FileDiff, Virtualizer } from "@pierre/diffs/react";
 import { FileTree, useFileTree } from "@pierre/trees/react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
-import { ApiError, api, type SynthesizedRanges } from "@/lib/api";
+import {
+  ApiError,
+  api,
+  type FileBlob,
+  type SynthesizedRanges,
+} from "@/lib/api";
 import {
   buildLookup,
   decorateFileContainer,
@@ -27,17 +32,23 @@ type Props =
       targetNodeId: string;
       fromTree?: undefined;
       toTree?: undefined;
-      referenceTree?: undefined;
+      beforeRef?: undefined;
+      afterRef?: undefined;
     }
   | {
       sessionId: string;
       targetNodeId?: undefined;
       fromTree: string;
       toTree: string;
-      referenceTree?: string;
+      beforeRef?: string;
+      afterRef?: string;
     };
 
-type LoadedEdge = { diff: string; synthesized: SynthesizedRanges };
+type LoadedEdge = {
+  diff: string;
+  files: FileBlob[];
+  synthesized: SynthesizedRanges;
+};
 
 type DiffStyle = "unified" | "split";
 type Overflow = "scroll" | "wrap";
@@ -49,8 +60,8 @@ export default function EdgePane(props: Props) {
   const targetNodeId = "targetNodeId" in props ? props.targetNodeId : undefined;
   const fromTree = "fromTree" in props ? props.fromTree : undefined;
   const toTree = "toTree" in props ? props.toTree : undefined;
-  const referenceTree =
-    "referenceTree" in props ? props.referenceTree : undefined;
+  const beforeRef = "beforeRef" in props ? props.beforeRef : undefined;
+  const afterRef = "afterRef" in props ? props.afterRef : undefined;
   const [edge, setEdge] = useState<LoadedEdge | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [diffStyle, setDiffStyle] = useState<DiffStyle>("unified");
@@ -97,10 +108,18 @@ export default function EdgePane(props: Props) {
     const fetch = targetNodeId !== undefined
       ? api
           .getEdge(sessionId, targetNodeId)
-          .then((e) => ({ diff: e.diff, synthesized: e.synthesized }))
+          .then((e) => ({
+            diff: e.diff,
+            files: e.files,
+            synthesized: e.synthesized,
+          }))
       : api
-          .getDiff(sessionId, fromTree!, toTree!, referenceTree)
-          .then((d) => ({ diff: d.diff, synthesized: d.synthesized }));
+          .getDiff(sessionId, fromTree!, toTree!, beforeRef, afterRef)
+          .then((d) => ({
+            diff: d.diff,
+            files: d.files,
+            synthesized: d.synthesized,
+          }));
     fetch
       .then((e) => {
         if (!cancelled) setEdge(e);
@@ -116,12 +135,44 @@ export default function EdgePane(props: Props) {
     return () => {
       cancelled = true;
     };
-  }, [sessionId, targetNodeId, fromTree, toTree, referenceTree]);
+  }, [sessionId, targetNodeId, fromTree, toTree, beforeRef, afterRef]);
 
+  // Parse each file individually with `processFile`, handing it the full
+  // `oldFile`/`newFile` blob contents so the library's "N unmodified lines"
+  // expand chevrons can reveal context that's not in the small `-U3` patch.
   const fileDiffs: FileDiffMetadata[] = useMemo(() => {
     if (!edge || edge.diff.length === 0) return [];
-    const parsed = parsePatchFiles(edge.diff);
-    return parsed.flatMap((p) => p.files);
+    const byPath = new Map<string, FileBlob>();
+    for (const f of edge.files) {
+      if (f.newPath) byPath.set(f.newPath, f);
+      if (f.oldPath) byPath.set(f.oldPath, f);
+    }
+    return splitDiffByFile(edge.diff)
+      .flatMap((section) => {
+        const { oldPath, newPath } = extractPathsFromGitHeader(section);
+        const blob = byPath.get(newPath ?? "") ?? byPath.get(oldPath ?? "");
+        const oldFile =
+          blob?.oldContent != null
+            ? {
+                name: blob.oldPath ?? oldPath ?? "",
+                contents: blob.oldContent,
+              }
+            : undefined;
+        const newFile =
+          blob?.newContent != null
+            ? {
+                name: blob.newPath ?? newPath ?? "",
+                contents: blob.newContent,
+              }
+            : undefined;
+        const meta = processFile(section, {
+          oldFile,
+          newFile,
+          isGitDiff: true,
+        });
+        return meta ? [meta] : [];
+      })
+      .sort((a, b) => compareTreePaths(a.name, b.name));
   }, [edge]);
 
   useEffect(() => {
@@ -167,8 +218,6 @@ export default function EdgePane(props: Props) {
     onSelectionChange: handleSelectionChange,
   });
 
-  // useFileTree constructs the FileTree model once and never re-reads
-  // options.paths on subsequent renders, so push new paths in explicitly.
   useEffect(() => {
     model.resetPaths(paths);
   }, [model, paths]);
@@ -205,7 +254,6 @@ export default function EdgePane(props: Props) {
     <div className="flex h-full min-w-0 flex-col">
       <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-b py-1.5 pl-2 pr-12 md:pr-2">
         <SegmentedToggle
-          ariaLabel="Diff style"
           value={diffStyle}
           onChange={setDiffStyle}
           options={[
@@ -214,7 +262,6 @@ export default function EdgePane(props: Props) {
           ]}
         />
         <SegmentedToggle
-          ariaLabel="Overflow mode"
           value={overflow}
           onChange={setOverflow}
           options={[
@@ -307,12 +354,10 @@ export default function EdgePane(props: Props) {
 }
 
 function SegmentedToggle<T extends string>({
-  ariaLabel,
   value,
   onChange,
   options,
 }: {
-  ariaLabel: string;
   value: T;
   onChange: (next: T) => void;
   options: ReadonlyArray<{ value: T; label: string }>;
@@ -320,7 +365,6 @@ function SegmentedToggle<T extends string>({
   return (
     <div
       role="radiogroup"
-      aria-label={ariaLabel}
       className="inline-flex rounded-md border bg-muted p-0.5 text-xs"
     >
       {options.map((o) => {
@@ -373,3 +417,58 @@ function EdgePaneSkeleton() {
   );
 }
 
+// Mirrors `@pierre/trees`'s `defaultChildrenComparator` over full paths so
+// the scroll list matches the tree's DFS walk. Duplicating ~15 lines is
+// preferred over draining the order from the tree model after render, which
+// would create a render-cycle dependency between the scroll view and the
+// tree.
+function compareTreePaths(a: string, b: string): number {
+  const aSegs = a.split("/");
+  const bSegs = b.split("/");
+  const shared = Math.min(aSegs.length, bSegs.length);
+  for (let d = 0; d < shared; d++) {
+    const aSeg = aSegs[d];
+    const bSeg = bSegs[d];
+    if (aSeg === bSeg) continue;
+    const aIsFolder = d < aSegs.length - 1;
+    const bIsFolder = d < bSegs.length - 1;
+    if (aIsFolder !== bIsFolder) return aIsFolder ? -1 : 1;
+    const aDot = aSeg.charCodeAt(0) === 46;
+    const bDot = bSeg.charCodeAt(0) === 46;
+    if (aDot !== bDot) return aDot ? -1 : 1;
+    return aSeg.toLowerCase().localeCompare(bSeg.toLowerCase());
+  }
+  return aSegs.length - bSegs.length;
+}
+
+// Splits a multi-file `git diff` blob into per-file sections at each
+// `diff --git ` boundary. Anything before the first boundary (none in
+// practice for our backend) is dropped.
+function splitDiffByFile(diff: string): string[] {
+  const sections: string[] = [];
+  const re = /^diff --git /gm;
+  let lastIdx = -1;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(diff)) !== null) {
+    if (lastIdx >= 0) sections.push(diff.slice(lastIdx, match.index));
+    lastIdx = match.index;
+  }
+  if (lastIdx >= 0) sections.push(diff.slice(lastIdx));
+  return sections;
+}
+
+// Pulls the old/new paths from `diff --git a/<old> b/<new>`. Returns
+// `undefined` for either side when the path can't be extracted (e.g. the
+// rare quoted-path form used for filenames with spaces); callers fall back
+// to rendering the file without blob-backed expansion in that case.
+function extractPathsFromGitHeader(section: string): {
+  oldPath?: string;
+  newPath?: string;
+} {
+  const newlineIdx = section.indexOf("\n");
+  const firstLine =
+    newlineIdx >= 0 ? section.slice(0, newlineIdx) : section;
+  const m = /^diff --git a\/(.+) b\/(.+)$/.exec(firstLine);
+  if (!m) return {};
+  return { oldPath: m[1], newPath: m[2] };
+}

@@ -37,6 +37,14 @@ export type Lifecycle = {
 
 type ConstructListener = () => void;
 
+export type RunMessageEvent = {
+  partitionId: number;
+  runId: number;
+  message: unknown;
+};
+
+type MessageListener = (event: RunMessageEvent) => void;
+
 type Store = {
   lifecycles: Map<number, Lifecycle>;
   connection: ConnectionStatus;
@@ -53,6 +61,7 @@ class SessionStore {
   };
   private listeners: Listeners = new Set();
   private constructListeners: Set<ConstructListener> = new Set();
+  private messageListeners: Set<MessageListener> = new Set();
 
   subscribe = (cb: () => void): (() => void) => {
     this.listeners.add(cb);
@@ -65,6 +74,13 @@ class SessionStore {
     this.constructListeners.add(cb);
     return () => {
       this.constructListeners.delete(cb);
+    };
+  };
+
+  subscribeMessages = (cb: MessageListener): (() => void) => {
+    this.messageListeners.add(cb);
+    return () => {
+      this.messageListeners.delete(cb);
     };
   };
 
@@ -102,6 +118,13 @@ class SessionStore {
         break;
       }
       case "sdkMessage":
+        for (const l of this.messageListeners) {
+          l({
+            partitionId: event.partitionId,
+            runId: event.runId,
+            message: event.message,
+          });
+        }
         break;
       case "finished": {
         if (!cur) break;
@@ -386,4 +409,9 @@ export function useApplyPartitionSnapshot(): (p: Partition) => void {
 export function useConstructSubscription(cb: () => void): void {
   const store = useStore();
   useEffect(() => store.subscribeConstruct(cb), [store, cb]);
+}
+
+export function useRunMessageSubscription(cb: MessageListener): void {
+  const store = useStore();
+  useEffect(() => store.subscribeMessages(cb), [store, cb]);
 }

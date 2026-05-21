@@ -21,6 +21,7 @@ import {
   phaseLabel,
   type Chain,
   type SessionLayout,
+  type View,
 } from "./layout";
 
 const nodeTypes: NodeTypes = { eunomia: NodeCard };
@@ -29,8 +30,8 @@ type Props = {
   layout: SessionLayout;
   chain: Chain;
   partitions: Partition[];
-  candidatePartitionId: number | null;
-  onSelectCandidate: (next: string) => void;
+  view: View;
+  onSelectView: (next: string) => void;
   selectedNodeId: string | null;
   onNodeClick: NodeMouseHandler;
 };
@@ -39,8 +40,8 @@ export function GraphPane({
   layout,
   chain,
   partitions,
-  candidatePartitionId,
-  onSelectCandidate,
+  view,
+  onSelectView,
   selectedNodeId,
   onNodeClick,
 }: Props) {
@@ -52,38 +53,33 @@ export function GraphPane({
     [layout, selectedNodeId],
   );
 
+  const viewSelectValue =
+    view.kind === "candidate" ? String(view.partitionId) : view.kind;
+
   return (
     <div className="flex h-full flex-col">
-      {partitions.length > 0 && (
-        <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
-          <span className="text-xs text-muted-foreground">View</span>
-          <Select
-            value={
-              candidatePartitionId === null
-                ? "canonical"
-                : String(candidatePartitionId)
-            }
-            onValueChange={onSelectCandidate}
-          >
-            <SelectTrigger className="h-8 w-auto min-w-[12rem]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="canonical">Canonical</SelectItem>
-              {partitions.map((p) => {
-                const targetPos =
-                  chain.positionByNodeId.get(p.targetNodeId) ?? "?";
-                const strategy = p.strategy ?? "synthetic";
-                return (
-                  <SelectItem key={p.id} value={String(p.id)}>
-                    Partition on Node {targetPos} ({strategy}, {phaseLabel(p)})
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
+      <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
+        <span className="text-xs text-muted-foreground">View</span>
+        <Select value={viewSelectValue} onValueChange={onSelectView}>
+          <SelectTrigger className="h-8 w-auto min-w-[12rem]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="canonical">Canonical</SelectItem>
+            <SelectItem value="original">Original</SelectItem>
+            {partitions.map((p) => {
+              const targetPos =
+                chain.positionByNodeId.get(p.targetNodeId) ?? "?";
+              const strategy = p.strategy ?? "synthetic";
+              return (
+                <SelectItem key={p.id} value={String(p.id)}>
+                  Partition on Node {targetPos} ({strategy}, {phaseLabel(p)})
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
+      </div>
       <div className="flex-1 min-h-0">
         <ReactFlow
           nodes={nodes}

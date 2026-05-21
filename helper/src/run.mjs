@@ -1,7 +1,12 @@
 import { Agent, CursorAgentError } from "@cursor/sdk";
 
 function emit(event) {
-  process.stdout.write(JSON.stringify(event) + "\n");
+  return new Promise((resolve, reject) => {
+    process.stdout.write(JSON.stringify(event) + "\n", (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
 }
 
 async function readStdin() {
@@ -19,7 +24,7 @@ export async function run() {
     const raw = await readStdin();
     request = JSON.parse(raw);
   } catch (err) {
-    emit({
+    await emit({
       type: "error",
       runId: 0,
       code: "bad_request",
@@ -30,7 +35,7 @@ export async function run() {
 
   const { model, cwd, prompt, runId } = request;
   if (typeof runId !== "number") {
-    emit({ type: "error", runId: 0, code: "bad_request", message: "runId required" });
+    await emit({ type: "error", runId: 0, code: "bad_request", message: "runId required" });
     process.exit(1);
   }
 
@@ -61,7 +66,7 @@ export async function run() {
     } catch (err) {
       // ignore
     }
-    emit({ type: "cancelled", runId });
+    await emit({ type: "cancelled", runId });
     await cleanup();
     process.exit(0);
   };
@@ -79,14 +84,14 @@ export async function run() {
       model: { id: model },
       local: { cwd },
     });
-    emit({ type: "started", runId, agentId: agent.agentId ?? "" });
+    await emit({ type: "started", runId, agentId: agent.agentId ?? "" });
 
     liveRun = await agent.send(prompt);
     const stream = liveRun.stream?.();
     if (stream) {
       for await (const event of stream) {
         if (cancelled) break;
-        emit({ type: "sdkMessage", runId, message: event });
+        await emit({ type: "sdkMessage", runId, message: event });
       }
     }
     const result = await liveRun.wait();
@@ -95,17 +100,17 @@ export async function run() {
       process.exit(0);
     }
     if (result.status === "error") {
-      emit({
+      await emit({
         type: "error",
         runId,
         code: "run_error",
         message: result.error?.message ?? "run failed",
       });
     } else if (result.status === "cancelled") {
-      emit({ type: "cancelled", runId });
+      await emit({ type: "cancelled", runId });
     } else {
       const text = extractFinalText(result);
-      emit({
+      await emit({
         type: "finished",
         runId,
         result: text,
@@ -115,7 +120,7 @@ export async function run() {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const code = err instanceof CursorAgentError ? "startup_failed" : "internal";
-    emit({ type: "error", runId, code, message });
+    await emit({ type: "error", runId, code, message });
   } finally {
     await cleanup();
   }

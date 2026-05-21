@@ -1427,3 +1427,257 @@ async fn fanout_auto_cascading_indivisible() {
     assert_eq!(cancelled.len(), 2, "expected 2 children to be auto-Abandoned");
     assert_eq!(started.len(), 3, "expected root + 2 children Started");
 }
+
+async fn enable_transcripts(app: &TestApp) {
+    let (status, _) = json_request(
+        &app.router,
+        "PATCH",
+        "/api/partition-settings",
+        json!({ "general": { "transcriptsEnabled": true } }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+async fn count_run_messages(app: &TestApp) -> i64 {
+    app.state
+        .db
+        .call(|conn| {
+            let n: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM run_messages",
+                tokio_rusqlite::params![],
+                |r| r.get(0),
+            )?;
+            Ok(n)
+        })
+        .await
+        .unwrap()
+}
+
+fn survey_with_messages(messages: Vec<serde_json::Value>) -> Vec<HelperEvent> {
+    let mut events: Vec<HelperEvent> = messages
+        .into_iter()
+        .map(|m| HelperEvent::SdkMessage {
+            run_id: 0,
+            message: m,
+        })
+        .collect();
+    events.push(HelperEvent::Finished {
+        run_id: 0,
+        result: SURVEY_RESULT.to_string(),
+        duration_ms: None,
+    });
+    events
+}
+
+#[tokio::test]
+async fn transcripts_enabled_persists_prompt_and_messages() {
+    let runner = Arc::new(FakeSubagentRunner::new(vec![survey_with_messages(vec![
+        json!({"type": "assistant", "text": "thinking 1"}),
+        json!({"type": "tool_use", "name": "ls"}),
+    ])]));
+    let app = TestApp::spawn_with_runner(runner.clone()).await;
+    enable_transcripts(&app).await;
+
+    let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
+    let mut rx = app.state.coordinator.subscribe(&session_id);
+    let (_, body) = empty_request(
+        &app.router,
+        "POST",
+        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+    )
+    .await;
+    let partition_id = body["id"].as_i64().unwrap();
+    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
+
+    let (_, runs) = empty_request(
+        &app.router,
+        "GET",
+        &format!("/api/partitions/{partition_id}/runs"),
+    )
+    .await;
+    let run_id = runs.as_array().unwrap()[0]["id"].as_i64().unwrap();
+
+    let (status, transcript) = empty_request(
+        &app.router,
+        "GET",
+        &format!("/api/partitions/{partition_id}/runs/{run_id}/transcript"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "transcript body: {transcript}");
+    let prompt = transcript["prompt"]
+        .as_str()
+        .expect("prompt must be populated when transcripts are on");
+    assert!(
+        prompt.contains("**Surveyor**"),
+        "expected rendered surveyor prompt, got: {prompt}"
+    );
+    let messages = transcript["messages"].as_array().unwrap();
+    assert_eq!(messages.len(), 2, "messages: {messages:?}");
+    assert_eq!(messages[0]["seq"].as_i64().unwrap(), 0);
+    assert_eq!(messages[1]["seq"].as_i64().unwrap(), 1);
+    assert_eq!(
+        messages[0]["message"]["text"].as_str().unwrap(),
+        "thinking 1"
+    );
+    assert_eq!(
+        messages[1]["message"]["type"].as_str().unwrap(),
+        "tool_use"
+    );
+
+    let _ = empty_request(
+        &app.router,
+        "POST",
+        &format!("/api/partitions/{partition_id}/abandon"),
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn transcripts_disabled_skips_messages_but_keeps_prompt() {
+    let runner = Arc::new(FakeSubagentRunner::new(vec![survey_with_messages(vec![
+        json!({"type": "assistant", "text": "thinking"}),
+    ])]));
+    let app = TestApp::spawn_with_runner(runner.clone()).await;
+
+    let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
+    let mut rx = app.state.coordinator.subscribe(&session_id);
+    let (_, body) = empty_request(
+        &app.router,
+        "POST",
+        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+    )
+    .await;
+    let partition_id = body["id"].as_i64().unwrap();
+    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
+
+    let (_, runs) = empty_request(
+        &app.router,
+        "GET",
+        &format!("/api/partitions/{partition_id}/runs"),
+    )
+    .await;
+    let run_id = runs.as_array().unwrap()[0]["id"].as_i64().unwrap();
+
+    let (status, transcript) = empty_request(
+        &app.router,
+        "GET",
+        &format!("/api/partitions/{partition_id}/runs/{run_id}/transcript"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let prompt = transcript["prompt"].as_str().unwrap();
+    assert!(
+        prompt.contains("**Surveyor**"),
+        "prompt should always be captured: {prompt}"
+    );
+    let messages = transcript["messages"].as_array().unwrap();
+    assert!(
+        messages.is_empty(),
+        "expected no captured messages when toggle is off, got {messages:?}"
+    );
+
+    let _ = empty_request(
+        &app.router,
+        "POST",
+        &format!("/api/partitions/{partition_id}/abandon"),
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn transcripts_cleaned_up_on_accept_construct() {
+    let runner = Arc::new(FakeSubagentRunner::new(vec![
+        survey_with_messages(vec![json!({"text": "s"})]),
+        vec![
+            HelperEvent::SdkMessage {
+                run_id: 0,
+                message: json!({"text": "p"}),
+            },
+            HelperEvent::Finished {
+                run_id: 0,
+                result: plan_result("synthetic"),
+                duration_ms: None,
+            },
+        ],
+        construct_ok_script(),
+    ]));
+    let app = TestApp::spawn_with_runner(runner.clone()).await;
+    enable_transcripts(&app).await;
+
+    let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
+    let mut rx = app.state.coordinator.subscribe(&session_id);
+    let (_, body) = empty_request(
+        &app.router,
+        "POST",
+        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+    )
+    .await;
+    let partition_id = body["id"].as_i64().unwrap();
+    drive_partition_to_construct_review(&app, partition_id).await;
+
+    assert!(
+        count_run_messages(&app).await > 0,
+        "expected captured messages before accept"
+    );
+
+    let (status, body) = empty_request(
+        &app.router,
+        "POST",
+        &format!("/api/partitions/{partition_id}/construct/accept"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+
+    loop {
+        let ev = next_event(&mut rx).await;
+        if matches!(ev, SseEvent::Finished { .. }) {
+            break;
+        }
+    }
+
+    assert_eq!(
+        count_run_messages(&app).await,
+        0,
+        "run_messages must be empty after accept_construct"
+    );
+}
+
+#[tokio::test]
+async fn transcripts_cleaned_up_on_abandon() {
+    let runner = Arc::new(FakeSubagentRunner::new(vec![survey_with_messages(vec![
+        json!({"text": "s"}),
+    ])]));
+    let app = TestApp::spawn_with_runner(runner.clone()).await;
+    enable_transcripts(&app).await;
+
+    let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
+    let mut rx = app.state.coordinator.subscribe(&session_id);
+    let (_, body) = empty_request(
+        &app.router,
+        "POST",
+        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+    )
+    .await;
+    let partition_id = body["id"].as_i64().unwrap();
+    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
+
+    assert!(
+        count_run_messages(&app).await > 0,
+        "expected captured messages before abandon"
+    );
+
+    let (status, _) = empty_request(
+        &app.router,
+        "POST",
+        &format!("/api/partitions/{partition_id}/abandon"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    assert_eq!(
+        count_run_messages(&app).await,
+        0,
+        "run_messages must be empty after abandon"
+    );
+}

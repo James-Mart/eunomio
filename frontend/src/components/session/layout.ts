@@ -35,9 +35,52 @@ export type CandidateLayout = {
   renamedTargetNode: GraphNode;
 };
 
+export type OriginalLayout = {
+  nodes: Node<NodeCardData>[];
+  edges: FlowEdge[];
+  baseNode: GraphNode;
+  finalNode: GraphNode;
+};
+
 export type SessionLayout =
   | (CanonicalLayout & { kind: "canonical" })
+  | (OriginalLayout & { kind: "original" })
   | (CandidateLayout & { kind: "candidate" });
+
+export type View =
+  | { kind: "canonical" }
+  | { kind: "original" }
+  | { kind: "candidate"; partitionId: number };
+
+export function originalLayout(chain: Chain): OriginalLayout | null {
+  const baseNode = chain.ordered[0];
+  const finalNode = chain.ordered[chain.ordered.length - 1];
+  if (!baseNode || !finalNode || baseNode.nodeId === finalNode.nodeId) {
+    return null;
+  }
+  const nodes: Node<NodeCardData>[] = [
+    {
+      id: finalNode.nodeId,
+      type: "eunomia",
+      position: { x: NODE_X, y: 0 },
+      data: { positionLabel: "final" },
+    },
+    {
+      id: baseNode.nodeId,
+      type: "eunomia",
+      position: { x: NODE_X, y: NODE_Y_STEP },
+      data: { positionLabel: "base" },
+    },
+  ];
+  const edges: FlowEdge[] = [
+    {
+      id: `${baseNode.nodeId}->${finalNode.nodeId}`,
+      source: baseNode.nodeId,
+      target: finalNode.nodeId,
+    },
+  ];
+  return { nodes, edges, baseNode, finalNode };
+}
 
 export function computeChain(graph: Graph): Chain {
   const byParent = new Map<string | null, GraphNode[]>();
@@ -123,6 +166,7 @@ export function candidateLayout(
     commitSha: partition.candidateSliceCommitSha,
     title: planEdges[0].title,
     description: planEdges[0].description,
+    strategy: null,
   };
   const renamedTarget: GraphNode = {
     ...target,

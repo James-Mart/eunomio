@@ -180,6 +180,34 @@ impl Coordinator {
         let row = repo::partition::get(state, partition_id).await?;
         Ok(row.into())
     }
+
+    pub async fn get_transcript(
+        &self,
+        state: &AppState,
+        partition_id: i64,
+        run_id: i64,
+    ) -> Result<Transcript, AppError> {
+        repo::partition::get(state, partition_id).await?;
+        let run = repo::run::get(state, run_id).await?;
+        if run.partition_id != partition_id {
+            return Err(AppError::NotFound);
+        }
+        let prompt = repo::run::get_prompt(state, run_id).await?;
+        let messages = repo::run::list_messages(state, run_id).await?;
+        let parsed_result = run
+            .result_json
+            .as_deref()
+            .and_then(|s| serde_json::from_str(s).ok());
+        Ok(Transcript {
+            run_id: run.id,
+            kind: run.kind,
+            prompt,
+            messages,
+            raw_result: run.result_text,
+            parsed_result,
+            error_message: run.error_message,
+        })
+    }
 }
 
 /// Reject a request that arrived at the wrong gate. Centralises the

@@ -1,4 +1,4 @@
-import type { Partition } from "@/lib/api";
+import type { Partition, PartitionStrategy } from "@/lib/api";
 import BranchTab from "@/components/BranchTab";
 import InfoTab from "@/components/InfoTab";
 import PartitionTab from "@/components/PartitionTab";
@@ -8,6 +8,7 @@ export type ToolsContext = {
   nodeId: string | null;
   nodeTitle: string | null;
   nodeDescription: string | null;
+  nodeStrategy: PartitionStrategy | null;
   activePartition: Partition | null;
   isCandidateSliceSelected: boolean;
   onPartitionStarted: (p: Partition) => void;
@@ -45,6 +46,7 @@ export function InfoToolPanel(ctx: ToolsContext) {
       nodeId={ctx.nodeId!}
       nodeTitle={ctx.nodeTitle!}
       nodeDescription={ctx.nodeDescription ?? ""}
+      nodeStrategy={ctx.nodeStrategy}
       onChange={ctx.onChange}
     />
   );

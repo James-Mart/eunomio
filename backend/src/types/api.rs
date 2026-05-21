@@ -1,4 +1,5 @@
-use crate::synthesized_content::SynthesizedRanges;
+use crate::{git::FileBlob, synthesized_content::SynthesizedRanges};
+use super::partition::PartitionStrategy;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
@@ -27,6 +28,7 @@ pub struct GraphNode {
     pub commit_sha: String,
     pub title: String,
     pub description: String,
+    pub strategy: Option<PartitionStrategy>,
 }
 
 #[derive(Debug, Serialize)]
@@ -49,6 +51,7 @@ pub struct Edge {
     pub target_node_id: String,
     pub parent_node_id: Option<String>,
     pub diff: String,
+    pub files: Vec<FileBlob>,
     pub synthesized: SynthesizedRanges,
 }
 
@@ -58,6 +61,7 @@ pub struct Diff {
     pub from_tree: String,
     pub to_tree: String,
     pub diff: String,
+    pub files: Vec<FileBlob>,
     pub synthesized: SynthesizedRanges,
 }
 
@@ -67,7 +71,9 @@ pub struct DiffQuery {
     pub from_tree: String,
     pub to_tree: String,
     #[serde(default)]
-    pub reference_tree: Option<String>,
+    pub before_ref: Option<String>,
+    #[serde(default)]
+    pub after_ref: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]

@@ -51,6 +51,10 @@ pub fn router(state: AppState) -> Router {
             get(list_runs).post(start_run),
         )
         .route(
+            "/api/partitions/:partition_id/runs/:run_id/transcript",
+            get(get_run_transcript),
+        )
+        .route(
             "/api/partitions/:partition_id/runs/:run_id",
             delete(cancel_run),
         )
@@ -161,23 +165,34 @@ async fn get_diff(
     Path(session_id): Path<String>,
     axum::extract::Query(q): axum::extract::Query<DiffQuery>,
 ) -> Result<Json<Diff>, AppError> {
-    let final_tree = repo::session::final_tree(&state, &session_id)
-        .await?
-        .ok_or(AppError::NotFound)?;
+    let Some((base_tree, final_tree)) = repo::session::seed_trees(&state, &session_id).await? else {
+        return Err(AppError::NotFound);
+    };
     let mut trees_to_check: Vec<&str> = vec![&q.from_tree, &q.to_tree];
-    if let Some(ref r) = q.reference_tree {
+    if let Some(ref r) = q.before_ref {
+        trees_to_check.push(r);
+    }
+    if let Some(ref r) = q.after_ref {
         trees_to_check.push(r);
     }
     if !repo::tree::trees_known_in_session(&state, &session_id, &trees_to_check).await? {
         return Err(AppError::NotFound);
     }
-    let reference_tree = q.reference_tree.as_deref().unwrap_or(&final_tree);
-    let (diff, synthesized) =
-        edges::render_edge_diff(&state.repo_root, &q.from_tree, &q.to_tree, reference_tree).await?;
+    let before_ref = q.before_ref.as_deref().unwrap_or(&base_tree);
+    let after_ref = q.after_ref.as_deref().unwrap_or(&final_tree);
+    let (diff, files, synthesized) = edges::render_edge_diff(
+        &state.repo_root,
+        &q.from_tree,
+        &q.to_tree,
+        before_ref,
+        after_ref,
+    )
+    .await?;
     Ok(Json(Diff {
         from_tree: q.from_tree,
         to_tree: q.to_tree,
         diff,
+        files,
         synthesized,
     }))
 }
@@ -345,6 +360,18 @@ async fn cancel_run(
         .cancel_run(&state, partition_id, run_id)
         .await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn get_run_transcript(
+    State(state): State<AppState>,
+    Path((partition_id, run_id)): Path<(i64, i64)>,
+) -> Result<Json<Transcript>, AppError> {
+    Ok(Json(
+        state
+            .coordinator
+            .get_transcript(&state, partition_id, run_id)
+            .await?,
+    ))
 }
 
 async fn accept_survey(

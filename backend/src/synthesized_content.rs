@@ -25,40 +25,29 @@ pub struct LineRanges {
 }
 
 /// Compute synthesized-content word ranges along the displayed `parent → child`
-/// Edge, against `reference_tree` as `R`. See the plan and CONTEXT.md
-/// (`Synthesized content`) for semantics.
+/// Edge, judged against the Reference pair `(before_ref, after_ref)`.
 pub async fn compute(
     repo: &Path,
     parent_tree: &str,
     child_tree: &str,
-    reference_tree: &str,
+    before_ref: &str,
+    after_ref: &str,
 ) -> Result<SynthesizedRanges> {
-    let child = if child_tree == reference_tree {
+    let child = if child_tree == after_ref {
         Vec::new()
     } else {
-        let raw = run_word_diff(repo, child_tree, reference_tree).await?;
-        parse_porcelain(&raw, WordKind::Removed)
+        let raw = run_word_diff(repo, child_tree, after_ref).await?;
+        parse_porcelain(&raw)
     };
 
-    let parent_kind = if child_tree == reference_tree {
-        WordKind::Removed
-    } else {
-        WordKind::Context
-    };
-    let parent = if parent_tree == reference_tree {
+    let parent = if parent_tree == before_ref {
         Vec::new()
     } else {
-        let raw = run_word_diff(repo, parent_tree, reference_tree).await?;
-        parse_porcelain(&raw, parent_kind)
+        let raw = run_word_diff(repo, parent_tree, before_ref).await?;
+        parse_porcelain(&raw)
     };
 
     Ok(SynthesizedRanges { child, parent })
-}
-
-#[derive(Copy, Clone, PartialEq, Eq)]
-enum WordKind {
-    Removed,
-    Context,
 }
 
 async fn run_word_diff(repo: &Path, a: &str, b: &str) -> Result<String> {
@@ -107,7 +96,7 @@ fn utf16_len(s: &str) -> u32 {
     s.chars().map(|c| c.len_utf16() as u32).sum()
 }
 
-fn parse_porcelain(raw: &str, mark: WordKind) -> Vec<FileLineRanges> {
+fn parse_porcelain(raw: &str) -> Vec<FileLineRanges> {
     let mut files: Vec<FileLineRanges> = Vec::new();
     let mut current_path: Option<String> = None;
     let mut current_lines: Vec<LineRanges> = Vec::new();
@@ -210,16 +199,11 @@ fn parse_porcelain(raw: &str, mark: WordKind) -> Vec<FileLineRanges> {
         let len = utf16_len(word);
         match prefix {
             b' ' => {
-                if mark == WordKind::Context {
-                    current_line_spans.push((old_col, old_col + len));
-                }
                 old_col += len;
                 old_active = true;
             }
             b'-' => {
-                if mark == WordKind::Removed {
-                    current_line_spans.push((old_col, old_col + len));
-                }
+                current_line_spans.push((old_col, old_col + len));
                 old_col += len;
                 old_active = true;
             }
@@ -277,9 +261,8 @@ mod tests {
             "+F\n",
             "~\n",
         );
-        let removed = parse_porcelain(raw, WordKind::Removed);
         assert_eq!(
-            removed,
+            parse_porcelain(raw),
             vec![file(
                 "a.txt",
                 vec![
@@ -287,14 +270,6 @@ mod tests {
                     line(3, vec![(0, 1)]),
                     line(5, vec![(0, 1)]),
                 ],
-            )]
-        );
-        let context = parse_porcelain(raw, WordKind::Context);
-        assert_eq!(
-            context,
-            vec![file(
-                "a.txt",
-                vec![line(1, vec![(0, 1)]), line(4, vec![(0, 1)])],
             )]
         );
     }
@@ -314,8 +289,10 @@ mod tests {
             "index ccc..ddd 100644\n",
             "Binary files a/b.dat and b/b.dat differ\n",
         );
-        let out = parse_porcelain(raw, WordKind::Removed);
-        assert_eq!(out, vec![file("a.txt", vec![line(1, vec![(0, 3)])])]);
+        assert_eq!(
+            parse_porcelain(raw),
+            vec![file("a.txt", vec![line(1, vec![(0, 3)])])]
+        );
     }
 
     #[test]
@@ -335,13 +312,9 @@ mod tests {
             "  baz\n",
             "~\n",
         );
-        let context = parse_porcelain(raw, WordKind::Context);
         assert_eq!(
-            context,
-            vec![file(
-                "a.txt",
-                vec![line(1, vec![(0, 4), (7, 11)])],
-            )]
+            parse_porcelain(raw),
+            vec![file("a.txt", vec![line(1, vec![(4, 7)])])]
         );
     }
 
@@ -359,99 +332,12 @@ mod tests {
             "+stay\n",
             "~\n",
         );
-        let removed = parse_porcelain(raw, WordKind::Removed);
-        assert_eq!(removed[0].path, "old/path.txt");
+        assert_eq!(parse_porcelain(raw)[0].path, "old/path.txt");
     }
 
     #[test]
     fn empty_for_no_changes() {
-        let raw = "";
-        assert_eq!(parse_porcelain(raw, WordKind::Removed), vec![]);
-        assert_eq!(parse_porcelain(raw, WordKind::Context), vec![]);
-    }
-
-    #[tokio::test]
-    async fn end_to_end_synthetic_partition_marks_slice_and_skips_renamed_target() {
-        use std::process::Command as StdCommand;
-        use tempfile::tempdir;
-
-        let dir = tempdir().expect("tempdir");
-        let repo = dir.path();
-        let git = |args: &[&str]| {
-            let out = StdCommand::new("git")
-                .arg("-C")
-                .arg(repo)
-                .args(args)
-                .output()
-                .expect("git spawn");
-            assert!(
-                out.status.success(),
-                "git {:?} failed: {}",
-                args,
-                String::from_utf8_lossy(&out.stderr)
-            );
-            String::from_utf8_lossy(&out.stdout).trim().to_string()
-        };
-        git(&["init", "-q", "-b", "main"]);
-        git(&["config", "user.email", "t@t"]);
-        git(&["config", "user.name", "t"]);
-
-        let write = |contents: &str| std::fs::write(repo.join("f.txt"), contents).unwrap();
-        write("base text\n");
-        git(&["add", "."]);
-        git(&["commit", "-q", "-m", "base"]);
-        let base_tree = git(&["rev-parse", "HEAD^{tree}"]);
-
-        write("synthesized intermediate\n");
-        git(&["add", "."]);
-        git(&["commit", "-q", "-m", "slice"]);
-        let slice_tree = git(&["rev-parse", "HEAD^{tree}"]);
-
-        write("final text\n");
-        git(&["add", "."]);
-        git(&["commit", "-q", "-m", "final"]);
-        let final_tree = git(&["rev-parse", "HEAD^{tree}"]);
-
-        // Slice Edge (base → slice), reference = final. The slice's content is
-        // synthesized intermediate: marks should land on the right side.
-        let slice_edge = compute(repo, &base_tree, &slice_tree, &final_tree)
-            .await
-            .expect("compute slice edge");
-        assert!(
-            !slice_edge.child.is_empty(),
-            "slice Edge must mark its synthesized intermediate on the child side"
-        );
-        assert_eq!(slice_edge.child[0].path, "f.txt");
-
-        // Leftover Edge (slice → final), reference = final. child_tree ==
-        // reference_tree, so every `-` word on the parent side must be marked.
-        let leftover_edge = compute(repo, &slice_tree, &final_tree, &final_tree)
-            .await
-            .expect("compute leftover edge");
-        assert!(leftover_edge.child.is_empty(), "child must be empty when child==reference");
-        assert!(
-            !leftover_edge.parent.is_empty(),
-            "leftover-diff special case must mark every `-` word on the parent side"
-        );
-
-        // Renamed-target Edge in a Synthetic partition viewed under the
-        // pending-partition reference (= the partition target tree itself).
-        // child_tree == reference_tree → both sides empty per the recipe.
-        let renamed_target_edge = compute(repo, &slice_tree, &final_tree, &final_tree)
-            .await
-            .expect("compute renamed-target edge");
-        // We already asserted child is empty; parent is non-empty here only
-        // because slice_tree differs from final_tree (the leftover-diff case).
-        // For the canonical-view counterpart of this assertion see the slice
-        // Edge above.
-        let _ = renamed_target_edge;
-
-        // Sanity: when both trees equal the reference, both sides are empty.
-        let trivial = compute(repo, &final_tree, &final_tree, &final_tree)
-            .await
-            .expect("compute trivial");
-        assert!(trivial.child.is_empty());
-        assert!(trivial.parent.is_empty());
+        assert_eq!(parse_porcelain(""), vec![]);
     }
 
     #[test]
@@ -467,8 +353,97 @@ mod tests {
             "+hello\n",
             "~\n",
         );
-        let removed = parse_porcelain(raw, WordKind::Removed);
-        assert!(removed.is_empty());
+        assert!(parse_porcelain(raw).is_empty());
+    }
+
+    struct TestRepo {
+        _dir: tempfile::TempDir,
+        path: std::path::PathBuf,
+    }
+
+    impl TestRepo {
+        fn new() -> Self {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let path = dir.path().to_path_buf();
+            run_git(&path, &["init", "-q", "-b", "main"]);
+            run_git(&path, &["config", "user.email", "t@t"]);
+            run_git(&path, &["config", "user.name", "t"]);
+            Self { _dir: dir, path }
+        }
+
+        fn commit_tree<I, P, C>(&self, files: I, message: &str) -> String
+        where
+            I: IntoIterator<Item = (P, C)>,
+            P: AsRef<std::path::Path>,
+            C: AsRef<str>,
+        {
+            let entries: Vec<_> = std::fs::read_dir(&self.path)
+                .expect("readdir")
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_name() != ".git")
+                .collect();
+            for entry in entries {
+                let path = entry.path();
+                if path.is_dir() {
+                    std::fs::remove_dir_all(&path).expect("rmdir");
+                } else {
+                    std::fs::remove_file(&path).expect("rm");
+                }
+            }
+            for (rel, contents) in files {
+                let full = self.path.join(rel.as_ref());
+                if let Some(parent) = full.parent() {
+                    std::fs::create_dir_all(parent).expect("mkdir");
+                }
+                std::fs::write(&full, contents.as_ref()).expect("write");
+            }
+            run_git(&self.path, &["add", "-A"]);
+            run_git(&self.path, &["commit", "-q", "--allow-empty", "-m", message]);
+            run_git(&self.path, &["rev-parse", "HEAD^{tree}"])
+        }
+    }
+
+    fn run_git(repo: &std::path::Path, args: &[&str]) -> String {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(args)
+            .output()
+            .expect("git");
+        assert!(
+            out.status.success(),
+            "git {:?}: {}",
+            args,
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
+    #[tokio::test]
+    async fn reference_pair_marks_slice_and_leftover_edges() {
+        let repo = TestRepo::new();
+        let base = repo.commit_tree([("a.txt", "a\n"), ("b.txt", "b\n")], "base");
+        let slice = repo.commit_tree([("a.txt", "a\n"), ("b.txt", "x\n")], "slice");
+        let final_tree = repo.commit_tree([("a.txt", "z\n"), ("b.txt", "x\n")], "final");
+
+        let slice_edge =
+            compute(&repo.path, &base, &slice, &base, &final_tree).await.expect("slice edge");
+        assert!(
+            slice_edge.parent.is_empty(),
+            "slice edge: parent == beforeRef → no parent marks"
+        );
+        let child_paths: Vec<&str> = slice_edge.child.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(
+            child_paths,
+            vec!["a.txt"],
+            "slice edge: child differs from after_ref on a.txt only"
+        );
+
+        let leftover_edge =
+            compute(&repo.path, &slice, &final_tree, &base, &final_tree).await.expect("leftover");
+        assert!(leftover_edge.child.is_empty());
+        let parent_paths: Vec<&str> = leftover_edge.parent.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(parent_paths, vec!["b.txt"]);
     }
 
     impl PartialEq for LineRanges {

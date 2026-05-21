@@ -18,11 +18,22 @@ const SYNTHESIZED_CSS =
   "[data-eunomia-synthesized-gutter]{position:relative;}" +
   "[data-eunomia-synthesized-gutter]::after{content:'\\2731';position:absolute;right:2px;top:50%;transform:translateY(-50%);font-size:0.7em;line-height:1;color:rgb(196,181,253);pointer-events:none;}";
 
-export const FILEDIFF_CSS = STICKY_HEADER_CSS + SYNTHESIZED_CSS;
+const UNMODIFIED_LINES_CSS =
+  "[data-separator=line-info] [data-separator-content]," +
+  "[data-separator=line-info] [data-expand-button]," +
+  "[data-separator=line-info-basic] [data-separator-content]," +
+  "[data-separator=line-info-basic] [data-expand-button]" +
+  "{background-color:rgba(56,139,253,0.15);color:#4493f8;}" +
+  "[data-separator=line-info] [data-expand-button]:hover," +
+  "[data-separator=line-info] [data-separator-content]:hover," +
+  "[data-separator=line-info-basic] [data-expand-button]:hover" +
+  "{background-color:rgba(56,139,253,0.25);color:#58a6ff;}";
+
+export const FILEDIFF_CSS = STICKY_HEADER_CSS + SYNTHESIZED_CSS + UNMODIFIED_LINES_CSS;
 
 const SYNTH_TOOLTIP = {
-  child: "Synthesized — a later Edge overwrites this content.",
-  parent: "Synthesized removal — a later Edge restores this content.",
+  child: "Synthesized — removed relative to the Reference pair's after tree.",
+  parent: "Synthesized removal — restored relative to the Reference pair's before tree.",
 } as const;
 
 type LineSpans = ReadonlyArray<readonly [number, number]>;
@@ -69,16 +80,6 @@ export function decorateFileContainer(
       }
     } else if (type === "change-addition") {
       if (childForFile) {
-        spans = childForFile.get(lineNum);
-        side = "child";
-      }
-    } else if (type === "context" || type === "context-expanded") {
-      // Skip the deletions side of split mode: its `data-line` is the old
-      // line number, which doesn't index into `childForFile` (keyed by
-      // child_tree line numbers).
-      const code = lineEl.closest("code");
-      const isLeftSide = code?.hasAttribute("data-deletions") ?? false;
-      if (!isLeftSide && childForFile) {
         spans = childForFile.get(lineNum);
         side = "child";
       }

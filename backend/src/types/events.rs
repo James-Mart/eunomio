@@ -25,6 +25,7 @@ pub enum SseEvent {
         session_id: String,
         target_node_id: String,
         partition_id: i64,
+        run_id: i64,
         message: serde_json::Value,
     },
     #[serde(rename_all = "camelCase")]

@@ -546,8 +546,8 @@ The SSE event stream and the per-Edge UI both scope to
 
 Pre-release schema is treated as malleable: when the shape needs to change,
 the `CREATE TABLE` is updated in place and existing dev databases must be
-deleted by hand. There is no migration code; this is intentional until v1
-ships.
+wiped with `eunomia --new` (or `npm run dev:new`). There is no migration
+code; this is intentional until v1 ships.
 
 ---
 

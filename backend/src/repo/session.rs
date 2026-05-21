@@ -88,6 +88,49 @@ pub async fn final_tree(state: &AppState, session_id: &str) -> Result<Option<Str
     Ok(row)
 }
 
+pub async fn base_tree(state: &AppState, session_id: &str) -> Result<Option<String>, AppError> {
+    let session_id = session_id.to_string();
+    let repo_root = state.repo_root.to_string_lossy().to_string();
+    let row: Option<String> = state
+        .db
+        .call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT base_tree FROM sessions WHERE id = ?1 AND repo_root = ?2",
+            )?;
+            let mut rows = stmt.query(tokio_rusqlite::params![session_id, repo_root])?;
+            if let Some(row) = rows.next()? {
+                Ok(Some(row.get::<_, String>(0)?))
+            } else {
+                Ok(None)
+            }
+        })
+        .await?;
+    Ok(row)
+}
+
+pub async fn seed_trees(
+    state: &AppState,
+    session_id: &str,
+) -> Result<Option<(String, String)>, AppError> {
+    let session_id = session_id.to_string();
+    let repo_root = state.repo_root.to_string_lossy().to_string();
+    let row: Option<(String, String)> = state
+        .db
+        .call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT base_tree, final_tree FROM sessions WHERE id = ?1 AND repo_root = ?2",
+            )?;
+            let mut rows = stmt.query(tokio_rusqlite::params![session_id, repo_root])?;
+            if let Some(row) = rows.next()? {
+                Ok(Some((row.get(0)?, row.get(1)?)))
+            } else {
+                Ok(None)
+            }
+        })
+        .await?;
+    Ok(row)
+}
+
 pub async fn find_by_refs(
     state: &AppState,
     base_ref: &str,

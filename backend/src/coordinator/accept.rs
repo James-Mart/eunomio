@@ -153,6 +153,7 @@ impl Coordinator {
             candidate_commit,
             slice_title,
             slice_description,
+            row.strategy,
             leftover_title,
             leftover_description,
             sibling_ids,
@@ -263,6 +264,9 @@ impl Coordinator {
         self.inner.runs.mark_abandoning(partition_id);
         self.inner.runs.take_and_cancel(partition_id).await;
         repo::run::cancel_running_for_partition(state, partition_id).await?;
+        repo::partition::delete_with_runs(state, partition_id).await?;
+        let worktree_path = PathBuf::from(&row.worktree_path);
+        worktree::teardown(&state.repo_root, &worktree_path).await;
         self.emit(
             &row.session_id,
             SseEvent::Cancelled {
@@ -271,9 +275,6 @@ impl Coordinator {
                 partition_id,
             },
         );
-        let worktree_path = PathBuf::from(&row.worktree_path);
-        worktree::teardown(&state.repo_root, &worktree_path).await;
-        repo::partition::delete_with_runs(state, partition_id).await?;
         self.inner.runs.unmark_abandoning(partition_id);
         Ok(())
     }

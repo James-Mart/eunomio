@@ -1,8 +1,17 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GeneralSettings {
+    #[serde(default)]
+    pub transcripts_enabled: bool,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PartitionSettings {
+    #[serde(default)]
+    pub general: GeneralSettings,
     #[serde(default)]
     pub coordinator: CoordinatorSettings,
     #[serde(default)]
@@ -106,6 +115,8 @@ fn default_model() -> String {
 #[serde(rename_all = "camelCase")]
 pub struct PartitionSettingsPatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub general: Option<GeneralSettings>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coordinator: Option<CoordinatorSettings>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surveyor: Option<SubagentSettings>,
@@ -117,6 +128,9 @@ pub struct PartitionSettingsPatch {
 
 impl PartitionSettings {
     pub fn apply_patch(&mut self, patch: PartitionSettingsPatch) {
+        if let Some(v) = patch.general {
+            self.general = v;
+        }
         if let Some(v) = patch.coordinator {
             self.coordinator = v;
         }

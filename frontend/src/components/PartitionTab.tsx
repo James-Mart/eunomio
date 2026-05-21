@@ -25,6 +25,7 @@ import {
   PlanReview,
   SurveyReview,
 } from "@/components/review";
+import PartitionTranscripts from "@/components/PartitionTranscripts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
@@ -169,6 +170,12 @@ export default function PartitionTab({
       ) : (
         <RunningView lifecycle={activeLifecycle!} onAbandon={abandon} />
       )}
+      {activeLifecycle ? (
+        <PartitionTranscripts
+          partitionId={activeLifecycle.partitionId}
+          runs={runs}
+        />
+      ) : null}
     </div>
   );
 }

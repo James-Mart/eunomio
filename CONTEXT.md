@@ -67,8 +67,17 @@ A **Strategy** whose **Slice** is a literal subset of the diff's hunks that cuts
 A **Strategy** whose **Slice** is a literal subset of the diff's hunks confined to one architectural layer (types, schema, service, UI, etc.); the leftover owns every other layer in foundation order. No synthesized intermediate — every line in the Slice's tree appears in BeforeTree or TargetTree.
 
 **Synthesized content**:
-The diff-view rendering concept: any span along an Edge — either added on the child side or removed on the parent side — that does not match `final.tree` at the same location. Marked in the diff so the user can see at a glance which words/lines will be overwritten or restored by a later Edge. Strictly broader than **synthesized intermediate**: the latter is a per-Slice structural property (relative to that Slice's BeforeTree/TargetTree), the former is a chain-wide rendering property (relative to `final.tree`), and they coincide only for an Accepted Synthetic Slice whose leftover Edge has not been further partitioned.
-_Avoid_: "transient", "synthetic content" (would collide with the **Synthetic** Strategy).
+The diff-view rendering concept: word-level marks on an Edge's diff showing content that differs from the Edge's **Reference pair** — parent-side removals relative to the pair's before tree (`synthetic−`) and child-side additions relative to the pair's after tree (`synthetic+`). In **Canonical view** every Edge uses `(base.tree, final.tree)` as its Reference pair; in **Candidate view** both candidate Edges use the Partition's `(BeforeTree, TargetTree)`. **`synthetic~`** denotes content present in both reference trees but absent from the Edge's parent/child trees; it is a glossary term only and is not rendered in the UI.
+_Avoid_: defining synthesized content relative to `final.tree` alone; "transient", "synthetic content" (collides with the **Synthetic** Strategy).
+
+**Reference pair**:
+The two trees an Edge's synthesized marks are computed against: `(beforeRef, afterRef)`. Canonical Edges default to `(base.tree, final.tree)`; candidate Edges use the Partition's `(BeforeTree, TargetTree)`.
+
+**Canonical view**:
+The default graph view showing the accepted Node chain (`base → 1 → … → final`). Each Edge's synthesized marks use Reference pair `(base.tree, final.tree)`.
+
+**Original view**:
+A two-Node graph view (`base → final`) showing the seed diff before any Partitions. Selecting **final** shows the `base→final` diff with no synthesized marks; selecting **base** shows an empty diff pane.
 
 **Theme**:
 One coherent cluster of changes inside a diff — a feature, a refactor, a bug fix, a layer rewrite — that could be reviewed, described, or reverted on its own. Produced by the Surveyor as the `themes[]` list inside a ChangeSurvey. Themes are the candidate set the Planner draws from when it chooses the `Synthetic` strategy; under `Vertical` or `Horizontal` the planner uses them as supporting context but slices along different axes.

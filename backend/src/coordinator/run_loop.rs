@@ -129,6 +129,20 @@ impl Coordinator {
         strategy_override: Option<PartitionStrategy>,
     ) -> Result<Run, AppError> {
         let partition = repo::partition::get(&state, partition_id).await?;
+        let prompt = self
+            .build_prompt(
+                &state,
+                &partition,
+                kind,
+                user_feedback.as_deref(),
+                strategy_override,
+            )
+            .await?;
+        let settings = state.partition_settings.snapshot().await;
+        let model = resolve_model(&settings, kind.phase());
+        let transcripts_enabled = settings.general.transcripts_enabled;
+        let prompt_for_helper = prompt.clone();
+
         let now = db::unix_seconds();
         let run_id = repo::run::start(
             &state,
@@ -137,6 +151,7 @@ impl Coordinator {
             partition.target_node_id.clone(),
             kind,
             parent_run_id,
+            prompt,
             now,
         )
         .await?;
@@ -156,23 +171,11 @@ impl Coordinator {
             },
         );
 
-        let prompt = self
-            .build_prompt(
-                &state,
-                &partition,
-                kind,
-                user_feedback.as_deref(),
-                strategy_override,
-            )
-            .await?;
-        let settings = state.partition_settings.snapshot().await;
-        let model = resolve_model(&settings, kind.phase());
-
         let (tx_helper, rx_helper) = mpsc::channel::<HelperEvent>(64);
         let request = RunRequest {
             model,
             cwd: PathBuf::from(&partition.worktree_path),
-            prompt,
+            prompt: prompt_for_helper,
             run_id,
         };
 
@@ -183,7 +186,14 @@ impl Coordinator {
         let state_for_task = state.clone();
         tokio::spawn(async move {
             coord
-                .drive_run(state_for_task, partition_id, run_id, kind, rx_helper)
+                .drive_run(
+                    state_for_task,
+                    partition_id,
+                    run_id,
+                    kind,
+                    transcripts_enabled,
+                    rx_helper,
+                )
                 .await;
         });
 
@@ -205,6 +215,7 @@ impl Coordinator {
         partition_id: i64,
         run_id: i64,
         kind: RunKind,
+        transcripts_enabled: bool,
         mut rx: mpsc::Receiver<HelperEvent>,
     ) {
         let Ok(partition_row) = repo::partition::get(&state, partition_id).await else {
@@ -216,6 +227,7 @@ impl Coordinator {
         let mut final_result: Option<String> = None;
         let mut error: Option<(String, String)> = None;
         let mut cancelled = false;
+        let mut next_seq: i64 = 0;
 
         while let Some(ev) = rx.recv().await {
             if self.inner.runs.is_abandoning(partition_id) {
@@ -224,12 +236,30 @@ impl Coordinator {
             match ev {
                 HelperEvent::Started { .. } => {}
                 HelperEvent::SdkMessage { message, .. } => {
+                    if transcripts_enabled {
+                        let seq = next_seq;
+                        next_seq += 1;
+                        let ts = db::unix_seconds();
+                        let payload = message.to_string();
+                        if let Err(e) = repo::run::insert_message(
+                            &state,
+                            run_id,
+                            seq,
+                            ts,
+                            payload,
+                        )
+                        .await
+                        {
+                            tracing::warn!(error = %e, run_id, "persisting run_message failed");
+                        }
+                    }
                     self.emit(
                         &session_id,
                         SseEvent::SdkMessage {
                             session_id: session_id.clone(),
                             target_node_id: target_node_id.clone(),
                             partition_id,
+                            run_id,
                             message,
                         },
                     );

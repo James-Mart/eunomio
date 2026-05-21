@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   Code2,
   ListChecks,
+  ScrollText,
   Telescope,
   Workflow,
   type LucideIcon,
@@ -11,6 +12,7 @@ import { toast } from "sonner";
 import {
   api,
   type CursorModel,
+  type GeneralSettings,
   type HumanInTheLoopSettings,
   type IterationLimit,
   type PartitionSettings,
@@ -30,19 +32,26 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-type Category = "coordinator" | "surveyor" | "planner" | "constructor";
+type Category = "general" | "coordinator" | "surveyor" | "planner" | "constructor";
 type SubagentCategory = "surveyor" | "planner" | "constructor";
 
 type CategoryMeta = { label: string; icon: LucideIcon };
 
 const CATEGORIES: Record<Category, CategoryMeta> = {
+  general: { label: "General", icon: ScrollText },
   coordinator: { label: "Coordinator", icon: Workflow },
   surveyor: { label: "Surveyor", icon: Telescope },
   planner: { label: "Planner", icon: ListChecks },
   constructor: { label: "Constructor", icon: Code2 },
 };
 
-const ORDER: Category[] = ["coordinator", "surveyor", "planner", "constructor"];
+const ORDER: Category[] = [
+  "general",
+  "coordinator",
+  "surveyor",
+  "planner",
+  "constructor",
+];
 
 type Props = {
   open: boolean;
@@ -54,7 +63,7 @@ type ModelsState =
   | { kind: "success"; models: CursorModel[] };
 
 export default function PartitionSettingsDialog({ open, onOpenChange }: Props) {
-  const [active, setActive] = useState<Category>("coordinator");
+  const [active, setActive] = useState<Category>("general");
   const [settings, setSettings] = useState<PartitionSettings | null>(null);
   const [models, setModels] = useState<ModelsState>({ kind: "loading" });
 
@@ -137,7 +146,15 @@ export default function PartitionSettingsDialog({ open, onOpenChange }: Props) {
         <div className="flex h-[460px]">
           <div className="flex-1 p-6 overflow-auto">
             <h3 className="text-lg font-medium mb-4">{CATEGORIES[active].label}</h3>
-            {active === "coordinator" ? (
+            {active === "general" ? (
+              <GeneralPanel
+                settings={settings}
+                onChange={(next) =>
+                  settings &&
+                  applyOptimistic("general", next, "Failed to save settings")
+                }
+              />
+            ) : active === "coordinator" ? (
               <CoordinatorPanel
                 settings={settings}
                 models={models}
@@ -183,6 +200,42 @@ export default function PartitionSettingsDialog({ open, onOpenChange }: Props) {
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function GeneralPanel({
+  settings,
+  onChange,
+}: {
+  settings: PartitionSettings | null;
+  onChange: (next: GeneralSettings) => void;
+}) {
+  const current = settings?.general ?? { transcriptsEnabled: false };
+  const disabled = !settings;
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-3">
+        <Checkbox
+          id="general-transcripts"
+          checked={current.transcriptsEnabled}
+          disabled={disabled}
+          onChange={(e) =>
+            onChange({ ...current, transcriptsEnabled: e.target.checked })
+          }
+          className="mt-0.5"
+        />
+        <div className="space-y-0.5">
+          <Label htmlFor="general-transcripts" className="font-normal">
+            Enable transcripts
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            Persist every subagent's SDK stream events so a Transcript section
+            appears on each Partition for review. Captured per Run; deleted
+            when the Partition is Accepted or Abandoned.
+          </p>
+        </div>
+      </div>
+    </div>
   );
 }
 

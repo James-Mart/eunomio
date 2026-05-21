@@ -22,6 +22,7 @@ The agent implementing this plan must follow these requirements:
 
 - **Code comments**: Do not add comments that explain what the code does. The only exception is doc comments on public interface functions/objects, and even those must be extremely concise. Inline comments within function bodies are almost never needed; when they are, they should explain _why_ a particular design was chosen (especially when the reasoning is non-obvious), not _what_ the code does.
 - **Avoid scope-creep**: Anything in-scope for this plan should be explicitly agreed upon before starting the implementation. Therefore, when implementing this plan, it is a safe assumption that anything not explicitly mentioned is out of scope.
+- **No backwards compatibility / migrations**: Do not add migration code, schema-versioning shims, or deprecation wrappers. Schema changes go straight into the embedded `CREATE TABLE` in `backend/src/db.rs` and assume a `--new` wipe.
 ```
 
 ## Step 3 - Use /grill-with-docs

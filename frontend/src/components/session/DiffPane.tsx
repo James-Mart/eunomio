@@ -23,10 +23,26 @@ export function DiffPane({
   graph,
 }: Props) {
   if (!selectedNodeId) return <DiffPaneEmpty />;
+
+  if (layout.kind === "original") {
+    if (selectedNodeId === layout.finalNode.nodeId) {
+      return (
+        <EdgePane
+          key={`original-${layout.baseNode.nodeId}->${layout.finalNode.nodeId}`}
+          sessionId={sessionId}
+          fromTree={layout.baseNode.treeSha}
+          toTree={layout.finalNode.treeSha}
+        />
+      );
+    }
+    return <DiffPaneEmpty />;
+  }
+
   if (layout.kind === "candidate") {
+    const slice = layout.candidateSliceNode;
+    const renamed = layout.renamedTargetNode;
+    const parent = graph.nodes.find((n) => n.nodeId === slice.parentNodeId);
     if (selectedNodeId === CANDIDATE_SLICE_ID) {
-      const slice = layout.candidateSliceNode;
-      const parent = graph.nodes.find((n) => n.nodeId === slice.parentNodeId);
       if (!parent) return <DiffPaneEmpty />;
       return (
         <EdgePane
@@ -34,20 +50,21 @@ export function DiffPane({
           sessionId={sessionId}
           fromTree={parent.treeSha}
           toTree={slice.treeSha}
-          referenceTree={layout.renamedTargetNode.treeSha}
+          beforeRef={parent.treeSha}
+          afterRef={renamed.treeSha}
         />
       );
     }
     if (selectedNodeId.startsWith(CANDIDATE_TARGET_PREFIX)) {
-      const slice = layout.candidateSliceNode;
-      const renamed = layout.renamedTargetNode;
+      if (!parent) return <DiffPaneEmpty />;
       return (
         <EdgePane
           key="candidate-target"
           sessionId={sessionId}
           fromTree={slice.treeSha}
           toTree={renamed.treeSha}
-          referenceTree={renamed.treeSha}
+          beforeRef={parent.treeSha}
+          afterRef={renamed.treeSha}
         />
       );
     }
@@ -62,6 +79,7 @@ export function DiffPane({
     }
     return <DiffPaneEmpty />;
   }
+
   if (!selectedCanonicalNode) return <DiffPaneEmpty />;
   return (
     <EdgePane

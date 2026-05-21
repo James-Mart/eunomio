@@ -46,6 +46,7 @@ pub async fn start(
     target_node_id: String,
     kind: RunKind,
     parent_run_id: Option<i64>,
+    prompt_text: String,
     started_at: i64,
 ) -> Result<i64, AppError> {
     let kind_str = kind.as_str().to_string();
@@ -54,14 +55,15 @@ pub async fn start(
         .call(move |conn| {
             let tx = conn.transaction()?;
             tx.execute(
-                "INSERT INTO runs (partition_id, session_id, target_node_id, kind, parent_run_id, status, started_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, 'running', ?6)",
+                "INSERT INTO runs (partition_id, session_id, target_node_id, kind, parent_run_id, status, prompt_text, started_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, 'running', ?6, ?7)",
                 tokio_rusqlite::params![
                     partition_id,
                     session_id,
                     target_node_id,
                     kind_str,
                     parent_run_id,
+                    prompt_text,
                     started_at
                 ],
             )?;
@@ -71,6 +73,78 @@ pub async fn start(
         })
         .await?;
     Ok(run_id)
+}
+
+pub async fn get_prompt(state: &AppState, run_id: i64) -> Result<Option<String>, AppError> {
+    let prompt = state
+        .db
+        .call(move |conn| {
+            let mut stmt = conn.prepare("SELECT prompt_text FROM runs WHERE id = ?1")?;
+            let mut rows = stmt.query(tokio_rusqlite::params![run_id])?;
+            if let Some(r) = rows.next()? {
+                Ok(r.get::<_, Option<String>>(0)?)
+            } else {
+                Ok(None)
+            }
+        })
+        .await?;
+    Ok(prompt)
+}
+
+pub async fn insert_message(
+    state: &AppState,
+    run_id: i64,
+    seq: i64,
+    ts: i64,
+    message_json: String,
+) -> Result<(), AppError> {
+    state
+        .db
+        .call(move |conn| {
+            conn.execute(
+                "INSERT INTO run_messages (run_id, seq, ts, message_json) VALUES (?1, ?2, ?3, ?4)",
+                tokio_rusqlite::params![run_id, seq, ts, message_json],
+            )?;
+            Ok(())
+        })
+        .await?;
+    Ok(())
+}
+
+pub async fn list_messages(
+    state: &AppState,
+    run_id: i64,
+) -> Result<Vec<TranscriptMessage>, AppError> {
+    let rows: Vec<(i64, i64, String)> = state
+        .db
+        .call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT seq, ts, message_json FROM run_messages WHERE run_id = ?1 ORDER BY seq",
+            )?;
+            let rows = stmt
+                .query_map(tokio_rusqlite::params![run_id], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+        .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(seq, ts, json)| TranscriptMessage {
+            seq,
+            ts,
+            message: serde_json::from_str(&json).unwrap_or(serde_json::Value::Null),
+        })
+        .collect())
+}
+
+pub fn delete_messages_for_partition(conn: &rusqlite::Connection, partition_id: i64) -> rusqlite::Result<()> {
+    conn.execute(
+        "DELETE FROM run_messages WHERE run_id IN (SELECT id FROM runs WHERE partition_id = ?1)",
+        tokio_rusqlite::params![partition_id],
+    )?;
+    Ok(())
 }
 
 pub async fn finish_success(

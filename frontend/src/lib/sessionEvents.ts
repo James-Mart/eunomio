@@ -27,6 +27,7 @@ export type SessionEvent =
       sessionId: string;
       targetNodeId: string;
       partitionId: number;
+      runId: number;
       message: unknown;
     }
   | {

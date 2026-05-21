@@ -117,6 +117,7 @@ pub async fn delete_with_runs(state: &AppState, partition_id: i64) -> Result<(),
         .db
         .call(move |conn| {
             let tx = conn.transaction()?;
+            super::run::delete_messages_for_partition(&tx, partition_id)?;
             tx.execute(
                 "DELETE FROM runs WHERE partition_id = ?1",
                 tokio_rusqlite::params![partition_id],
@@ -141,6 +142,7 @@ pub async fn delete_many_with_runs(
         .call(move |conn| {
             let tx = conn.transaction()?;
             for id in &partition_ids {
+                super::run::delete_messages_for_partition(&tx, *id)?;
                 tx.execute(
                     "DELETE FROM runs WHERE partition_id = ?1",
                     tokio_rusqlite::params![id],
@@ -233,6 +235,7 @@ pub async fn finalize_construct_accept(
     candidate_commit: String,
     slice_title: String,
     slice_description: String,
+    slice_strategy: Option<PartitionStrategy>,
     leftover_title: String,
     leftover_description: String,
     sibling_ids: Vec<i64>,
@@ -242,9 +245,10 @@ pub async fn finalize_construct_accept(
         .db
         .call(move |conn| {
             let tx = conn.transaction()?;
+            let slice_strategy_db = slice_strategy.map(|s| s.as_str().to_string());
             tx.execute(
-                "INSERT INTO nodes (session_id, node_id, parent_node_id, tree_sha, commit_sha, title, description, created_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                "INSERT INTO nodes (session_id, node_id, parent_node_id, tree_sha, commit_sha, title, description, strategy, created_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 tokio_rusqlite::params![
                     session_id,
                     slice_node_id,
@@ -253,6 +257,7 @@ pub async fn finalize_construct_accept(
                     candidate_commit,
                     slice_title,
                     slice_description,
+                    slice_strategy_db,
                     now
                 ],
             )?;
@@ -269,6 +274,7 @@ pub async fn finalize_construct_accept(
             let mut all_ids = sibling_ids.clone();
             all_ids.push(partition_id);
             for id in &all_ids {
+                super::run::delete_messages_for_partition(&tx, *id)?;
                 tx.execute(
                     "DELETE FROM runs WHERE partition_id = ?1",
                     tokio_rusqlite::params![id],

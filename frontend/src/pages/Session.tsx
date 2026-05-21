@@ -46,8 +46,8 @@ function SessionInner({ sessionId }: { sessionId: string }) {
     graph,
     error,
     partitions,
-    candidatePartitionId,
-    setCandidatePartitionId,
+    view,
+    setView,
     candidatePartition,
     layout,
     chain,
@@ -92,16 +92,22 @@ function SessionInner({ sessionId }: { sessionId: string }) {
     return <SessionSkeleton />;
   }
 
-  const onSelectCandidate = (next: string) => {
+  const onSelectView = (next: string) => {
     if (next === "canonical") {
-      setCandidatePartitionId(null);
+      setView({ kind: "canonical" });
       setSelectedNodeId(null);
+      return;
+    }
+    if (next === "original") {
+      const final = chain.ordered[chain.ordered.length - 1] ?? null;
+      setView({ kind: "original" });
+      setSelectedNodeId(final?.nodeId ?? null);
       return;
     }
     const pid = Number(next);
     const p = partitions.find((x) => x.id === pid);
     if (!p) return;
-    setCandidatePartitionId(pid);
+    setView({ kind: "candidate", partitionId: pid });
     setSelectedNodeId(
       willRenderCandidateLayout(p)
         ? CANDIDATE_TARGET_PREFIX + p.targetNodeId
@@ -115,7 +121,7 @@ function SessionInner({ sessionId }: { sessionId: string }) {
   };
 
   const onPartitionEnded = () => {
-    setCandidatePartitionId(null);
+    setView((prev) => (prev.kind === "candidate" ? { kind: "canonical" } : prev));
     setSelectedNodeId(null);
     void refreshPartitions();
   };
@@ -125,8 +131,8 @@ function SessionInner({ sessionId }: { sessionId: string }) {
       layout={layout}
       chain={chain}
       partitions={partitions}
-      candidatePartitionId={candidatePartitionId}
-      onSelectCandidate={onSelectCandidate}
+      view={view}
+      onSelectView={onSelectView}
       selectedNodeId={selectedNodeId}
       onNodeClick={onNodeClick}
     />
@@ -148,6 +154,7 @@ function SessionInner({ sessionId }: { sessionId: string }) {
       nodeId={selectedCanonicalNode?.nodeId ?? null}
       nodeTitle={selectedCanonicalNode?.title ?? null}
       nodeDescription={selectedCanonicalNode?.description ?? null}
+      nodeStrategy={selectedCanonicalNode?.strategy ?? null}
       activePartition={candidatePartition}
       isCandidateSliceSelected={isCandidateSliceSelected}
       onPartitionStarted={onPartitionStarted}
@@ -172,7 +179,7 @@ function SessionInner({ sessionId }: { sessionId: string }) {
             maxSize="85%"
             className="min-w-0"
           >
-            <div className="h-full min-w-0 overflow-hidden">{diffPane}</div>
+            <div className="h-full min-w-0 overflow-hidden pb-2 pr-2">{diffPane}</div>
           </ResizablePanel>
           <ResizableHandle withHandle aria-label="Resize panes" />
           <ResizablePanel
@@ -209,6 +216,7 @@ function SessionInner({ sessionId }: { sessionId: string }) {
                   nodeId={selectedCanonicalNode?.nodeId ?? null}
                   nodeTitle={selectedCanonicalNode?.title ?? null}
                   nodeDescription={selectedCanonicalNode?.description ?? null}
+                  nodeStrategy={selectedCanonicalNode?.strategy ?? null}
                   activePartition={candidatePartition}
                   isCandidateSliceSelected={isCandidateSliceSelected}
                   onPartitionStarted={onPartitionStarted}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 
 import {
   api,
@@ -16,16 +16,18 @@ import {
   canonicalLayout,
   candidateLayout,
   computeChain,
+  originalLayout,
   type PhaseStatus,
   type SessionLayout,
+  type View,
 } from "./layout";
 
 export type SessionData = {
   graph: Graph | null;
   error: string | null;
   partitions: Partition[];
-  candidatePartitionId: number | null;
-  setCandidatePartitionId: (id: number | null) => void;
+  view: View;
+  setView: Dispatch<SetStateAction<View>>;
   candidatePartition: Partition | null;
   layout: SessionLayout | null;
   chain: ReturnType<typeof computeChain> | null;
@@ -38,9 +40,7 @@ export function useSessionData(sessionId: string): SessionData {
   const [graph, setGraph] = useState<Graph | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [partitions, setPartitions] = useState<Partition[]>([]);
-  const [candidatePartitionId, setCandidatePartitionId] = useState<
-    number | null
-  >(null);
+  const [view, setView] = useState<View>({ kind: "canonical" });
 
   const refresh = useCallback(async () => {
     try {
@@ -78,17 +78,20 @@ export function useSessionData(sessionId: string): SessionData {
   const hydratePartition = useHydratePartition();
 
   useEffect(() => {
-    if (candidatePartitionId === null) return;
-    if (!partitions.some((p) => p.id === candidatePartitionId)) {
-      setCandidatePartitionId(null);
+    if (view.kind !== "candidate") return;
+    if (!partitions.some((p) => p.id === view.partitionId)) {
+      setView({ kind: "canonical" });
     }
-  }, [partitions, candidatePartitionId]);
+  }, [partitions, view]);
 
   const chain = useMemo(() => (graph ? computeChain(graph) : null), [graph]);
 
   const candidatePartition = useMemo(
-    () => partitions.find((p) => p.id === candidatePartitionId) ?? null,
-    [partitions, candidatePartitionId],
+    () =>
+      view.kind === "candidate"
+        ? partitions.find((p) => p.id === view.partitionId) ?? null
+        : null,
+    [partitions, view],
   );
 
   const phaseStatusByNode = useMemo(() => {
@@ -105,13 +108,17 @@ export function useSessionData(sessionId: string): SessionData {
 
   const layout = useMemo<SessionLayout | null>(() => {
     if (!chain || !graph) return null;
-    if (candidatePartition) {
+    if (view.kind === "candidate" && candidatePartition) {
       const lay = candidateLayout(chain, candidatePartition, graph);
       if (lay) return { kind: "candidate" as const, ...lay };
     }
+    if (view.kind === "original") {
+      const lay = originalLayout(chain);
+      if (lay) return { kind: "original" as const, ...lay };
+    }
     const lay = canonicalLayout(chain, phaseStatusByNode);
     return { kind: "canonical" as const, ...lay };
-  }, [chain, graph, candidatePartition, phaseStatusByNode]);
+  }, [chain, graph, view, candidatePartition, phaseStatusByNode]);
 
   const registerStartedPartition = useCallback(
     (p: Partition) => {
@@ -127,8 +134,8 @@ export function useSessionData(sessionId: string): SessionData {
     graph,
     error,
     partitions,
-    candidatePartitionId,
-    setCandidatePartitionId,
+    view,
+    setView,
     candidatePartition,
     layout,
     chain,

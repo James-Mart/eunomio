@@ -138,3 +138,23 @@ impl From<RunRow> for Run {
         }
     }
 }
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptMessage {
+    pub seq: i64,
+    pub ts: i64,
+    pub message: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Transcript {
+    pub run_id: i64,
+    pub kind: RunKind,
+    pub prompt: Option<String>,
+    pub messages: Vec<TranscriptMessage>,
+    pub raw_result: Option<String>,
+    pub parsed_result: Option<serde_json::Value>,
+    pub error_message: Option<String>,
+}

@@ -138,4 +138,4 @@ Eunomia binds `127.0.0.1` and treats the local OS user as the trust boundary; a 
 
 ### Pre-release note: stale dev DBs
 
-This project is pre-release; the schema is treated as malleable and migration code for legacy columns is not kept around. If `eunomia` fails to start on a database written by an older revision, delete `~/.eunomia/eunomia.db` and any leftover worktrees under `~/.eunomia/worktrees/` and start fresh.
+This project is pre-release; the schema is treated as malleable and migration code for legacy columns is not kept around. If `eunomia` fails to start on a database written by an older revision, wipe the state directory database with `eunomia --new` (or `npm run dev:new` in development) and delete any leftover worktrees under `~/.eunomia/worktrees/`.

@@ -1,6 +1,5 @@
 use anyhow::{bail, Context, Result};
 use clap::Parser;
-use std::io::IsTerminal;
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
@@ -18,16 +17,11 @@ struct Cli {
     repo_root: Option<PathBuf>,
 
     #[arg(long)]
-    no_open: bool,
-
-    #[arg(long, conflicts_with = "no_open")]
-    open: bool,
-
-    #[arg(long)]
     cursor_api_key: Option<String>,
 
-    /// Delete the existing sqlite db before starting. Useful when the on-disk
-    /// schema has drifted from the embedded migration. Hidden from --help.
+    /// Delete the existing sqlite db before starting. Use this when the on-disk
+    /// shape no longer matches the current `CREATE TABLE` definitions in db.rs.
+    /// Hidden from --help.
     #[arg(long, hide = true)]
     new: bool,
 
@@ -97,17 +91,6 @@ async fn main() -> Result<()> {
         }
     }
 
-    let should_open = !args.no_open && (args.open || std::io::stdout().is_terminal());
-    if should_open {
-        let url = format!("http://localhost:{}", args.port);
-        tokio::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-            if let Err(e) = open_in_browser(&url) {
-                tracing::debug!(error = %e, "could not open browser");
-            }
-        });
-    }
-
     let cursor_api_key = args
         .cursor_api_key
         .clone()
@@ -130,20 +113,4 @@ async fn main() -> Result<()> {
     }
 
     eunomia::server::serve(state, args.port).await
-}
-
-fn open_in_browser(url: &str) -> std::io::Result<()> {
-    let cmd = if cfg!(target_os = "macos") {
-        "open"
-    } else if cfg!(target_os = "windows") {
-        "explorer"
-    } else {
-        "xdg-open"
-    };
-    std::process::Command::new(cmd)
-        .arg(url)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .map(|_| ())
 }

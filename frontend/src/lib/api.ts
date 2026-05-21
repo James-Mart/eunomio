@@ -13,6 +13,7 @@ export type GraphNode = {
   commitSha: string;
   title: string;
   description: string;
+  strategy: PartitionStrategy | null;
 };
 
 export type GraphEdge = { from: string; to: string };
@@ -34,10 +35,18 @@ export type SynthesizedRanges = {
   parent: FileLineRanges[];
 };
 
+export type FileBlob = {
+  oldPath: string | null;
+  newPath: string | null;
+  oldContent: string | null;
+  newContent: string | null;
+};
+
 export type Edge = {
   targetNodeId: string;
   parentNodeId: string | null;
   diff: string;
+  files: FileBlob[];
   synthesized: SynthesizedRanges;
 };
 
@@ -45,10 +54,15 @@ export type Diff = {
   fromTree: string;
   toTree: string;
   diff: string;
+  files: FileBlob[];
   synthesized: SynthesizedRanges;
 };
 
 export type BranchResult = { branchName: string; commitSha: string };
+
+export type GeneralSettings = {
+  transcriptsEnabled: boolean;
+};
 
 export type SubagentSettings = {
   overrideModel: boolean;
@@ -73,6 +87,7 @@ export type CoordinatorSettings = {
 };
 
 export interface PartitionSettings {
+  general: GeneralSettings;
   coordinator: CoordinatorSettings;
   surveyor: SubagentSettings;
   planner: SubagentSettings;
@@ -80,6 +95,7 @@ export interface PartitionSettings {
 }
 
 export interface PartitionSettingsPatch {
+  general?: GeneralSettings;
   coordinator?: CoordinatorSettings;
   surveyor?: SubagentSettings;
   planner?: SubagentSettings;
@@ -148,6 +164,22 @@ export type Run = {
   errorMessage: string | null;
   startedAt: number;
   finishedAt: number | null;
+};
+
+export type TranscriptMessage = {
+  seq: number;
+  ts: number;
+  message: unknown;
+};
+
+export type Transcript = {
+  runId: number;
+  kind: RunKind;
+  prompt: string | null;
+  messages: TranscriptMessage[];
+  rawResult: string | null;
+  parsedResult: unknown;
+  errorMessage: string | null;
 };
 
 export type StartRunRequest = {
@@ -223,10 +255,12 @@ export const api = {
     sessionId: string,
     fromTree: string,
     toTree: string,
-    referenceTree?: string,
+    beforeRef?: string,
+    afterRef?: string,
   ) => {
     const params = new URLSearchParams({ fromTree, toTree });
-    if (referenceTree) params.set("referenceTree", referenceTree);
+    if (beforeRef) params.set("beforeRef", beforeRef);
+    if (afterRef) params.set("afterRef", afterRef);
     return request<Diff>(
       "GET",
       `/sessions/${sessionId}/diff?${params.toString()}`,
@@ -265,6 +299,11 @@ export const api = {
     request<Run>("POST", `/partitions/${partitionId}/runs`, body),
   cancelRun: (partitionId: number, runId: number) =>
     request<void>("DELETE", `/partitions/${partitionId}/runs/${runId}`),
+  getRunTranscript: (partitionId: number, runId: number) =>
+    request<Transcript>(
+      "GET",
+      `/partitions/${partitionId}/runs/${runId}/transcript`,
+    ),
   acceptSurvey: (partitionId: number, runId: number) =>
     request<Partition>("POST", `/partitions/${partitionId}/survey/accept`, { runId }),
   acceptPlan: (partitionId: number, runId: number) =>

@@ -22,7 +22,7 @@ pub async fn list_for_session(
         .db
         .call(move |conn| {
             let mut stmt = conn.prepare(
-                "SELECT node_id, parent_node_id, tree_sha, commit_sha, title, description \
+                "SELECT node_id, parent_node_id, tree_sha, commit_sha, title, description, strategy \
                  FROM nodes WHERE session_id = ?1 ORDER BY created_at",
             )?;
             let rows = stmt
@@ -45,7 +45,7 @@ pub async fn get(
         .db
         .call(move |conn| {
             let mut stmt = conn.prepare(
-                "SELECT node_id, parent_node_id, tree_sha, commit_sha, title, description \
+                "SELECT node_id, parent_node_id, tree_sha, commit_sha, title, description, strategy \
                  FROM nodes WHERE session_id = ?1 AND node_id = ?2",
             )?;
             let mut rows = stmt.query(tokio_rusqlite::params![session_id, node_id])?;
@@ -160,7 +160,7 @@ pub async fn update_title(
                 return Ok(None);
             }
             let mut stmt = conn.prepare(
-                "SELECT node_id, parent_node_id, tree_sha, commit_sha, title, description \
+                "SELECT node_id, parent_node_id, tree_sha, commit_sha, title, description, strategy \
                  FROM nodes WHERE session_id = ?1 AND node_id = ?2",
             )?;
             let mut rows = stmt.query(tokio_rusqlite::params![session_id, node_id])?;
@@ -217,5 +217,8 @@ fn graph_node_mapper(row: &rusqlite::Row<'_>) -> rusqlite::Result<GraphNode> {
         commit_sha: row.get(3)?,
         title: row.get(4)?,
         description: row.get(5)?,
+        strategy: row
+            .get::<_, Option<String>>(6)?
+            .and_then(|s| PartitionStrategy::parse(&s)),
     })
 }
