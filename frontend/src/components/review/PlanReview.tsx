@@ -76,7 +76,13 @@ export default function PlanReview({
         <Alert>
           <CircleAlert className="h-4 w-4" />
           <AlertTitle>Planner declined to split</AlertTitle>
-          <AlertDescription>{plan.rationale}</AlertDescription>
+          <AlertDescription className="space-y-2">
+            <p>{plan.rationale}</p>
+            <p>
+              Approve the plan to accept this verdict and end the partition, or
+              re-run with feedback if you still want a split.
+            </p>
+          </AlertDescription>
         </Alert>
       ) : (
         <Alert>
@@ -119,7 +125,7 @@ export default function PlanReview({
             onChange={(e) => setFeedback(e.target.value)}
             placeholder={
               isIndivisible
-                ? "Tell the Planner to try harder to find a split, or accept the verdict and Abandon."
+                ? "Tell the Planner to try harder to find a split, or approve the verdict above."
                 : "What did the planner get wrong?"
             }
             rows={3}
@@ -148,7 +154,11 @@ export default function PlanReview({
       </div>
 
       <div className="flex flex-wrap gap-2">
-        {!isIndivisible && (
+        {isIndivisible ? (
+          <Button onClick={onAbandon} disabled={busy}>
+            Approve plan
+          </Button>
+        ) : (
           <Button onClick={accept} disabled={busy}>
             Accept plan
           </Button>
@@ -156,13 +166,15 @@ export default function PlanReview({
         <Button variant="secondary" onClick={rerun} disabled={busy}>
           Re-run Planner
         </Button>
-        <Button
-          variant="outline"
-          className="border-destructive/60 bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground"
-          onClick={onAbandon}
-        >
-          Abandon
-        </Button>
+        {!isIndivisible && (
+          <Button
+            variant="outline"
+            className="border-destructive/60 bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+            onClick={onAbandon}
+          >
+            Abandon
+          </Button>
+        )}
       </div>
     </div>
   );

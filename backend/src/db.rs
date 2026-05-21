@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS runs (
 );
 CREATE INDEX IF NOT EXISTS runs_by_edge ON runs (session_id, target_node_id);
 CREATE INDEX IF NOT EXISTS runs_by_partition ON runs (partition_id);
+CREATE INDEX IF NOT EXISTS nodes_by_node_id ON nodes (node_id);
 "#;
 
 pub async fn open(db_path: &Path) -> Result<Connection> {

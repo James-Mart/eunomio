@@ -76,6 +76,8 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/api/sessions/:id/events", get(session_events))
         .route("/api/cursor-models", get(get_cursor_models))
+        .route("/api/subagent-prompts", get(get_subagent_prompts))
+        .route("/api/nodes/:node_id/session", get(get_node_session))
         .route("/api/repo", get(get_repo_info))
         .route(
             "/api/tunnel",
@@ -257,6 +259,18 @@ async fn get_cursor_models(
     Ok(Json(CursorModels {
         models: models.clone(),
     }))
+}
+
+async fn get_subagent_prompts(State(state): State<AppState>) -> Json<SubagentDefaultPrompts> {
+    Json(state.coordinator.default_prompts())
+}
+
+async fn get_node_session(
+    State(state): State<AppState>,
+    Path(node_id): Path<String>,
+) -> Result<Json<NodeSessionLookup>, AppError> {
+    let session_id = repo::node::session_for_node_id(&state, &node_id).await?;
+    Ok(Json(NodeSessionLookup { session_id }))
 }
 
 async fn get_repo_info(State(state): State<AppState>) -> Result<Json<RepoInfo>, AppError> {

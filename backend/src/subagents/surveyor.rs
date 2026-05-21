@@ -1,4 +1,4 @@
-use crate::subagents::loader::{ParseError, Subagents};
+use crate::subagents::loader::{ParseError, PromptTemplate};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,7 +22,7 @@ pub struct SurveyContext {
     pub user_feedback: String,
 }
 
-pub fn render_prompt(ctx: &SurveyContext, defs: &Subagents) -> String {
+pub fn render_prompt(ctx: &SurveyContext, template: &PromptTemplate) -> String {
     let mut map = serde_json::Map::new();
     map.insert("BEFORE_TREE".into(), serde_json::json!(ctx.before_tree));
     map.insert("TARGET_TREE".into(), serde_json::json!(ctx.target_tree));
@@ -34,7 +34,7 @@ pub fn render_prompt(ctx: &SurveyContext, defs: &Subagents) -> String {
             ctx.user_feedback.clone()
         }),
     );
-    defs.surveyor.template.render(&map)
+    template.render(&map)
 }
 
 pub fn parse_output(raw: &str) -> Result<SurveyOutput, ParseError> {
@@ -71,7 +71,7 @@ mod tests {
                 target_tree: "cafebabe".into(),
                 user_feedback: "".into(),
             },
-            &defs,
+            &defs.surveyor.template,
         );
         assert!(out.contains("deadbeef"));
         assert!(out.contains("cafebabe"));

@@ -7,3 +7,4 @@ helper/dist/*
 plans/
 *.log
 .DS_Store
+.cursor/tuning-log.json

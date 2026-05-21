@@ -89,7 +89,7 @@ impl Coordinator {
         let row = repo::partition::get(state, inserted_id).await?;
         let partition: Partition = row.into();
 
-        self.spawn_run_boxed(state.clone(), inserted_id, RunKind::Survey, None, None, None)
+        self.spawn_run_boxed(state.clone(), inserted_id, RunKind::Survey, None, None, None, None)
             .await?;
 
         Ok(partition)

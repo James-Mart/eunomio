@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetState
 
 import {
   api,
+  ApiError,
   type Graph,
   type Partition,
 } from "@/lib/api";
@@ -23,6 +24,7 @@ import {
 
 export type SessionData = {
   graph: Graph | null;
+  notFound: boolean;
   error: string | null;
   partitions: Partition[];
   view: View;
@@ -37,6 +39,7 @@ export type SessionData = {
 
 export function useSessionData(sessionId: string): SessionData {
   const [graph, setGraph] = useState<Graph | null>(null);
+  const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [partitions, setPartitions] = useState<Partition[]>([]);
   const [view, setView] = useState<View>({ kind: "canonical" });
@@ -46,6 +49,10 @@ export function useSessionData(sessionId: string): SessionData {
       const g = await api.getGraph(sessionId);
       setGraph(g);
     } catch (e) {
+      if (e instanceof ApiError && e.status === 404) {
+        setNotFound(true);
+        return;
+      }
       setError(formatError(e, "Failed to load graph"));
     }
   }, [sessionId]);
@@ -125,6 +132,7 @@ export function useSessionData(sessionId: string): SessionData {
 
   return {
     graph,
+    notFound,
     error,
     partitions,
     view,

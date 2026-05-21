@@ -332,6 +332,18 @@ export function partitionSiblingNumbers(
   return out;
 }
 
+export function comparePartitionsForView(
+  a: Partition,
+  b: Partition,
+  chain: Chain,
+  siblingNumbers: Map<number, number>,
+): number {
+  const idxA = chain.ordered.findIndex((n) => n.nodeId === a.targetNodeId);
+  const idxB = chain.ordered.findIndex((n) => n.nodeId === b.targetNodeId);
+  if (idxA !== idxB) return idxA - idxB;
+  return (siblingNumbers.get(a.id) ?? 1) - (siblingNumbers.get(b.id) ?? 1);
+}
+
 export function partitionViewLabel(
   p: Partition,
   chain: Chain,

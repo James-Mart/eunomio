@@ -35,7 +35,7 @@ export default function ToolsPane(ctx: ToolsContext) {
     <Tabs
       value={tab}
       onValueChange={(v) => setTab(v as ToolsTab)}
-      className="flex h-full flex-col gap-3 p-4"
+      className="flex min-h-full flex-col gap-3 px-4 pt-4 pb-6"
     >
       <div className="flex items-center justify-between gap-2">
         <TabsList>

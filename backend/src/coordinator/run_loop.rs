@@ -43,6 +43,9 @@ impl Coordinator {
             self.reset_for_construct_to_plan_back_edge(state, partition_id, &row)
                 .await?;
         }
+        if let Some(ref override_text) = req.prompt_override {
+            self.validate_prompt_override(kind, override_text)?;
+        }
         self.spawn_run_boxed(
             state.clone(),
             partition_id,
@@ -50,8 +53,17 @@ impl Coordinator {
             req.parent_run_id,
             req.user_feedback,
             req.strategy_override,
+            req.prompt_override,
         )
         .await
+    }
+
+    fn validate_prompt_override(&self, kind: RunKind, text: &str) -> Result<(), AppError> {
+        if text.trim().is_empty() {
+            return Ok(());
+        }
+        let _ = self.resolve_template(kind, Some(text))?;
+        Ok(())
     }
 
     async fn reset_for_construct_to_plan_back_edge(
@@ -108,6 +120,7 @@ impl Coordinator {
         parent_run_id: Option<i64>,
         user_feedback: Option<String>,
         strategy_override: Option<PartitionStrategy>,
+        prompt_override: Option<String>,
     ) -> Pin<Box<dyn std::future::Future<Output = Result<Run, AppError>> + Send + '_>> {
         Box::pin(self.spawn_run(
             state,
@@ -116,6 +129,7 @@ impl Coordinator {
             parent_run_id,
             user_feedback,
             strategy_override,
+            prompt_override,
         ))
     }
 
@@ -127,6 +141,7 @@ impl Coordinator {
         parent_run_id: Option<i64>,
         user_feedback: Option<String>,
         strategy_override: Option<PartitionStrategy>,
+        prompt_override: Option<String>,
     ) -> Result<Run, AppError> {
         let partition = repo::partition::get(&state, partition_id).await?;
         if kind == RunKind::Construct {
@@ -148,6 +163,7 @@ impl Coordinator {
                 kind,
                 user_feedback.as_deref(),
                 strategy_override,
+                prompt_override.as_deref(),
             )
             .await?;
         let settings = state.partition_settings.snapshot().await;

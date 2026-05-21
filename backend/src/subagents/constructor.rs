@@ -1,4 +1,4 @@
-use crate::subagents::loader::{ParseError, Subagents};
+use crate::subagents::loader::{ParseError, PromptTemplate};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,7 +19,7 @@ pub struct ConstructContext {
     pub user_feedback: String,
 }
 
-pub fn render_prompt(ctx: &ConstructContext, defs: &Subagents) -> String {
+pub fn render_prompt(ctx: &ConstructContext, template: &PromptTemplate) -> String {
     let mut map = serde_json::Map::new();
     map.insert("BEFORE_TREE".into(), serde_json::json!(ctx.before_tree));
     map.insert("TARGET_TREE".into(), serde_json::json!(ctx.target_tree));
@@ -37,7 +37,7 @@ pub fn render_prompt(ctx: &ConstructContext, defs: &Subagents) -> String {
             ctx.user_feedback.clone()
         }),
     );
-    defs.constructor.template.render(&map)
+    template.render(&map)
 }
 
 pub fn parse_output(raw: &str) -> Result<ConstructOutput, ParseError> {
@@ -83,7 +83,7 @@ mod tests {
                 slice_description: "Extracts the loader module".into(),
                 user_feedback: "".into(),
             },
-            &defs,
+            &defs.constructor.template,
         );
         assert!(out.contains("Add loader"));
         assert!(out.contains("synthetic"));

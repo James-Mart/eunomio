@@ -1,10 +1,25 @@
 use anyhow::{bail, Context, Result};
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
-#[command(name = "eunomia", version, about = "Eunomia commit-review server")]
+#[command(name = "eunomia", version, about = "Eunomia commit-review server", args_conflicts_with_subcommands = true)]
 struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+
+    #[command(flatten)]
+    serve: ServeArgs,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Run one subagent against a partition and print transcript JSON
+    SubagentRun(eunomia::cli::subagent_run::SubagentRunArgs),
+}
+
+#[derive(Parser, Debug)]
+struct ServeArgs {
     #[arg(long, default_value_t = 3001)]
     port: u16,
 
@@ -49,8 +64,14 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    let args = Cli::parse();
+    let cli = Cli::parse();
+    match cli.command {
+        Some(Commands::SubagentRun(args)) => eunomia::cli::subagent_run::run(args).await,
+        None => serve(cli.serve).await,
+    }
+}
 
+async fn serve(args: ServeArgs) -> Result<()> {
     let raw_repo_root = match args.repo_root.as_ref() {
         Some(p) => p.clone(),
         None => std::env::current_dir().context("reading current_dir for REPO_ROOT")?,

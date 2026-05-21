@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 
 import {
   candidateLayoutFingerprint,
+  comparePartitionsForView,
   partitionSiblingNumbers,
   partitionViewLabel,
   type Chain,
@@ -104,6 +105,13 @@ export function GraphPane({
     () => partitionSiblingNumbers(partitions),
     [partitions],
   );
+  const sortedPartitions = useMemo(
+    () =>
+      [...partitions].sort((a, b) =>
+        comparePartitionsForView(a, b, chain, siblingNumbers),
+      ),
+    [partitions, chain, siblingNumbers],
+  );
 
   return (
     <div className="flex h-full flex-col">
@@ -116,7 +124,7 @@ export function GraphPane({
           <SelectContent>
             <SelectItem value="canonical">Canonical</SelectItem>
             <SelectItem value="original">Original</SelectItem>
-            {partitions.map((p) => (
+            {sortedPartitions.map((p) => (
               <SelectItem key={p.id} value={String(p.id)}>
                 {partitionViewLabel(p, chain, siblingNumbers.get(p.id) ?? 1)}
               </SelectItem>

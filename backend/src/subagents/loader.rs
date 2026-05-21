@@ -19,7 +19,7 @@ pub struct SubagentDef {
     pub template: PromptTemplate,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PromptTemplate {
     body: String,
     placeholders: Vec<String>,
@@ -65,6 +65,22 @@ impl PromptTemplate {
 
     pub fn placeholders(&self) -> &[String] {
         &self.placeholders
+    }
+
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+}
+
+pub fn resolve_prompt_template(
+    default: &PromptTemplate,
+    allowed: &[&str],
+    override_text: Option<&str>,
+) -> Result<PromptTemplate> {
+    if let Some(text) = override_text.map(str::trim).filter(|s| !s.is_empty()) {
+        PromptTemplate::parse(text.to_string(), allowed)
+    } else {
+        Ok(default.clone())
     }
 }
 

@@ -77,6 +77,8 @@ pub struct StartRunRequest {
     pub user_feedback: Option<String>,
     #[serde(default)]
     pub strategy_override: Option<PartitionStrategy>,
+    #[serde(default)]
+    pub prompt_override: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -140,7 +142,7 @@ impl From<RunRow> for Run {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Transcript {
     pub run_id: i64,

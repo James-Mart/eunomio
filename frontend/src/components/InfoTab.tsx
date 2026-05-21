@@ -1,7 +1,9 @@
+import { Copy } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { api, type PartitionStrategy } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -15,6 +17,35 @@ type Props = {
 };
 
 const RENAME_DEBOUNCE_MS = 400;
+
+async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.success("Copied");
+  } catch {
+    toast.error("Copy failed");
+  }
+}
+
+function CopyTextButton({
+  text,
+  ariaLabel,
+}: {
+  text: string;
+  ariaLabel: string;
+}) {
+  return (
+    <Button
+      size="icon"
+      variant="ghost"
+      className="h-8 w-8 shrink-0"
+      aria-label={ariaLabel}
+      onClick={() => void copyText(text)}
+    >
+      <Copy className="h-3.5 w-3.5" />
+    </Button>
+  );
+}
 
 export default function InfoTab({
   sessionId,
@@ -59,6 +90,13 @@ export default function InfoTab({
 
   return (
     <div className="space-y-3">
+      <div className="space-y-1.5">
+        <Label htmlFor="node-id">Node ID</Label>
+        <div className="flex items-center gap-1.5">
+          <Input id="node-id" readOnly value={nodeId} className="font-mono text-xs" />
+          <CopyTextButton text={nodeId} ariaLabel="Copy node ID" />
+        </div>
+      </div>
       <div className="space-y-1.5">
         <Label htmlFor="node-title">Title</Label>
         <Input

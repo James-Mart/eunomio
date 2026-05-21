@@ -209,6 +209,36 @@ pub async fn walk_to_base(
     Ok(walk)
 }
 
+    pub async fn session_for_node_id(
+    state: &AppState,
+    node_id: &str,
+) -> Result<String, AppError> {
+    let node_id = node_id.to_string();
+    let session_ids: Vec<String> = state
+        .db
+        .call(move |conn| {
+            let mut stmt =
+                conn.prepare("SELECT session_id FROM nodes WHERE node_id = ?1 LIMIT 2")?;
+            let mut rows = stmt.query(tokio_rusqlite::params![node_id])?;
+            let mut out = Vec::new();
+            while let Some(row) = rows.next()? {
+                out.push(row.get(0)?);
+            }
+            Ok(out)
+        })
+        .await
+        .map_err(AppError::from)?;
+
+    match session_ids.len() {
+        0 => Err(AppError::NotFound),
+        1 => Ok(session_ids.into_iter().next().unwrap()),
+        _ => Err(AppError::Conflict {
+            code: "ambiguous_node_id".into(),
+            message: "node id matches more than one session".into(),
+        }),
+    }
+}
+
 fn graph_node_mapper(row: &rusqlite::Row<'_>) -> rusqlite::Result<GraphNode> {
     Ok(GraphNode {
         node_id: row.get(0)?,

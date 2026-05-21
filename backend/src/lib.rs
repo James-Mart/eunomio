@@ -1,4 +1,5 @@
 pub mod branching;
+pub mod cli;
 pub mod coordinator;
 pub mod cursor_bridge;
 pub mod db;

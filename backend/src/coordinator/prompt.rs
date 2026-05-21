@@ -4,7 +4,12 @@ use crate::{
     state::AppState,
     subagents::{
         self,
+        loader::{
+            constructor_placeholders, planner_placeholders, resolve_prompt_template,
+            surveyor_placeholders,
+        },
         planner::PriorAttempt,
+        PromptTemplate,
     },
     types::*,
 };
@@ -30,6 +35,7 @@ impl Coordinator {
         kind: RunKind,
         user_feedback: Option<&str>,
         strategy_override: Option<PartitionStrategy>,
+        prompt_override: Option<&str>,
     ) -> Result<String, AppError> {
         let (target_node, parent_node) = repo::node::target_and_parent(
             state,
@@ -43,8 +49,12 @@ impl Coordinator {
         let target_tree = target_node.tree_sha.clone();
 
         let prompt = match kind {
-            RunKind::Survey => self.survey_prompt(before_tree, target_tree, user_feedback),
+            RunKind::Survey => {
+                let template = self.resolve_template(RunKind::Survey, prompt_override)?;
+                self.survey_prompt(before_tree, target_tree, user_feedback, &template)
+            }
             RunKind::Plan => {
+                let template = self.resolve_template(RunKind::Plan, prompt_override)?;
                 self.plan_prompt(
                     state,
                     partition,
@@ -52,17 +62,37 @@ impl Coordinator {
                     target_tree,
                     user_feedback,
                     strategy_override,
+                    &template,
                 )
                 .await?
             }
-            RunKind::Construct => self.construct_prompt(
-                partition,
-                before_tree,
-                target_tree,
-                user_feedback,
-            )?,
+            RunKind::Construct => {
+                let template = self.resolve_template(RunKind::Construct, prompt_override)?;
+                self.construct_prompt(
+                    partition,
+                    before_tree,
+                    target_tree,
+                    user_feedback,
+                    &template,
+                )?
+            }
         };
         Ok(prompt)
+    }
+
+    pub(super) fn resolve_template(
+        &self,
+        kind: RunKind,
+        prompt_override: Option<&str>,
+    ) -> Result<PromptTemplate, AppError> {
+        let defs = &self.inner.subagents;
+        let (default, allowed) = match kind {
+            RunKind::Survey => (&defs.surveyor.template, surveyor_placeholders()),
+            RunKind::Plan => (&defs.planner.template, planner_placeholders()),
+            RunKind::Construct => (&defs.constructor.template, constructor_placeholders()),
+        };
+        resolve_prompt_template(default, allowed, prompt_override)
+            .map_err(|e| AppError::BadRequest(e.to_string()))
     }
 
     fn survey_prompt(
@@ -70,13 +100,14 @@ impl Coordinator {
         before_tree: String,
         target_tree: String,
         user_feedback: Option<&str>,
+        template: &PromptTemplate,
     ) -> String {
         let ctx = subagents::surveyor::SurveyContext {
             before_tree,
             target_tree,
             user_feedback: user_feedback.unwrap_or("").to_string(),
         };
-        subagents::surveyor::render_prompt(&ctx, &self.inner.subagents)
+        subagents::surveyor::render_prompt(&ctx, template)
     }
 
     async fn plan_prompt(
@@ -87,6 +118,7 @@ impl Coordinator {
         target_tree: String,
         user_feedback: Option<&str>,
         strategy_override: Option<PartitionStrategy>,
+        template: &PromptTemplate,
     ) -> Result<String, AppError> {
         let survey_json = partition
             .change_survey_json
@@ -104,7 +136,7 @@ impl Coordinator {
             user_feedback: user_feedback.unwrap_or("").to_string(),
             prior_attempt,
         };
-        Ok(subagents::planner::render_prompt(&ctx, &self.inner.subagents))
+        Ok(subagents::planner::render_prompt(&ctx, template))
     }
 
     fn construct_prompt(
@@ -113,6 +145,7 @@ impl Coordinator {
         before_tree: String,
         target_tree: String,
         user_feedback: Option<&str>,
+        template: &PromptTemplate,
     ) -> Result<String, AppError> {
         let plan_json = partition
             .plan_json
@@ -135,7 +168,7 @@ impl Coordinator {
             slice_description: split.edges[0].description.clone(),
             user_feedback: user_feedback.unwrap_or("").to_string(),
         };
-        Ok(subagents::constructor::render_prompt(&ctx, &self.inner.subagents))
+        Ok(subagents::constructor::render_prompt(&ctx, template))
     }
 
     async fn lookup_prior_attempt(

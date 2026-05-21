@@ -1,4 +1,4 @@
-use crate::subagents::loader::{ParseError, Subagents};
+use crate::subagents::loader::{ParseError, PromptTemplate};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,7 +50,7 @@ pub struct PlanContext {
     pub prior_attempt: Option<PriorAttempt>,
 }
 
-pub fn render_prompt(ctx: &PlanContext, defs: &Subagents) -> String {
+pub fn render_prompt(ctx: &PlanContext, template: &PromptTemplate) -> String {
     let mut map = serde_json::Map::new();
     map.insert("BEFORE_TREE".into(), serde_json::json!(ctx.before_tree));
     map.insert("TARGET_TREE".into(), serde_json::json!(ctx.target_tree));
@@ -74,7 +74,7 @@ pub fn render_prompt(ctx: &PlanContext, defs: &Subagents) -> String {
         "PRIOR_BLOCK_OR_CANDIDATE".into(),
         serde_json::json!(format_prior_attempt(ctx.prior_attempt.as_ref())),
     );
-    defs.planner.template.render(&map)
+    template.render(&map)
 }
 
 fn format_prior_attempt(prior: Option<&PriorAttempt>) -> String {
@@ -142,7 +142,7 @@ mod tests {
                 user_feedback: "".into(),
                 prior_attempt: None,
             },
-            &defs,
+            &defs.planner.template,
         );
         assert!(out.contains("before"));
         assert!(out.contains("target"));
@@ -164,7 +164,7 @@ mod tests {
                     reason: "needs leftover hunks".into(),
                 }),
             },
-            &defs,
+            &defs.planner.template,
         );
         assert!(out.contains("BLOCKED"));
         assert!(out.contains("needs leftover hunks"));

@@ -1791,3 +1791,171 @@ async fn construct_spawn_resets_dirty_worktree() {
     let a_contents = std::fs::read_to_string(worktree_root.join("a.txt")).unwrap();
     assert_eq!(a_contents, "a\n", "tracked files should match parent tree");
 }
+
+#[tokio::test]
+async fn get_subagent_prompts_returns_embedded_bodies() {
+    let app = TestApp::spawn().await;
+    let (status, body) = empty_request(&app.router, "GET", "/api/subagent-prompts").await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    let surveyor = body["surveyor"].as_str().unwrap();
+    assert!(
+        surveyor.contains("**Surveyor**"),
+        "expected embedded surveyor prompt, got: {surveyor}"
+    );
+    assert!(body["planner"].as_str().unwrap().contains("**Planner**"));
+    assert!(
+        body["constructor"]
+            .as_str()
+            .unwrap()
+            .contains("**Constructor**")
+    );
+}
+
+#[tokio::test]
+async fn node_session_lookup_returns_session_id() {
+    let app = TestApp::spawn().await;
+    let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
+    let (status, body) = empty_request(
+        &app.router,
+        "GET",
+        &format!("/api/nodes/{target_node_id}/session"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    assert_eq!(body["sessionId"].as_str().unwrap(), session_id);
+}
+
+#[tokio::test]
+async fn node_session_lookup_unknown_returns_404() {
+    let app = TestApp::spawn().await;
+    let (status, _) = empty_request(
+        &app.router,
+        "GET",
+        "/api/nodes/00000000-0000-0000-0000-000000000000/session",
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn invalid_prompt_override_returns_400() {
+    let runner = Arc::new(FakeSubagentRunner::new(vec![survey_script()]));
+    let app = TestApp::spawn_with_runner(runner).await;
+    let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
+    let mut rx = app.state.coordinator.subscribe(&session_id);
+    let (_, body) = empty_request(
+        &app.router,
+        "POST",
+        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+    )
+    .await;
+    let partition_id = body["id"].as_i64().unwrap();
+    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
+
+    let (status, _) = json_request(
+        &app.router,
+        "POST",
+        &format!("/api/partitions/{partition_id}/runs"),
+        json!({ "kind": "survey", "promptOverride": "hello {{NOPE}}" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn prompt_override_appears_in_transcript_prompt() {
+    let custom = "You are a **Custom Surveyor**. Trees: {{BEFORE_TREE}} / {{TARGET_TREE}}. Feedback: {{USER_FEEDBACK}}.";
+    let runner = Arc::new(FakeSubagentRunner::new(vec![
+        survey_script(),
+        survey_script(),
+    ]));
+    let app = TestApp::spawn_with_runner(runner).await;
+    let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
+    let mut rx = app.state.coordinator.subscribe(&session_id);
+    let (_, body) = empty_request(
+        &app.router,
+        "POST",
+        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+    )
+    .await;
+    let partition_id = body["id"].as_i64().unwrap();
+    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
+
+    let (status, run) = json_request(
+        &app.router,
+        "POST",
+        &format!("/api/partitions/{partition_id}/runs"),
+        json!({ "kind": "survey", "promptOverride": custom }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "run body: {run}");
+    let run_id = run["id"].as_i64().unwrap();
+    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
+
+    let (status, transcript) = empty_request(
+        &app.router,
+        "GET",
+        &format!("/api/partitions/{partition_id}/runs/{run_id}/transcript"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let prompt = transcript["prompt"].as_str().unwrap();
+    assert!(
+        prompt.contains("**Custom Surveyor**"),
+        "expected custom prompt in transcript, got: {prompt}"
+    );
+}
+
+#[tokio::test]
+async fn subagent_run_cli_smoke() {
+    use eunomia::cli::subagent_run::{run, SubagentRunArgs};
+    use eunomia::types::RunKind;
+
+    let runner = Arc::new(FakeSubagentRunner::new(vec![
+        survey_script(),
+        survey_script(),
+    ]));
+    let app = TestApp::spawn_with_runner(runner).await;
+    let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
+    let mut rx = app.state.coordinator.subscribe(&session_id);
+    let (_, body) = empty_request(
+        &app.router,
+        "POST",
+        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+    )
+    .await;
+    let partition_id = body["id"].as_i64().unwrap();
+    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let router = app.router.clone();
+    tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+
+    run(SubagentRunArgs {
+        base_url: format!("http://{addr}"),
+        partition_id,
+        kind: RunKind::Survey,
+        prompt_file: None,
+    })
+    .await
+    .unwrap();
+
+    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
+
+    let (_, runs) = empty_request(
+        &app.router,
+        "GET",
+        &format!("/api/partitions/{partition_id}/runs"),
+    )
+    .await;
+    let latest = runs
+        .as_array()
+        .unwrap()
+        .iter()
+        .max_by_key(|r| r["id"].as_i64().unwrap())
+        .unwrap();
+    assert_eq!(latest["status"].as_str().unwrap(), "finished");
+}

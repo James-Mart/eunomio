@@ -36,7 +36,7 @@ impl Coordinator {
             .map_err(|e| AppError::BadRequest(format!("invalid survey result: {e}")))?;
         repo::partition::accept_survey(state, partition_id, result_json.to_string()).await?;
         let new_row = repo::partition::get(state, partition_id).await?;
-        self.spawn_run_boxed(state.clone(), partition_id, RunKind::Plan, Some(run_id), None, None)
+        self.spawn_run_boxed(state.clone(), partition_id, RunKind::Plan, Some(run_id), None, None, None)
             .await?;
         Ok(new_row.into())
     }
@@ -77,6 +77,7 @@ impl Coordinator {
             partition_id,
             RunKind::Construct,
             Some(run_id),
+            None,
             None,
             None,
         )

@@ -122,3 +122,17 @@ pub struct RepoInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub current_branch: Option<String>,
 }
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubagentDefaultPrompts {
+    pub surveyor: String,
+    pub planner: String,
+    pub constructor: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeSessionLookup {
+    pub session_id: String,
+}

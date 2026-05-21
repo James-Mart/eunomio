@@ -3,6 +3,7 @@ import { Link, Route, Routes } from "react-router-dom";
 
 import { BrandMark } from "@/components/BrandMark";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import SessionNotFoundBanner from "@/components/SessionNotFoundBanner";
 import SystemErrorBanner from "@/components/SystemErrorBanner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Toaster } from "@/components/ui/sonner";
@@ -22,6 +23,7 @@ export default function App() {
           </Link>
         </div>
       </header>
+      <SessionNotFoundBanner />
       <main className="flex-1">
         <ErrorBoundary>
           <Suspense fallback={<RouteFallback />}>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo } from "react";
-import { useParams } from "react-router-dom";
+import { Navigate, useParams } from "react-router-dom";
 import "@xyflow/react/dist/style.css";
 import type { NodeMouseHandler } from "@xyflow/react";
 
@@ -25,11 +25,13 @@ import { SessionSkeleton } from "@/components/session/SessionSkeleton";
 import {
   candidateLayout,
   partitionSiblingNumbers,
+  comparePartitionsForView,
   partitionViewLabel,
 } from "@/components/session/layout";
 import { useSessionActiveTab } from "@/components/session/useSessionActiveTab";
 import { useSessionData } from "@/components/session/useSessionData";
 import { useSessionSelection } from "@/components/session/useSessionSelection";
+import { sessionNotFoundHomePath } from "@/lib/sessionNotFound";
 
 export default function Session() {
   const { id } = useParams<{ id: string }>();
@@ -45,6 +47,7 @@ function SessionInner({ sessionId }: { sessionId: string }) {
   const data = useSessionData(sessionId);
   const {
     graph,
+    notFound,
     error,
     partitions,
     view,
@@ -106,6 +109,9 @@ function SessionInner({ sessionId }: { sessionId: string }) {
         ? []
         : partitions
             .filter((p) => p.targetNodeId === selectedCanonicalNode.nodeId)
+            .sort((a, b) =>
+              comparePartitionsForView(a, b, chain, siblingNumbers),
+            )
             .map((p) => ({
               partition: p,
               label: partitionViewLabel(
@@ -116,6 +122,10 @@ function SessionInner({ sessionId }: { sessionId: string }) {
             })),
     [partitions, selectedCanonicalNode, chain, view.kind, siblingNumbers],
   );
+
+  if (notFound) {
+    return <Navigate to={sessionNotFoundHomePath()} replace />;
+  }
 
   if (error) {
     return <div className="container py-10 text-destructive">{error}</div>;
