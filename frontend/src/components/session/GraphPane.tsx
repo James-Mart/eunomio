@@ -17,6 +17,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+import { cn } from "@/lib/utils";
+
 import {
   phaseLabel,
   type Chain,
@@ -80,7 +82,13 @@ export function GraphPane({
           </SelectContent>
         </Select>
       </div>
-      <div className="flex-1 min-h-0">
+      <div
+        className={cn(
+          "flex-1 min-h-0",
+          layout.kind === "candidate" &&
+            "rounded-md border-2 border-amber-500/60",
+        )}
+      >
         <ReactFlow
           nodes={nodes}
           edges={layout.edges}
@@ -90,11 +98,6 @@ export function GraphPane({
           nodesDraggable={false}
           proOptions={{ hideAttribution: true }}
           onNodeClick={onNodeClick}
-          style={
-            layout.kind === "candidate"
-              ? { backgroundColor: "#1f2226" }
-              : undefined
-          }
         >
           <Background />
         </ReactFlow>

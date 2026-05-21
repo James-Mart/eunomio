@@ -67,7 +67,7 @@ flowchart TD
 
 **Abandon.** A one-click action available from every non-terminal state, including with a run in flight. Sends `SIGTERM` to the helper subprocess so the SDK's server-side compute stops billing as quickly as possible (SIGKILL would leave it running until natural completion), deletes the Partition row, and removes the Partition's worktree.
 
-**Parallel Partitions.** Each Partition owns its own worktree, so Constructors from different Partitions run literally in parallel. The constraint is one actively-running phase per `(session, target)` at any moment; sibling Partitions on the same target sit at their review gates while one of them executes.
+**Parallel Partitions.** Each Partition owns its own worktree and phase machine. Surveys, Plans, and Constructors run in parallel across Partitions, including multiple siblings on the same target — there is no cross-Partition lock per `(session, target)`; only one Run may be in flight per `partition_id` at a time.
 
 ## Graph mutation per partition
 

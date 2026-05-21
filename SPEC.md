@@ -249,16 +249,18 @@ nothing at all (Abandon) — there is no separate audit log table.
 
 Many Partitions can be pending in a Session at once:
 
-- **Per Session**: any number of pending Partitions. Surveys and Plans of
-  different Partitions run truly in parallel (read-only).
-- **Per `(session, target_node_id)`**: any number of pending Partitions —
-  the user can run alternative Partitions on the same target (e.g. one
-  Vertical, one Horizontal) and compare. At most one of them has an
-  actively-executing phase (a Survey, Plan, or Construct currently running)
-  at any moment.
-- **Per Session, for the Constructor**: no global lock. Each Partition has
-  its own worktree (§4), so two Partitions can run their Constructors
-  literally in parallel.
+- **Per Session**: any number of pending Partitions. Surveys and Plans run
+  in parallel across Partitions (read-only subagents).
+- **Per `(session, target_node_id)`**: any number of pending **sibling**
+  Partitions — the user can run alternative strategies on the same target
+  (e.g. one Vertical, one Horizontal) and compare via the graph-view dropdown.
+  Siblings run fully in parallel: each has its own phase machine, worktree,
+  and Runs. There is no cross-Partition lock on the same target; the only
+  concurrency guard is at most one Run in flight per `partition_id` (HTTP
+  `409 partition_run_in_flight`).
+- **Constructors**: each Partition writes only to its own worktree (§4), so
+  Constructors for different Partitions — including siblings on the same
+  target — run literally in parallel.
 
 ### Sibling auto-Abandon
 
@@ -575,10 +577,10 @@ The backend is an axum app. Routes are scoped per-session and per-edge.
 
 ### Partition
 
-All routes scope to a single Partition by its autoincrement id _or_ by
-`(session, target)` plus a phase that uniquely identifies the in-flight
-Partition (since at most one Partition per `(session, target)` is actively
-executing at a time).
+All routes that read or mutate Partition state scope by `partition_id`
+(autoincrement). Many Partitions may be pending on the same
+`(session, target_node_id)` at once; each is independent. Use
+`GET /api/sessions/:id/partitions?targetNodeId=...` to list siblings.
 
 - `POST /api/sessions/:id/edges/:targetNodeId/partition` — Begin a new
   Partition. No body. Creates the row, creates the Partition's worktree at
@@ -646,11 +648,11 @@ layout:
   - **Info** — the selected Node's Title (editable inline) and metadata.
   - **Branch** — branch-creation dialog for the selected Node.
   - **Partition** — the Partition workflow for the selected Node's
-    incoming Edge. Shows a `Begin partition` button when no Partition
-    exists, or the lifecycle stepper + review payload + action bar when
-    one is in flight. If the selected Node has multiple pending Partitions,
-    the tab surfaces them as a selector and exposes the currently selected
-    Partition's controls.
+    incoming Edge, scoped to the Partition chosen in the graph-view dropdown
+    (or the active Partition for that target). The user may Begin multiple
+    Partitions on the same target; each gets a dropdown entry and its own
+    lifecycle stepper + review payload + action bar. Accepting one sibling
+    prompts confirmation that the others will be auto-Abandoned.
 
 The UI is purely a controller for the backend. All graph mutations and
 subagent invocations go through HTTP.

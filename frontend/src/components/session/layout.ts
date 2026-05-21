@@ -11,7 +11,6 @@ import type { NodeCardData } from "@/components/NodeCard";
 
 export const NODE_X = 0;
 export const NODE_Y_STEP = 140;
-export const CANDIDATE_X_OFFSET = 260;
 
 export const CANDIDATE_SLICE_ID = "__candidate_slice__";
 export const CANDIDATE_TARGET_PREFIX = "__candidate_target__";
@@ -192,7 +191,7 @@ export function candidateLayout(
     {
       id: candidateSlice.nodeId,
       type: "eunomia",
-      position: { x: NODE_X + CANDIDATE_X_OFFSET, y: NODE_Y_STEP },
+      position: { x: NODE_X, y: NODE_Y_STEP },
       data: { positionLabel: sliceLabel },
     },
     {

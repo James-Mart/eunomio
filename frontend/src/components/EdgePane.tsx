@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { processFile, type FileDiffMetadata } from "@pierre/diffs";
 import { FileDiff, Virtualizer } from "@pierre/diffs/react";
-import { FileTree, useFileTree } from "@pierre/trees/react";
+import { FileTree, useFileTree, useFileTreeSelection } from "@pierre/trees/react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
 import {
@@ -218,6 +218,21 @@ export default function EdgePane(props: Props) {
     onSelectionChange: handleSelectionChange,
   });
 
+  const selectedPaths = useFileTreeSelection(model);
+  const activeFilePath = selectedPaths.at(-1) ?? null;
+
+  const selectFileInTree = useCallback(
+    (path: string) => {
+      for (const p of model.getSelectedPaths()) {
+        if (p !== path) model.getItem(p)?.deselect();
+      }
+      const item = model.getItem(path);
+      if (item && !item.isSelected()) item.select();
+      item?.focus();
+    },
+    [model],
+  );
+
   useEffect(() => {
     model.resetPaths(paths);
   }, [model, paths]);
@@ -252,7 +267,7 @@ export default function EdgePane(props: Props) {
 
   const diffBody = (
     <div className="flex h-full min-w-0 flex-col">
-      <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-b py-1.5 pl-2 pr-12 md:pr-2">
+      <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-b px-3 py-1.5 pr-12 md:pr-3">
         <SegmentedToggle
           value={diffStyle}
           onChange={setDiffStyle}
@@ -270,7 +285,10 @@ export default function EdgePane(props: Props) {
           ]}
         />
       </div>
-      <Virtualizer className="flex-1 min-w-0 h-full overflow-y-auto overflow-x-hidden touch-pan-y">
+      <Virtualizer
+        className="flex-1 min-w-0 h-full overflow-y-auto overflow-x-hidden touch-pan-y"
+        contentClassName="px-3"
+      >
         {fileDiffs.map((file, i) => {
           const isCollapsed = collapsedFiles.has(file.name);
           const onWrapperClick = (e: React.MouseEvent) => {
@@ -281,13 +299,20 @@ export default function EdgePane(props: Props) {
                 typeof n.matches === "function" &&
                 n.matches("[data-diffs-header]"),
             );
-            if (inHeader) toggleCollapsed(file.name);
+            if (inHeader) {
+              toggleCollapsed(file.name);
+              selectFileInTree(file.name);
+            }
           };
           return (
             <div
               key={`${file.name}-${i}`}
               {...{ [FILE_DATA_ATTR]: file.name }}
               onClick={onWrapperClick}
+              className={cn(
+                "my-2 overflow-hidden rounded-md",
+                activeFilePath === file.name && "border-2 border-[#388bfd]",
+              )}
             >
               <FileDiff
                 fileDiff={file}
