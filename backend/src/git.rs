@@ -55,10 +55,6 @@ pub async fn diff_text(repo: &Path, from_tree: &str, to_tree: &str) -> Result<St
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
-pub async fn rev_parse_tree(repo: &Path, refname: &str) -> Result<String> {
-    run(repo, &["rev-parse", "--verify", "--end-of-options", refname]).await
-}
-
 pub async fn rev_parse(repo: &Path, refname: &str) -> Result<String> {
     run(repo, &["rev-parse", "--verify", "--end-of-options", refname]).await
 }

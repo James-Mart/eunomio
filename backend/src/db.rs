@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio_rusqlite::Connection;
 
 const MIGRATION: &str = r#"
@@ -75,4 +76,11 @@ pub async fn open(db_path: &Path) -> Result<Connection> {
     .await
     .context("running embedded migration")?;
     Ok(conn)
+}
+
+pub fn unix_seconds() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }

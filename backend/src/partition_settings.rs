@@ -29,18 +29,7 @@ impl PartitionSettingsStore {
     ) -> Result<PartitionSettings, AppError> {
         let mut guard = self.inner.write().await;
         let mut merged = guard.clone();
-        if let Some(v) = patch.coordinator {
-            merged.coordinator = v;
-        }
-        if let Some(v) = patch.surveyor {
-            merged.surveyor = v;
-        }
-        if let Some(v) = patch.planner {
-            merged.planner = v;
-        }
-        if let Some(v) = patch.constructor {
-            merged.constructor = v;
-        }
+        merged.apply_patch(patch);
         let serialized = serde_json::to_string_pretty(&merged)
             .map_err(|e| AppError::Internal(anyhow::anyhow!("serializing settings: {e}")))?;
         if let Some(parent) = self.path.parent() {

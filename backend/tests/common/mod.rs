@@ -4,7 +4,8 @@ use axum::{
     Router,
 };
 use eunomia::cursor_bridge::SubagentRunner;
-use eunomia::server::{build_state, build_state_with_runner, router, AppState};
+use eunomia::server::router;
+use eunomia::state::{build_state, build_state_with_runner, AppState};
 use http_body_util::BodyExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;

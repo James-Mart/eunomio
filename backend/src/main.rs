@@ -115,7 +115,7 @@ async fn main() -> Result<()> {
     std::env::remove_var("CURSOR_API_KEY");
 
     let state =
-        eunomia::server::build_state(repo_root, data_dir, cursor_api_key, args.dev_tunnel).await?;
+        eunomia::state::build_state(repo_root, data_dir, cursor_api_key, args.dev_tunnel).await?;
 
     if args.start_tunnel {
         let dto = state
