@@ -70,7 +70,7 @@ export default function PartitionTab({
     } catch (e) {
       console.error(e);
     }
-  }, [sessionId, activeLifecycle?.partitionId]);
+  }, [activeLifecycle?.partitionId]);
 
   useEffect(() => {
     void refresh();
@@ -100,7 +100,7 @@ export default function PartitionTab({
       }
       toast.error(e instanceof Error ? e.message : "Failed to abandon");
     }
-  }, [activeLifecycle, sessionId, resetLifecycle, onPartitionEnded]);
+  }, [activeLifecycle, resetLifecycle, onPartitionEnded]);
 
   return (
     <div className="space-y-4">

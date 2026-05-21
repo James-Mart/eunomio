@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   Code2,
   ListChecks,
@@ -15,8 +15,9 @@ import {
   type IterationLimit,
   type PartitionSettings,
   type PartitionSettingsPatch,
-  type SubagentSettings,
 } from "@/lib/api";
+import { formatError } from "@/lib/errors";
+import { useAbortableEffect } from "@/lib/useAbortableEffect";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -57,119 +58,77 @@ export default function PartitionSettingsDialog({ open, onOpenChange }: Props) {
   const [settings, setSettings] = useState<PartitionSettings | null>(null);
   const [models, setModels] = useState<ModelsState>({ kind: "loading" });
 
-  useEffect(() => {
+  useAbortableEffect(async (signal) => {
     if (!open) return;
     setSettings(null);
     setModels({ kind: "loading" });
-    let cancelled = false;
-    void Promise.all([
+    const [s, m] = await Promise.all([
       api.getPartitionSettings().catch(() => null),
       api.listCursorModels().catch(() => null),
-    ]).then(([s, m]) => {
-      if (cancelled) return;
-      if (s) setSettings(s);
-      if (m) setModels({ kind: "success", models: m.models });
-    });
-    return () => {
-      cancelled = true;
-    };
+    ]);
+    if (signal.aborted) return;
+    if (s) setSettings(s);
+    if (m) setModels({ kind: "success", models: m.models });
   }, [open]);
 
-  const onCoordinatorModelChange = async (next: string) => {
+  const applyOptimistic = async <K extends keyof PartitionSettings>(
+    key: K,
+    next: PartitionSettings[K],
+    errorMessage: string,
+  ) => {
     if (!settings) return;
-    const previous = settings.coordinator.model;
-    const optimistic = {
-      ...settings,
-      coordinator: { ...settings.coordinator, model: next },
-    };
-    setSettings(optimistic);
-    try {
-      const updated = await api.updatePartitionSettings({
-        coordinator: { ...settings.coordinator, model: next },
-      } as PartitionSettingsPatch);
-      setSettings(updated);
-    } catch (e) {
-      setSettings({
-        ...settings,
-        coordinator: { ...settings.coordinator, model: previous },
-      });
-      toast.error(e instanceof Error ? e.message : "Failed to save model");
-    }
-  };
-
-  const onHitlChange = async (next: HumanInTheLoopSettings) => {
-    if (!settings) return;
-    const previous = settings.coordinator.humanInTheLoop;
-    setSettings({
-      ...settings,
-      coordinator: { ...settings.coordinator, humanInTheLoop: next },
-    });
-    try {
-      const updated = await api.updatePartitionSettings({
-        coordinator: { ...settings.coordinator, humanInTheLoop: next },
-      } as PartitionSettingsPatch);
-      setSettings(updated);
-    } catch (e) {
-      setSettings({
-        ...settings,
-        coordinator: { ...settings.coordinator, humanInTheLoop: previous },
-      });
-      toast.error(e instanceof Error ? e.message : "Failed to save settings");
-    }
-  };
-
-  const onMaxIterationsChange = async (next: IterationLimit) => {
-    if (!settings) return;
-    const previous = settings.coordinator.maxIterations;
-    setSettings({
-      ...settings,
-      coordinator: { ...settings.coordinator, maxIterations: next },
-    });
-    try {
-      const updated = await api.updatePartitionSettings({
-        coordinator: { ...settings.coordinator, maxIterations: next },
-      } as PartitionSettingsPatch);
-      setSettings(updated);
-    } catch (e) {
-      setSettings({
-        ...settings,
-        coordinator: { ...settings.coordinator, maxIterations: previous },
-      });
-      toast.error(e instanceof Error ? e.message : "Failed to save settings");
-    }
-  };
-
-  const updateRoleModel = async (role: SubagentCategory, next: string) => {
-    if (!settings) return;
-    const previous = settings[role];
-    const updatedRole: SubagentSettings = { ...previous, model: next };
-    setSettings({ ...settings, [role]: updatedRole });
+    const previous = settings[key];
+    setSettings({ ...settings, [key]: next });
     try {
       const fresh = await api.updatePartitionSettings(
-        { [role]: updatedRole } as unknown as PartitionSettingsPatch,
+        { [key]: next } as unknown as PartitionSettingsPatch,
       );
       setSettings(fresh);
     } catch (e) {
-      setSettings({ ...settings, [role]: previous });
-      toast.error(e instanceof Error ? e.message : "Failed to save model");
+      setSettings({ ...settings, [key]: previous });
+      toast.error(formatError(e, errorMessage));
     }
   };
 
-  const updateRoleOverride = async (role: SubagentCategory, next: boolean) => {
-    if (!settings) return;
-    const previous = settings[role];
-    const updatedRole: SubagentSettings = { ...previous, overrideModel: next };
-    setSettings({ ...settings, [role]: updatedRole });
-    try {
-      const fresh = await api.updatePartitionSettings(
-        { [role]: updatedRole } as unknown as PartitionSettingsPatch,
-      );
-      setSettings(fresh);
-    } catch (e) {
-      setSettings({ ...settings, [role]: previous });
-      toast.error(e instanceof Error ? e.message : "Failed to save override");
-    }
-  };
+  const onCoordinatorModelChange = (next: string) =>
+    settings &&
+    applyOptimistic(
+      "coordinator",
+      { ...settings.coordinator, model: next },
+      "Failed to save model",
+    );
+
+  const onHitlChange = (next: HumanInTheLoopSettings) =>
+    settings &&
+    applyOptimistic(
+      "coordinator",
+      { ...settings.coordinator, humanInTheLoop: next },
+      "Failed to save settings",
+    );
+
+  const onMaxIterationsChange = (next: IterationLimit) =>
+    settings &&
+    applyOptimistic(
+      "coordinator",
+      { ...settings.coordinator, maxIterations: next },
+      "Failed to save settings",
+    );
+
+  const updateRoleModel = (role: SubagentCategory, next: string) =>
+    settings &&
+    applyOptimistic(
+      role,
+      { ...settings[role], model: next },
+      "Failed to save model",
+    );
+
+  const updateRoleOverride = (role: SubagentCategory, next: boolean) =>
+    settings &&
+    applyOptimistic(
+      role,
+      { ...settings[role], overrideModel: next },
+      "Failed to save override",
+    );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

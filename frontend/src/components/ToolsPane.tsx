@@ -3,50 +3,31 @@ import { Settings } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import BranchTab from "@/components/BranchTab";
-import InfoTab from "@/components/InfoTab";
 import PartitionSettingsDialog from "@/components/PartitionSettingsDialog";
-import PartitionTab from "@/components/PartitionTab";
-import type { Partition } from "@/lib/api";
+import {
+  BranchToolPanel,
+  InfoToolPanel,
+  PartitionToolPanel,
+  ToolsEmpty,
+  isToolsEmpty,
+  showNodeTools,
+  type ToolsContext,
+} from "@/components/tools/ToolPanels";
 
 type ToolsTab = "partition" | "info" | "branch";
 
-type Props = {
-  sessionId: string;
-  nodeId: string | null;
-  nodeTitle: string | null;
-  nodeDescription: string | null;
-  activePartition: Partition | null;
-  isCandidateSliceSelected: boolean;
-  onPartitionStarted: (p: Partition) => void;
-  onPartitionEnded: () => void;
-  onChange?: () => void;
-};
-
-export default function ToolsPane({
-  sessionId,
-  nodeId,
-  nodeTitle,
-  nodeDescription,
-  activePartition,
-  isCandidateSliceSelected,
-  onPartitionStarted,
-  onPartitionEnded,
-  onChange,
-}: Props) {
+export default function ToolsPane(ctx: ToolsContext) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [tab, setTab] = useState<ToolsTab>("partition");
-  const showNodeTabs = activePartition === null && nodeId !== null;
+  const showNodeTabs = showNodeTools(ctx);
 
   useEffect(() => {
     if (!showNodeTabs && tab !== "partition") setTab("partition");
   }, [showNodeTabs, tab]);
 
-  if (activePartition === null && nodeId === null) {
+  if (isToolsEmpty(ctx)) {
     return (
-      <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
-        Select a node or partition to view tools.
-      </div>
+      <ToolsEmpty className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground" />
     );
   }
 
@@ -73,36 +54,16 @@ export default function ToolsPane({
         </Button>
       </div>
       <TabsContent value="partition" className="mt-0 flex-1 min-h-0">
-        <PartitionTab
-          key={activePartition?.id ?? "none"}
-          sessionId={sessionId}
-          targetNodeId={nodeId}
-          activePartition={activePartition}
-          isCandidateSliceSelected={isCandidateSliceSelected}
-          onPartitionStarted={onPartitionStarted}
-          onPartitionEnded={onPartitionEnded}
-        />
+        {PartitionToolPanel(ctx)}
       </TabsContent>
       {showNodeTabs && (
         <TabsContent value="info" className="mt-0 flex-1 min-h-0">
-          <InfoTab
-            key={nodeId ?? "none"}
-            sessionId={sessionId}
-            nodeId={nodeId!}
-            nodeTitle={nodeTitle!}
-            nodeDescription={nodeDescription ?? ""}
-            onChange={onChange}
-          />
+          {InfoToolPanel(ctx)}
         </TabsContent>
       )}
       {showNodeTabs && (
         <TabsContent value="branch" className="mt-0 flex-1 min-h-0">
-          <BranchTab
-            key={nodeId ?? "none"}
-            sessionId={sessionId}
-            nodeId={nodeId!}
-            nodeTitle={nodeTitle!}
-          />
+          {BranchToolPanel(ctx)}
         </TabsContent>
       )}
 

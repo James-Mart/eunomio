@@ -3,45 +3,21 @@ import { Settings } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import BranchTab from "@/components/BranchTab";
-import InfoTab from "@/components/InfoTab";
 import PartitionSettingsDialog from "@/components/PartitionSettingsDialog";
-import PartitionTab from "@/components/PartitionTab";
-import type { Partition } from "@/lib/api";
+import {
+  BranchToolPanel,
+  InfoToolPanel,
+  PartitionToolPanel,
+  ToolsEmpty,
+  isToolsEmpty,
+  showNodeTools,
+  type ToolsContext,
+} from "@/components/tools/ToolPanels";
 
-type Props = {
-  sessionId: string;
-  nodeId: string | null;
-  nodeTitle: string | null;
-  nodeDescription: string | null;
-  activePartition: Partition | null;
-  isCandidateSliceSelected: boolean;
-  onPartitionStarted: (p: Partition) => void;
-  onPartitionEnded: () => void;
-  onChange?: () => void;
-};
-
-export default function ToolsCardList({
-  sessionId,
-  nodeId,
-  nodeTitle,
-  nodeDescription,
-  activePartition,
-  isCandidateSliceSelected,
-  onPartitionStarted,
-  onPartitionEnded,
-  onChange,
-}: Props) {
+export default function ToolsCardList(ctx: ToolsContext) {
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const showNodeCards = activePartition === null && nodeId !== null;
-
-  if (activePartition === null && nodeId === null) {
-    return (
-      <div className="flex h-full items-center justify-center bg-background p-6 text-sm text-muted-foreground">
-        Select a node or partition to view tools.
-      </div>
-    );
-  }
+  if (isToolsEmpty(ctx)) return <ToolsEmpty />;
+  const showCards = showNodeTools(ctx);
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto bg-background p-4">
@@ -59,49 +35,25 @@ export default function ToolsCardList({
           </Button>
         </CardHeader>
         <CardContent className="p-4 pt-2">
-          <PartitionTab
-            key={activePartition?.id ?? "none"}
-            sessionId={sessionId}
-            targetNodeId={nodeId}
-            activePartition={activePartition}
-            isCandidateSliceSelected={isCandidateSliceSelected}
-            onPartitionStarted={onPartitionStarted}
-            onPartitionEnded={onPartitionEnded}
-          />
+          {PartitionToolPanel(ctx)}
         </CardContent>
       </Card>
 
-      {showNodeCards && (
+      {showCards && (
         <Card>
           <CardHeader className="p-4 pb-2">
             <CardTitle className="text-base font-semibold">Info</CardTitle>
           </CardHeader>
-          <CardContent className="p-4 pt-2">
-            <InfoTab
-              key={nodeId ?? "none"}
-              sessionId={sessionId}
-              nodeId={nodeId!}
-              nodeTitle={nodeTitle!}
-              nodeDescription={nodeDescription ?? ""}
-              onChange={onChange}
-            />
-          </CardContent>
+          <CardContent className="p-4 pt-2">{InfoToolPanel(ctx)}</CardContent>
         </Card>
       )}
 
-      {showNodeCards && (
+      {showCards && (
         <Card>
           <CardHeader className="p-4 pb-2">
             <CardTitle className="text-base font-semibold">Branch</CardTitle>
           </CardHeader>
-          <CardContent className="p-4 pt-2">
-            <BranchTab
-              key={nodeId ?? "none"}
-              sessionId={sessionId}
-              nodeId={nodeId!}
-              nodeTitle={nodeTitle!}
-            />
-          </CardContent>
+          <CardContent className="p-4 pt-2">{BranchToolPanel(ctx)}</CardContent>
         </Card>
       )}
 

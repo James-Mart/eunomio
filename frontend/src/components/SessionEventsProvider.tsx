@@ -22,32 +22,18 @@ export type ConstructPayload =
   | { outcome: "ok"; candidateTreeSha: string; candidateCommitSha: string }
   | { outcome: "blocked"; reason: string };
 
-export type PlanPayload =
-  | {
-      outcome: "split";
-      strategy: "synthetic" | "vertical" | "horizontal";
-      strategyRationale: string;
-      edges: { id: string; title: string; description: string }[];
-    }
-  | { outcome: "indivisible"; rationale: string };
-
 export type Lifecycle = {
   partitionId: number;
   targetNodeId: string;
   survey: PhaseState | "pending";
   plan: PhaseState | "pending";
   construct: PhaseState | "pending";
-  surveyPayload?: unknown;
-  planPayload?: PlanPayload;
   constructPayload?: ConstructPayload;
-  recentMessages: unknown[];
   lastError?: { code: string; message: string };
   finishedAt?: number;
   cancelledAt?: number;
   acceptedAt?: number;
 };
-
-const MAX_MESSAGES = 50;
 
 type ConstructListener = () => void;
 
@@ -97,14 +83,7 @@ class SessionStore {
           constructChanged = true;
           break;
         }
-        next.set(event.partitionId, {
-          partitionId: event.partitionId,
-          targetNodeId: event.targetNodeId,
-          survey: "pending",
-          plan: "pending",
-          construct: "pending",
-          recentMessages: [],
-        });
+        next.set(event.partitionId, blankLifecycle(event.partitionId, event.targetNodeId));
         constructChanged = true;
         break;
       case "phase": {
@@ -115,10 +94,6 @@ class SessionStore {
           targetNodeId: event.targetNodeId,
           [event.name]: event.state,
         };
-        if (event.name === "survey" && event.payload !== undefined)
-          updated.surveyPayload = event.payload;
-        if (event.name === "plan" && event.payload !== undefined)
-          updated.planPayload = event.payload as PlanPayload;
         if (event.name === "construct" && event.payload !== undefined) {
           updated.constructPayload = event.payload as ConstructPayload;
         }
@@ -126,14 +101,8 @@ class SessionStore {
         constructChanged = true;
         break;
       }
-      case "sdkMessage": {
-        if (!cur) break;
-        const recentMessages = [...cur.recentMessages, event.message].slice(
-          -MAX_MESSAGES,
-        );
-        next.set(event.partitionId, { ...cur, recentMessages });
+      case "sdkMessage":
         break;
-      }
       case "finished": {
         if (!cur) break;
         next.set(event.partitionId, {
@@ -220,7 +189,6 @@ function blankLifecycle(partitionId: number, targetNodeId: string): Lifecycle {
     survey: "pending",
     plan: "pending",
     construct: "pending",
-    recentMessages: [],
   };
 }
 
@@ -242,7 +210,8 @@ export function SessionEventsProvider({
   const store = storeRef.current;
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
+    const { signal } = controller;
 
     const onConnection = (status: ConnectionStatus) => {
       store.setConnection(status);
@@ -264,13 +233,13 @@ export function SessionEventsProvider({
     void (async () => {
       try {
         const partitions = await api.listPartitions(sessionId);
-        if (cancelled || partitions.length === 0) return;
+        if (signal.aborted || partitions.length === 0) return;
         const runsByPartition = await Promise.all(
           partitions.map((p) =>
             api.listRuns(p.id).catch(() => [] as Run[]),
           ),
         );
-        if (cancelled) return;
+        if (signal.aborted) return;
         const hydrated = partitions.map((p, i) =>
           buildLifecycleFromSnapshot(p, runsByPartition[i]),
         );
@@ -281,7 +250,7 @@ export function SessionEventsProvider({
     })();
 
     return () => {
-      cancelled = true;
+      controller.abort();
       unsub();
       toast.dismiss(CONNECTION_LOST_TOAST_ID);
     };

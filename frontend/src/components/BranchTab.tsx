@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { ApiError, api } from "@/lib/api";
@@ -15,10 +15,6 @@ type Props = {
 export default function BranchTab({ sessionId, nodeId, nodeTitle }: Props) {
   const [name, setName] = useState(() => defaultBranchName(nodeTitle));
   const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    setName(defaultBranchName(nodeTitle));
-  }, [nodeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = async () => {
     const trimmed = name.trim();

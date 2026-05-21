@@ -3,6 +3,7 @@ import { CircleAlert, PauseCircle } from "lucide-react";
 import { toast } from "sonner";
 
 import { api, type Plan, type PartitionStrategy } from "@/lib/api";
+import { formatError } from "@/lib/errors";
 import { useApplyPartitionSnapshot } from "@/components/SessionEventsProvider";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import CollapsibleItem from "@/components/review/CollapsibleItem";
+import { STRATEGY_OPTIONS } from "@/components/review/strategyOptions";
 
 type Props = {
   partitionId: number;
@@ -23,13 +25,6 @@ type Props = {
   planRunId: number;
   onAbandon: () => void;
 };
-
-const STRATEGY_OPTIONS: { value: "auto" | PartitionStrategy; label: string }[] = [
-  { value: "auto", label: "Auto (let planner choose)" },
-  { value: "synthetic", label: "Synthetic" },
-  { value: "vertical", label: "Vertical" },
-  { value: "horizontal", label: "Horizontal" },
-];
 
 export default function PlanReview({
   partitionId,
@@ -50,7 +45,7 @@ export default function PlanReview({
       const updated = await api.acceptPlan(partitionId, planRunId);
       applyPartitionSnapshot(updated);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Accept failed");
+      toast.error(formatError(e, "Accept failed"));
     } finally {
       setBusy(false);
     }
@@ -67,7 +62,7 @@ export default function PlanReview({
       });
       setFeedback("");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Re-run failed");
+      toast.error(formatError(e, "Re-run failed"));
     } finally {
       setBusy(false);
     }

@@ -12,41 +12,30 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { api, ApiError, type TunnelStatus } from "@/lib/api";
+import { api, type TunnelStatus } from "@/lib/api";
+import { formatError } from "@/lib/errors";
+import { subscribeEventSource } from "@/lib/subscribeEventSource";
+import { useAbortableEffect } from "@/lib/useAbortableEffect";
 
 export default function MobileShareCard() {
   const [status, setStatus] = useState<TunnelStatus | null>(null);
   const [pending, setPending] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .getTunnel()
-      .then((s) => {
-        if (!cancelled) setStatus(s);
-      })
-      .catch(() => {
-        if (!cancelled) setStatus({ state: "idle", tokenRequired: true });
-      });
-    return () => {
-      cancelled = true;
-    };
+  useAbortableEffect(async (signal) => {
+    try {
+      const s = await api.getTunnel();
+      if (!signal.aborted) setStatus(s);
+    } catch {
+      if (!signal.aborted) setStatus({ state: "idle", tokenRequired: true });
+    }
   }, []);
 
   useEffect(() => {
     let stopped = false;
-    let source: EventSource | null = null;
-    let reconnectTimer: number | null = null;
-    let attempt = 0;
-
-    const connect = () => {
-      if (stopped) return;
-      source = new EventSource("/api/tunnel/events");
-      source.onopen = () => {
-        attempt = 0;
-      };
-      source.onmessage = (ev) => {
+    const unsub = subscribeEventSource({
+      url: "/api/tunnel/events",
+      onMessage: (ev) => {
         let payload: TunnelStatus;
         try {
           payload = JSON.parse(ev.data) as TunnelStatus;
@@ -75,20 +64,11 @@ export default function MobileShareCard() {
           }
           return merged;
         });
-      };
-      source.onerror = () => {
-        if (stopped) return;
-        source?.close();
-        source = null;
-        const delay = Math.min(1000 * 2 ** Math.min(attempt++, 5), 30_000);
-        reconnectTimer = window.setTimeout(connect, delay);
-      };
-    };
-    connect();
+      },
+    });
     return () => {
       stopped = true;
-      if (reconnectTimer != null) window.clearTimeout(reconnectTimer);
-      source?.close();
+      unsub();
     };
   }, []);
 
@@ -308,10 +288,4 @@ async function copy(text: string) {
   } catch {
     toast.error("Copy failed");
   }
-}
-
-function formatError(e: unknown, fallback: string): string {
-  if (e instanceof ApiError) return e.message;
-  if (e instanceof Error) return e.message;
-  return fallback;
 }

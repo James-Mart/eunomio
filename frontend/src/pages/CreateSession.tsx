@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -29,6 +29,8 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import MobileShareCard from "@/components/MobileShareCard";
 import { api, type Session } from "@/lib/api";
+import { formatError } from "@/lib/errors";
+import { useAbortableEffect } from "@/lib/useAbortableEffect";
 
 const schema = z.object({
   sourceRef: z.string().min(1, "source is required"),
@@ -47,19 +49,13 @@ export default function CreateSession() {
     setSessions((prev) => (prev ? prev.filter((s) => s.id !== id) : prev));
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .listSessions()
-      .then((rows) => {
-        if (!cancelled) setSessions(rows);
-      })
-      .catch((e) => {
-        if (!cancelled) setListError(e instanceof Error ? e.message : "Failed to load sessions");
-      });
-    return () => {
-      cancelled = true;
-    };
+  useAbortableEffect(async (signal) => {
+    try {
+      const rows = await api.listSessions();
+      if (!signal.aborted) setSessions(rows);
+    } catch (e) {
+      if (!signal.aborted) setListError(formatError(e, "Failed to load sessions"));
+    }
   }, []);
 
   return (
@@ -173,7 +169,7 @@ function SessionRow({
       setConfirmOpen(false);
       onDeleted();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to delete session");
+      toast.error(formatError(e, "Failed to delete session"));
     } finally {
       setDeleting(false);
     }
@@ -233,22 +229,16 @@ function CreateSessionDialogContent({ onCreated }: { onCreated: (sessionId: stri
     defaultValues: { sourceRef: "", baseRef: "origin/main" },
   });
 
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .getRepoInfo()
-      .then((info) => {
-        if (cancelled) return;
-        if (info.currentBranch && !form.getValues("sourceRef")) {
-          form.setValue("sourceRef", info.currentBranch);
-        }
-      })
-      .catch(() => {
-        // Non-fatal; user can fill the field manually.
-      });
-    return () => {
-      cancelled = true;
-    };
+  useAbortableEffect(async (signal) => {
+    try {
+      const info = await api.getRepoInfo();
+      if (signal.aborted) return;
+      if (info.currentBranch && !form.getValues("sourceRef")) {
+        form.setValue("sourceRef", info.currentBranch);
+      }
+    } catch {
+      // Non-fatal; user can fill the field manually.
+    }
   }, [form]);
 
   const onSubmit = async (values: FormValues) => {
@@ -257,7 +247,7 @@ function CreateSessionDialogContent({ onCreated }: { onCreated: (sessionId: stri
       const session = await api.createSession(values.baseRef, values.sourceRef);
       onCreated(session.id);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to create session");
+      toast.error(formatError(e, "Failed to create session"));
     } finally {
       setSubmitting(false);
     }

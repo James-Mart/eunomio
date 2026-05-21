@@ -3,6 +3,7 @@ import { PauseCircle } from "lucide-react";
 import { toast } from "sonner";
 
 import { api, type ChangeSurvey } from "@/lib/api";
+import { formatError } from "@/lib/errors";
 import { useApplyPartitionSnapshot } from "@/components/SessionEventsProvider";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -33,7 +34,7 @@ export default function SurveyReview({
       const updated = await api.acceptSurvey(partitionId, surveyRunId);
       applyPartitionSnapshot(updated);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Accept failed");
+      toast.error(formatError(e, "Accept failed"));
     } finally {
       setBusy(false);
     }
@@ -49,7 +50,7 @@ export default function SurveyReview({
       });
       setFeedback("");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Re-run failed");
+      toast.error(formatError(e, "Re-run failed"));
     } finally {
       setBusy(false);
     }

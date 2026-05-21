@@ -8,6 +8,7 @@ import {
   type PartitionStrategy,
   type PlanEdge,
 } from "@/lib/api";
+import { formatError } from "@/lib/errors";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,6 +29,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import type { ConstructPayload } from "@/components/SessionEventsProvider";
+import { STRATEGY_OPTIONS } from "@/components/review/strategyOptions";
 
 type Props = {
   partitionId: number;
@@ -41,13 +43,6 @@ type Props = {
 };
 
 type RerunMode = "constructor" | "planner";
-
-const STRATEGY_OPTIONS: { value: "auto" | PartitionStrategy; label: string }[] = [
-  { value: "auto", label: "Auto (let planner choose)" },
-  { value: "synthetic", label: "Synthetic" },
-  { value: "vertical", label: "Vertical" },
-  { value: "horizontal", label: "Horizontal" },
-];
 
 export default function ConstructReview({
   partitionId,
@@ -72,7 +67,7 @@ export default function ConstructReview({
     try {
       await api.acceptConstruct(partitionId);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Accept failed");
+      toast.error(formatError(e, "Accept failed"));
     } finally {
       setBusy(false);
     }
@@ -91,7 +86,7 @@ export default function ConstructReview({
       }
       setSiblingPrompt(siblings);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Accept failed");
+      toast.error(formatError(e, "Accept failed"));
     } finally {
       setBusy(false);
     }
@@ -113,7 +108,7 @@ export default function ConstructReview({
       });
       setFeedback("");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Re-run failed");
+      toast.error(formatError(e, "Re-run failed"));
     } finally {
       setBusy(false);
     }
@@ -132,7 +127,7 @@ export default function ConstructReview({
       });
       setFeedback("");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Re-run failed");
+      toast.error(formatError(e, "Re-run failed"));
     } finally {
       setBusy(false);
     }

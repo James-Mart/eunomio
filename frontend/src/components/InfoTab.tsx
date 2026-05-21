@@ -21,15 +21,13 @@ export default function InfoTab({ sessionId, nodeId, nodeTitle, nodeDescription,
   const baselineRef = useRef(nodeTitle);
 
   useEffect(() => {
-    setTitle(nodeTitle);
-    baselineRef.current = nodeTitle;
     return () => {
       if (debounceRef.current) {
         window.clearTimeout(debounceRef.current);
         debounceRef.current = null;
       }
     };
-  }, [nodeId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   const commit = (next: string) => {
     const trimmed = next.trim();

@@ -1,23 +1,23 @@
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { memo } from "react";
+import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 
 import { Card, CardContent } from "@/components/ui/card";
 import {
   LifecycleStepper,
   lifecycleStatesFromPhase,
 } from "@/components/PartitionLifecycle";
-import { type GraphNode, type PhaseName, type PhaseState } from "@/lib/api";
+import { type PhaseName, type PhaseState } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export type NodeCardData = {
-  node: GraphNode;
   positionLabel: string;
-  sessionId?: string;
   phaseStatus?: { phase: PhaseName; phaseState: PhaseState } | null;
-  onChange?: () => void;
 };
 
-export default function NodeCard({ data, selected }: NodeProps) {
-  const { positionLabel, phaseStatus } = data as NodeCardData;
+type NodeCardProps = NodeProps<Node<NodeCardData>>;
+
+function NodeCard({ data, selected }: NodeCardProps) {
+  const { positionLabel, phaseStatus } = data;
   const needsAttention =
     !!phaseStatus &&
     (phaseStatus.phaseState === "awaiting_review" ||
@@ -52,3 +52,5 @@ export default function NodeCard({ data, selected }: NodeProps) {
     </>
   );
 }
+
+export default memo(NodeCard);
