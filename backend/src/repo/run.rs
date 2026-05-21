@@ -1,13 +1,13 @@
 use crate::{db, error::AppError, state::AppState, types::*};
 
+const RUN_SELECT: &str = "SELECT id, partition_id, session_id, target_node_id, kind, parent_run_id, status, result_json, result_text, error_message, transcript_text, started_at, finished_at \
+                 FROM runs";
+
 pub async fn get(state: &AppState, run_id: i64) -> Result<RunRow, AppError> {
     let row: Option<RunRow> = state
         .db
         .call(move |conn| {
-            let mut stmt = conn.prepare(
-                "SELECT id, partition_id, session_id, target_node_id, kind, parent_run_id, status, result_json, result_text, error_message, started_at, finished_at \
-                 FROM runs WHERE id = ?1",
-            )?;
+            let mut stmt = conn.prepare(&format!("{RUN_SELECT} WHERE id = ?1"))?;
             let mut rows = stmt.query(tokio_rusqlite::params![run_id])?;
             if let Some(r) = rows.next()? {
                 Ok(Some(run_row_mapper(r)?))
@@ -26,10 +26,9 @@ pub async fn list_for_partition(
     let rows: Vec<RunRow> = state
         .db
         .call(move |conn| {
-            let mut stmt = conn.prepare(
-                "SELECT id, partition_id, session_id, target_node_id, kind, parent_run_id, status, result_json, result_text, error_message, started_at, finished_at \
-                 FROM runs WHERE partition_id = ?1 ORDER BY started_at DESC, id DESC",
-            )?;
+            let mut stmt = conn.prepare(&format!(
+                "{RUN_SELECT} WHERE partition_id = ?1 ORDER BY started_at DESC, id DESC"
+            ))?;
             let rows = stmt
                 .query_map(tokio_rusqlite::params![partition_id], run_row_mapper)?
                 .collect::<Result<Vec<_>, _>>()?;
@@ -91,59 +90,22 @@ pub async fn get_prompt(state: &AppState, run_id: i64) -> Result<Option<String>,
     Ok(prompt)
 }
 
-pub async fn insert_message(
+pub async fn append_transcript_text(
     state: &AppState,
     run_id: i64,
-    seq: i64,
-    ts: i64,
-    message_json: String,
+    chunk: &str,
 ) -> Result<(), AppError> {
+    let chunk = chunk.to_string();
     state
         .db
         .call(move |conn| {
             conn.execute(
-                "INSERT INTO run_messages (run_id, seq, ts, message_json) VALUES (?1, ?2, ?3, ?4)",
-                tokio_rusqlite::params![run_id, seq, ts, message_json],
+                "UPDATE runs SET transcript_text = COALESCE(transcript_text, '') || ?1 WHERE id = ?2",
+                tokio_rusqlite::params![chunk, run_id],
             )?;
             Ok(())
         })
         .await?;
-    Ok(())
-}
-
-pub async fn list_messages(
-    state: &AppState,
-    run_id: i64,
-) -> Result<Vec<TranscriptMessage>, AppError> {
-    let rows: Vec<(i64, i64, String)> = state
-        .db
-        .call(move |conn| {
-            let mut stmt = conn.prepare(
-                "SELECT seq, ts, message_json FROM run_messages WHERE run_id = ?1 ORDER BY seq",
-            )?;
-            let rows = stmt
-                .query_map(tokio_rusqlite::params![run_id], |r| {
-                    Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-                })?
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(rows)
-        })
-        .await?;
-    Ok(rows
-        .into_iter()
-        .map(|(seq, ts, json)| TranscriptMessage {
-            seq,
-            ts,
-            message: serde_json::from_str(&json).unwrap_or(serde_json::Value::Null),
-        })
-        .collect())
-}
-
-pub fn delete_messages_for_partition(conn: &rusqlite::Connection, partition_id: i64) -> rusqlite::Result<()> {
-    conn.execute(
-        "DELETE FROM run_messages WHERE run_id IN (SELECT id FROM runs WHERE partition_id = ?1)",
-        tokio_rusqlite::params![partition_id],
-    )?;
     Ok(())
 }
 
@@ -277,7 +239,8 @@ pub fn run_row_mapper(row: &rusqlite::Row<'_>) -> rusqlite::Result<RunRow> {
         result_json: row.get(7)?,
         result_text: row.get(8)?,
         error_message: row.get(9)?,
-        started_at: row.get(10)?,
-        finished_at: row.get(11)?,
+        transcript_text: row.get(10)?,
+        started_at: row.get(11)?,
+        finished_at: row.get(12)?,
     })
 }

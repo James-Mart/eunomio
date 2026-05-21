@@ -1,0 +1,16 @@
+@import url("https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@600&display=swap");
+
+:root {
+  --brand-mark-font: "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
+  --brand-mark-weight: 600;
+}
+
+.brand-mark {
+  font-family: var(--brand-mark-font);
+  font-weight: var(--brand-mark-weight);
+}
+
+.brand-mark text {
+  font-family: var(--brand-mark-font);
+  font-weight: var(--brand-mark-weight);
+}

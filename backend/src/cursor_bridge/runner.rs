@@ -113,10 +113,19 @@ async fn spawn_helper_child(
     let request_json = serde_json::to_vec(request)
         .map_err(|e| AppError::Internal(anyhow!("serializing helper run request: {e}")))?;
 
+    let helper_dir = binary.parent().ok_or_else(|| {
+        AppError::Internal(anyhow!("helper binary has no parent directory"))
+    })?;
+    let rg_path = helper_dir.join("rg");
+    let rg_path = rg_path
+        .canonicalize()
+        .unwrap_or(rg_path);
+
     let mut child = Command::new(binary)
         .arg("run")
         .env_clear()
         .env("CURSOR_API_KEY", api_key)
+        .env("CURSOR_RIPGREP_PATH", rg_path)
         .env("PATH", std::env::var_os("PATH").unwrap_or_default())
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())

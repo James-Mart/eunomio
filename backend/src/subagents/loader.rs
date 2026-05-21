@@ -92,7 +92,6 @@ pub fn constructor_placeholders() -> &'static [&'static str] {
     &[
         "BEFORE_TREE",
         "TARGET_TREE",
-        "WORKTREE_HEAD_TREE",
         "STRATEGY",
         "SLICE_TITLE",
         "SLICE_DESCRIPTION",

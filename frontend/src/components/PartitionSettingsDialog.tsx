@@ -229,9 +229,9 @@ function GeneralPanel({
             Enable transcripts
           </Label>
           <p className="text-xs text-muted-foreground">
-            Persist every subagent's SDK stream events so a Transcript section
-            appears on each Partition for review. Captured per Run; deleted
-            when the Partition is Accepted or Abandoned.
+            Subagent output is always captured on the server. This toggle
+            controls whether the Transcript section appears on each Partition
+            and whether live output streams while a Run is in progress.
           </p>
         </div>
       </div>

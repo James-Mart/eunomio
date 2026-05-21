@@ -1439,12 +1439,12 @@ async fn enable_transcripts(app: &TestApp) {
     assert_eq!(status, StatusCode::OK);
 }
 
-async fn count_run_messages(app: &TestApp) -> i64 {
+async fn count_runs_with_transcript(app: &TestApp) -> i64 {
     app.state
         .db
         .call(|conn| {
             let n: i64 = conn.query_row(
-                "SELECT COUNT(*) FROM run_messages",
+                "SELECT COUNT(*) FROM runs WHERE transcript_text IS NOT NULL AND transcript_text != ''",
                 tokio_rusqlite::params![],
                 |r| r.get(0),
             )?;
@@ -1471,7 +1471,7 @@ fn survey_with_messages(messages: Vec<serde_json::Value>) -> Vec<HelperEvent> {
 }
 
 #[tokio::test]
-async fn transcripts_enabled_persists_prompt_and_messages() {
+async fn transcripts_enabled_persists_prompt_and_transcript_text() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![survey_with_messages(vec![
         json!({"type": "assistant", "text": "thinking 1"}),
         json!({"type": "tool_use", "name": "ls"}),
@@ -1512,18 +1512,11 @@ async fn transcripts_enabled_persists_prompt_and_messages() {
         prompt.contains("**Surveyor**"),
         "expected rendered surveyor prompt, got: {prompt}"
     );
-    let messages = transcript["messages"].as_array().unwrap();
-    assert_eq!(messages.len(), 2, "messages: {messages:?}");
-    assert_eq!(messages[0]["seq"].as_i64().unwrap(), 0);
-    assert_eq!(messages[1]["seq"].as_i64().unwrap(), 1);
-    assert_eq!(
-        messages[0]["message"]["text"].as_str().unwrap(),
-        "thinking 1"
-    );
-    assert_eq!(
-        messages[1]["message"]["type"].as_str().unwrap(),
-        "tool_use"
-    );
+    let text = transcript["transcriptText"]
+        .as_str()
+        .expect("transcriptText must be populated");
+    assert!(text.contains("thinking 1"), "text: {text}");
+    assert!(text.contains("[tool: ls]"), "text: {text}");
 
     let _ = empty_request(
         &app.router,
@@ -1534,7 +1527,7 @@ async fn transcripts_enabled_persists_prompt_and_messages() {
 }
 
 #[tokio::test]
-async fn transcripts_disabled_skips_messages_but_keeps_prompt() {
+async fn transcripts_disabled_still_persists_transcript_text_without_sse() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![survey_with_messages(vec![
         json!({"type": "assistant", "text": "thinking"}),
     ])]));
@@ -1549,7 +1542,28 @@ async fn transcripts_disabled_skips_messages_but_keeps_prompt() {
     )
     .await;
     let partition_id = body["id"].as_i64().unwrap();
-    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
+
+    let mut saw_delta = false;
+    loop {
+        let ev = next_event(&mut rx).await;
+        if let SseEvent::TranscriptDelta { .. } = &ev {
+            saw_delta = true;
+        }
+        if matches!(
+            ev,
+            SseEvent::Phase {
+                name: PhaseName::Survey,
+                state: PhaseState::AwaitingReview,
+                ..
+            }
+        ) {
+            break;
+        }
+    }
+    assert!(
+        !saw_delta,
+        "transcriptDelta must not be emitted when transcripts are disabled"
+    );
 
     let (_, runs) = empty_request(
         &app.router,
@@ -1571,11 +1585,10 @@ async fn transcripts_disabled_skips_messages_but_keeps_prompt() {
         prompt.contains("**Surveyor**"),
         "prompt should always be captured: {prompt}"
     );
-    let messages = transcript["messages"].as_array().unwrap();
-    assert!(
-        messages.is_empty(),
-        "expected no captured messages when toggle is off, got {messages:?}"
-    );
+    let text = transcript["transcriptText"]
+        .as_str()
+        .expect("transcriptText should be captured even when toggle is off");
+    assert!(text.contains("thinking"), "text: {text}");
 
     let _ = empty_request(
         &app.router,
@@ -1617,8 +1630,8 @@ async fn transcripts_cleaned_up_on_accept_construct() {
     drive_partition_to_construct_review(&app, partition_id).await;
 
     assert!(
-        count_run_messages(&app).await > 0,
-        "expected captured messages before accept"
+        count_runs_with_transcript(&app).await > 0,
+        "expected captured transcript before accept"
     );
 
     let (status, body) = empty_request(
@@ -1637,9 +1650,9 @@ async fn transcripts_cleaned_up_on_accept_construct() {
     }
 
     assert_eq!(
-        count_run_messages(&app).await,
+        count_runs_with_transcript(&app).await,
         0,
-        "run_messages must be empty after accept_construct"
+        "runs with transcript must be gone after accept_construct"
     );
 }
 
@@ -1663,8 +1676,8 @@ async fn transcripts_cleaned_up_on_abandon() {
     let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
 
     assert!(
-        count_run_messages(&app).await > 0,
-        "expected captured messages before abandon"
+        count_runs_with_transcript(&app).await > 0,
+        "expected captured transcript before abandon"
     );
 
     let (status, _) = empty_request(
@@ -1676,8 +1689,105 @@ async fn transcripts_cleaned_up_on_abandon() {
     assert_eq!(status, StatusCode::NO_CONTENT);
 
     assert_eq!(
-        count_run_messages(&app).await,
+        count_runs_with_transcript(&app).await,
         0,
-        "run_messages must be empty after abandon"
+        "runs with transcript must be gone after abandon"
     );
+}
+
+fn partition_worktree_path(app: &TestApp, session_id: &str, partition_id: i64) -> std::path::PathBuf {
+    app.data
+        .path()
+        .canonicalize()
+        .unwrap()
+        .join("worktrees")
+        .join(session_id)
+        .join(partition_id.to_string())
+        .join("worktree")
+}
+
+#[tokio::test]
+async fn construct_spawn_resets_dirty_worktree() {
+    let runner = Arc::new(FakeSubagentRunner::new(vec![
+        survey_script(),
+        plan_script("vertical"),
+        construct_ok_script(),
+        construct_ok_script(),
+    ]));
+    let app = TestApp::spawn_with_runner(runner.clone()).await;
+    let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
+    let mut rx = app.state.coordinator.subscribe(&session_id);
+
+    let (_, body) = empty_request(
+        &app.router,
+        "POST",
+        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+    )
+    .await;
+    let partition_id = body["id"].as_i64().unwrap();
+    let worktree_root = partition_worktree_path(&app, &session_id, partition_id);
+
+    let _ = next_event(&mut rx).await;
+    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
+    let (_, runs) = empty_request(
+        &app.router,
+        "GET",
+        &format!("/api/partitions/{partition_id}/runs"),
+    )
+    .await;
+    let survey_run_id = runs.as_array().unwrap()[0]["id"].as_i64().unwrap();
+    let _ = json_request(
+        &app.router,
+        "POST",
+        &format!("/api/partitions/{partition_id}/survey/accept"),
+        json!({ "runId": survey_run_id }),
+    )
+    .await;
+    let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
+    let (_, runs) = empty_request(
+        &app.router,
+        "GET",
+        &format!("/api/partitions/{partition_id}/runs"),
+    )
+    .await;
+    let plan_run_id = runs.as_array().unwrap()[0]["id"].as_i64().unwrap();
+    let _ = json_request(
+        &app.router,
+        "POST",
+        &format!("/api/partitions/{partition_id}/plan/accept"),
+        json!({ "runId": plan_run_id }),
+    )
+    .await;
+    let _ = wait_for_phase(&mut rx, PhaseName::Construct, PhaseState::AwaitingReview).await;
+
+    common::write(&worktree_root, "dirty-junk.txt", "junk\n");
+    common::write(&worktree_root, "a.txt", "modified\n");
+    let dirty_status = common::git(&worktree_root, &["status", "--porcelain"]);
+    assert!(
+        !dirty_status.is_empty(),
+        "worktree should be dirty before re-run: {dirty_status:?}"
+    );
+
+    let (status, _) = json_request(
+        &app.router,
+        "POST",
+        &format!("/api/partitions/{partition_id}/runs"),
+        json!({ "kind": "construct", "userFeedback": "revise slice" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let _ = wait_for_phase(&mut rx, PhaseName::Construct, PhaseState::Running).await;
+
+    let clean_status = common::git(&worktree_root, &["status", "--porcelain"]);
+    assert_eq!(
+        clean_status, "",
+        "construct spawn should reset worktree to parent baseline"
+    );
+    assert!(
+        !worktree_root.join("dirty-junk.txt").exists(),
+        "untracked junk should be removed by reset"
+    );
+    let a_contents = std::fs::read_to_string(worktree_root.join("a.txt")).unwrap();
+    assert_eq!(a_contents, "a\n", "tracked files should match parent tree");
 }

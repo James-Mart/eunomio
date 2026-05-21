@@ -23,12 +23,12 @@ export type SessionEvent =
       payload?: unknown;
     }
   | {
-      type: "sdkMessage";
+      type: "transcriptDelta";
       sessionId: string;
       targetNodeId: string;
       partitionId: number;
       runId: number;
-      message: unknown;
+      text: string;
     }
   | {
       type: "finished";

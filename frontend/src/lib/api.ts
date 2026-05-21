@@ -166,17 +166,11 @@ export type Run = {
   finishedAt: number | null;
 };
 
-export type TranscriptMessage = {
-  seq: number;
-  ts: number;
-  message: unknown;
-};
-
 export type Transcript = {
   runId: number;
   kind: RunKind;
   prompt: string | null;
-  messages: TranscriptMessage[];
+  transcriptText: string | null;
   rawResult: string | null;
   parsedResult: unknown;
   errorMessage: string | null;

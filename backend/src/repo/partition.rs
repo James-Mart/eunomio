@@ -117,7 +117,6 @@ pub async fn delete_with_runs(state: &AppState, partition_id: i64) -> Result<(),
         .db
         .call(move |conn| {
             let tx = conn.transaction()?;
-            super::run::delete_messages_for_partition(&tx, partition_id)?;
             tx.execute(
                 "DELETE FROM runs WHERE partition_id = ?1",
                 tokio_rusqlite::params![partition_id],
@@ -142,7 +141,6 @@ pub async fn delete_many_with_runs(
         .call(move |conn| {
             let tx = conn.transaction()?;
             for id in &partition_ids {
-                super::run::delete_messages_for_partition(&tx, *id)?;
                 tx.execute(
                     "DELETE FROM runs WHERE partition_id = ?1",
                     tokio_rusqlite::params![id],
@@ -274,7 +272,6 @@ pub async fn finalize_construct_accept(
             let mut all_ids = sibling_ids.clone();
             all_ids.push(partition_id);
             for id in &all_ids {
-                super::run::delete_messages_for_partition(&tx, *id)?;
                 tx.execute(
                     "DELETE FROM runs WHERE partition_id = ?1",
                     tokio_rusqlite::params![id],

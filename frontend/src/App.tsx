@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { Link, Route, Routes } from "react-router-dom";
 
+import { BrandMark } from "@/components/BrandMark";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import SystemErrorBanner from "@/components/SystemErrorBanner";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,7 +16,8 @@ export default function App() {
       <SystemErrorBanner />
       <header className="border-b">
         <div className="flex h-14 items-center px-4">
-          <Link to="/" className="font-semibold">
+          <Link to="/" className="flex items-center gap-2 font-semibold">
+            <BrandMark className="text-2xl" />
             Eunomia
           </Link>
         </div>

@@ -8,6 +8,16 @@ const here = dirname(fileURLToPath(import.meta.url));
 const dist = join(here, "dist");
 mkdirSync(dist, { recursive: true });
 
+function sdkPlatformPackage() {
+  if (process.platform === "darwin") {
+    return process.arch === "arm64" ? "darwin-arm64" : "darwin-x64";
+  }
+  if (process.platform === "win32") {
+    return "win32-x64";
+  }
+  return process.arch === "arm64" ? "linux-arm64" : "linux-x64";
+}
+
 const bundlePath = join(dist, "bundle.cjs");
 await build({
   entryPoints: [join(here, "src/cursor.mjs")],
@@ -30,9 +40,21 @@ await build({
 // `helper/src/bindings-loader.cjs` for the runtime loader.
 const nativeBindings = [
   ["node_modules/sqlite3/build/Release/node_sqlite3.node", "node_sqlite3.node"],
+  [
+    `node_modules/@cursor/sdk-${sdkPlatformPackage()}/bin/rg`,
+    "rg",
+  ],
 ];
 for (const [src, dst] of nativeBindings) {
-  copyFileSync(join(here, src), join(dist, dst));
+  const from = join(here, src);
+  if (!existsSync(from)) {
+    console.error(`missing helper native asset: ${from}`);
+    process.exit(1);
+  }
+  copyFileSync(from, join(dist, dst));
+  if (dst === "rg") {
+    chmodSync(join(dist, dst), 0o755);
+  }
 }
 
 const blobPath = join(dist, "sea-prep.blob");

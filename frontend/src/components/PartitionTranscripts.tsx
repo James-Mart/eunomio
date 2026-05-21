@@ -1,19 +1,47 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronRight } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronRight, Copy } from "lucide-react";
+import { toast } from "sonner";
 
-import {
-  api,
-  type Run,
-  type Transcript,
-  type TranscriptMessage,
-} from "@/lib/api";
-import { useRunMessageSubscription } from "@/components/SessionEventsProvider";
+import { Button } from "@/components/ui/button";
+import { useTranscriptDeltaSubscription } from "@/components/SessionEventsProvider";
+import { api, type Run, type Transcript } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type Props = {
   partitionId: number;
   runs: Run[];
 };
+
+const STICKY_TAIL_PX = 40;
+
+async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.success("Copied");
+  } catch {
+    toast.error("Copy failed");
+  }
+}
+
+function CopyTextButton({
+  text,
+  ariaLabel,
+}: {
+  text: string;
+  ariaLabel: string;
+}) {
+  return (
+    <Button
+      size="icon"
+      variant="ghost"
+      className="h-8 w-8 shrink-0"
+      aria-label={ariaLabel}
+      onClick={() => void copyText(text)}
+    >
+      <Copy className="h-3.5 w-3.5" />
+    </Button>
+  );
+}
 
 export default function PartitionTranscripts({ partitionId, runs }: Props) {
   const [enabled, setEnabled] = useState<boolean | null>(null);
@@ -44,6 +72,7 @@ export default function PartitionTranscripts({ partitionId, runs }: Props) {
             key={run.id}
             partitionId={partitionId}
             run={run}
+            transcriptsEnabled
           />
         ))}
       </div>
@@ -54,49 +83,78 @@ export default function PartitionTranscripts({ partitionId, runs }: Props) {
 function RunTranscriptSection({
   partitionId,
   run,
+  transcriptsEnabled,
 }: {
   partitionId: number;
   run: Run;
+  transcriptsEnabled: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [transcript, setTranscript] = useState<Transcript | null>(null);
-  const [liveMessages, setLiveMessages] = useState<TranscriptMessage[]>([]);
+  const [liveText, setLiveText] = useState("");
   const [loading, setLoading] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const stickToBottom = useRef(true);
+  const liveFetchDone = useRef(false);
 
   const isRunning = run.status === "running";
+  const useLiveDeltas = isRunning && transcriptsEnabled;
 
-  useRunMessageSubscription(
+  useTranscriptDeltaSubscription(
     useCallback(
       (ev) => {
         if (ev.partitionId !== partitionId || ev.runId !== run.id) return;
-        setLiveMessages((prev) => [
-          ...prev,
-          {
-            seq: prev.length,
-            ts: Math.floor(Date.now() / 1000),
-            message: ev.message,
-          },
-        ]);
+        setLiveText((prev) => prev + ev.text);
       },
       [partitionId, run.id],
     ),
   );
 
   useEffect(() => {
-    if (!open || transcript || loading) return;
+    if (!open) {
+      liveFetchDone.current = false;
+      return;
+    }
+    if (useLiveDeltas && liveFetchDone.current) return;
+    if (useLiveDeltas) liveFetchDone.current = true;
     setLoading(true);
     void api
       .getRunTranscript(partitionId, run.id)
-      .then((t) => setTranscript(t))
+      .then((t) => {
+        setTranscript(t);
+        if (useLiveDeltas) {
+          setLiveText(t.transcriptText ?? "");
+        }
+      })
       .finally(() => setLoading(false));
-  }, [open, transcript, loading, partitionId, run.id]);
+  }, [open, partitionId, run.id, useLiveDeltas]);
 
-  const messages =
-    isRunning && liveMessages.length > 0
-      ? liveMessages
-      : (transcript?.messages ?? []);
+  useEffect(() => {
+    if (!open || useLiveDeltas) return;
+    void api.getRunTranscript(partitionId, run.id).then((t) => {
+      setTranscript(t);
+      setLiveText("");
+    });
+  }, [open, useLiveDeltas, partitionId, run.id]);
 
-  const label = `${run.kind} run #${run.id}`;
+  const outputText = isRunning
+    ? liveText
+    : (transcript?.transcriptText ?? "");
+
+  useEffect(() => {
+    if (!isRunning || !stickToBottom.current) return;
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [outputText, isRunning]);
+
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickToBottom.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < STICKY_TAIL_PX;
+  };
+
+  const label = `${run.kind} run`;
 
   return (
     <div className="rounded-md border bg-muted/30">
@@ -126,8 +184,12 @@ function RunTranscriptSection({
             <>
               {transcript?.prompt && (
                 <div>
-                  <p className="mb-1 text-xs font-medium text-muted-foreground">
+                  <p className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                     Prompt
+                    <CopyTextButton
+                      text={transcript.prompt}
+                      ariaLabel="Copy prompt"
+                    />
                   </p>
                   <pre className="max-h-40 overflow-auto rounded bg-background p-2 text-xs whitespace-pre-wrap">
                     {transcript.prompt}
@@ -135,21 +197,34 @@ function RunTranscriptSection({
                 </div>
               )}
               <div>
-                <p className="mb-1 text-xs font-medium text-muted-foreground">
-                  Messages ({messages.length})
+                <p className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  Output
+                  {outputText ? (
+                    <CopyTextButton
+                      text={outputText}
+                      ariaLabel="Copy output"
+                    />
+                  ) : null}
+                  {isRunning && (
+                    <span
+                      className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-primary"
+                      aria-hidden="true"
+                    />
+                  )}
                 </p>
-                {messages.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No messages.</p>
+                {!outputText ? (
+                  <p className="text-xs text-muted-foreground">
+                    No output yet.
+                  </p>
                 ) : (
-                  <div className="max-h-60 space-y-2 overflow-auto">
-                    {messages.map((m) => (
-                      <pre
-                        key={m.seq}
-                        className="rounded bg-background p-2 text-xs whitespace-pre-wrap"
-                      >
-                        {JSON.stringify(m.message, null, 2)}
-                      </pre>
-                    ))}
+                  <div
+                    ref={scrollRef}
+                    onScroll={onScroll}
+                    className="max-h-60 overflow-auto rounded bg-background p-2"
+                  >
+                    <pre className="text-xs whitespace-pre-wrap">
+                      {outputText}
+                    </pre>
                   </div>
                 )}
               </div>

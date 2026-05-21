@@ -37,13 +37,13 @@ export type Lifecycle = {
 
 type ConstructListener = () => void;
 
-export type RunMessageEvent = {
+export type TranscriptDeltaEvent = {
   partitionId: number;
   runId: number;
-  message: unknown;
+  text: string;
 };
 
-type MessageListener = (event: RunMessageEvent) => void;
+type TranscriptDeltaListener = (event: TranscriptDeltaEvent) => void;
 
 type Store = {
   lifecycles: Map<number, Lifecycle>;
@@ -61,7 +61,7 @@ class SessionStore {
   };
   private listeners: Listeners = new Set();
   private constructListeners: Set<ConstructListener> = new Set();
-  private messageListeners: Set<MessageListener> = new Set();
+  private transcriptDeltaListeners: Set<TranscriptDeltaListener> = new Set();
 
   subscribe = (cb: () => void): (() => void) => {
     this.listeners.add(cb);
@@ -77,10 +77,10 @@ class SessionStore {
     };
   };
 
-  subscribeMessages = (cb: MessageListener): (() => void) => {
-    this.messageListeners.add(cb);
+  subscribeTranscriptDeltas = (cb: TranscriptDeltaListener): (() => void) => {
+    this.transcriptDeltaListeners.add(cb);
     return () => {
-      this.messageListeners.delete(cb);
+      this.transcriptDeltaListeners.delete(cb);
     };
   };
 
@@ -117,12 +117,12 @@ class SessionStore {
         constructChanged = true;
         break;
       }
-      case "sdkMessage":
-        for (const l of this.messageListeners) {
+      case "transcriptDelta":
+        for (const l of this.transcriptDeltaListeners) {
           l({
             partitionId: event.partitionId,
             runId: event.runId,
-            message: event.message,
+            text: event.text,
           });
         }
         break;
@@ -411,7 +411,7 @@ export function useConstructSubscription(cb: () => void): void {
   useEffect(() => store.subscribeConstruct(cb), [store, cb]);
 }
 
-export function useRunMessageSubscription(cb: MessageListener): void {
+export function useTranscriptDeltaSubscription(cb: TranscriptDeltaListener): void {
   const store = useStore();
-  useEffect(() => store.subscribeMessages(cb), [store, cb]);
+  useEffect(() => store.subscribeTranscriptDeltas(cb), [store, cb]);
 }

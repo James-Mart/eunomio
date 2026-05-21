@@ -11,31 +11,35 @@ your responsibility.
    target file contents with `git show {{TARGET_TREE}}:<path>`. You
    determine the set of files in scope yourself; no path list is passed
    in.
-2. Confirm the worktree HEAD tree (`{{WORKTREE_HEAD_TREE}}`) equals
-   `{{BEFORE_TREE}}`. If it doesn't, output BLOCKED.
+2. Run `git rev-parse HEAD^{tree}` and confirm it equals BEFORE_TREE
+   (`{{BEFORE_TREE}}`). Do **not** compare `git rev-parse HEAD` — that is
+   a commit object, not a tree. If the trees differ, output
+   `BLOCKED: worktree baseline mismatch`.
 3. Apply the slice to your cwd using whatever edits are needed under
    the strategy's scope and source-of-truth rules below. Edit only
    files inside your cwd.
 4. Do not run `git add`, `git commit`, `git push`, `git fetch`,
    `git checkout`, or anything else that changes refs or HEAD.
-5. If `{{USER_FEEDBACK}}` is non-empty, treat it as the user's read on
-   what a previous attempt got wrong and revise accordingly.
+5. When USER_FEEDBACK (see Inputs) is not the literal value `(none)`,
+   treat it as the user's read on what a previous attempt got wrong and
+   revise accordingly.
 6. Print exactly `OK` on success, or `BLOCKED: <reason>` if the slice
    cannot be built under the rules.
 
 ## Inputs
 
-- `{{BEFORE_TREE}}` — tree the worktree's HEAD points at when you start.
-- `{{TARGET_TREE}}` — tree the full original diff ends at; the slice you
-  are building is one part of the diff between BeforeTree and TargetTree.
-- `{{WORKTREE_HEAD_TREE}}` — current worktree HEAD tree (should equal
-  `{{BEFORE_TREE}}` at the start of your run).
-- `{{STRATEGY}}` — `synthetic` / `vertical` / `horizontal`. Defines what
-  counts as "in scope" for the slice (see below).
+- BEFORE_TREE: `{{BEFORE_TREE}}` — tree object the worktree must start
+  from (verify via `HEAD^{tree}`).
+- TARGET_TREE: `{{TARGET_TREE}}` — tree the full original diff ends at;
+  the slice you are building is one part of the diff between BeforeTree
+  and TargetTree.
+- STRATEGY: `{{STRATEGY}}` — `synthetic` / `vertical` / `horizontal`.
+  Defines what counts as "in scope" for the slice (see below).
 - Slice you are building:
   - title: `{{SLICE_TITLE}}`
   - description: `{{SLICE_DESCRIPTION}}`
-- `{{USER_FEEDBACK}}` — feedback on a previous attempt, or `(none)`.
+- USER_FEEDBACK: `{{USER_FEEDBACK}}` — feedback on a previous attempt,
+  or `(none)`.
 
 ## Strategy rules
 
@@ -66,7 +70,7 @@ Each strategy has its own scope and source-of-truth rules.
 Output `BLOCKED: <reason>` (no edits beyond what you've already made)
 when any of the following applies:
 
-- The starting worktree HEAD tree does not match `{{BEFORE_TREE}}`.
+- `git rev-parse HEAD^{tree}` does not equal BEFORE_TREE (`{{BEFORE_TREE}}`).
 - **synthetic**: the theme cannot be expressed without also applying
   part of another theme the leftover owns.
 - **synthetic**: the theme is already extractable as a literal

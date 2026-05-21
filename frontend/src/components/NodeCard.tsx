@@ -2,26 +2,24 @@ import { memo } from "react";
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  LifecycleStepper,
-  lifecycleStatesFromPhase,
-} from "@/components/PartitionLifecycle";
-import { type PhaseName, type PhaseState } from "@/lib/api";
 import { cn } from "@/lib/utils";
+
+export type NodePartitionGlance = {
+  count: number;
+  status: "running" | "blocked";
+};
 
 export type NodeCardData = {
   positionLabel: string;
-  phaseStatus?: { phase: PhaseName; phaseState: PhaseState } | null;
+  partitionGlance?: NodePartitionGlance | null;
 };
 
 type NodeCardProps = NodeProps<Node<NodeCardData>>;
 
 function NodeCard({ data, selected }: NodeCardProps) {
-  const { positionLabel, phaseStatus } = data;
-  const needsAttention =
-    !!phaseStatus &&
-    (phaseStatus.phaseState === "awaiting_review" ||
-      phaseStatus.phaseState === "error");
+  const { positionLabel, partitionGlance } = data;
+  const count = partitionGlance?.count ?? 0;
+  const blocked = partitionGlance?.status === "blocked";
 
   return (
     <>
@@ -29,27 +27,52 @@ function NodeCard({ data, selected }: NodeCardProps) {
       <Card
         className={cn(
           "w-[180px] shadow-md",
-          selected && "ring-2 ring-primary ring-offset-2 ring-offset-background",
-          needsAttention && "ring-2 ring-red-500/80",
+          blocked && "ring-2 ring-red-500/80",
+          selected && "ring-offset-2 ring-offset-background",
+          selected && !blocked && "ring-2 ring-primary",
         )}
       >
         <CardContent className="flex items-center justify-between gap-2 p-3">
           <span className="flex-1 truncate text-sm font-semibold">
             {positionLabel}
           </span>
-          {phaseStatus && (
-            <LifecycleStepper
-              states={lifecycleStatesFromPhase(
-                phaseStatus.phase,
-                phaseStatus.phaseState,
-              )}
-              compact
+          {count > 0 && partitionGlance ? (
+            <PartitionCountChip
+              count={count}
+              status={partitionGlance.status}
             />
-          )}
+          ) : null}
         </CardContent>
       </Card>
       <Handle type="source" position={Position.Top} />
     </>
+  );
+}
+
+function PartitionCountChip({
+  count,
+  status,
+}: {
+  count: number;
+  status: "running" | "blocked";
+}) {
+  const blocked = status === "blocked";
+  return (
+    <span
+      className={cn(
+        "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+        blocked
+          ? "text-red-500 ring-2 ring-red-500/80"
+          : "animate-pulse bg-amber-500/20 text-amber-500",
+      )}
+      aria-label={
+        blocked
+          ? `${count} partitions, one or more awaiting review`
+          : `${count} partitions in progress`
+      }
+    >
+      {count}
+    </span>
   );
 }
 

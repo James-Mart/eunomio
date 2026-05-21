@@ -130,7 +130,6 @@ impl Coordinator {
         let ctx = subagents::constructor::ConstructContext {
             before_tree: before_tree.clone(),
             target_tree,
-            worktree_head_tree: before_tree,
             strategy: strategy.as_str().to_string(),
             slice_title: split.edges[0].title.clone(),
             slice_description: split.edges[0].description.clone(),

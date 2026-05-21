@@ -66,10 +66,24 @@ in the Node-detail inspector, not on the graph card.
 While a Partition is in progress (see §3), no graph mutation has happened yet
 — the candidate Slice and the proposed rewrite of the target's Title sit on
 the Partition row, not on the active chain. The user can switch the graph
-view into a **candidate view** for any pending Partition to inspect what its
-Acceptance would produce.
+view into a **candidate view** for any pending Partition. From the moment a
+Partition is Begun, the candidate view focuses on that Partition's incoming
+Edge — the prior parent and the canonical target — so the user can follow
+Survey and Plan work in isolation. At the **Construct review gate**, when a
+split Plan and candidate Slice exist, the view expands to show the proposed
+post-Acceptance shape.
 
-The candidate view is a 3-Node mini-graph:
+While Survey and Plan are in progress, the candidate view is a 2-Node
+mini-graph:
+
+```mermaid
+graph BT
+  P["(prior parent)"]
+  T["(target)"]
+  P --> T
+```
+
+At Construct review with a split outcome, it becomes a 3-Node mini-graph:
 
 ```mermaid
 graph BT
@@ -80,10 +94,11 @@ graph BT
   S --> T
 ```
 
-The same Diff machinery applies: selecting any Node in the mini-graph renders
-that Node's incoming-edge diff in the Diff tab. The mini-graph's Position
-labels are the labels the Nodes _would have_ after Acceptance, so the user
-sees the proposed renumbering before committing to it.
+The same Diff machinery applies: selecting the target (or, in the 3-Node
+view, the Slice or renamed target) renders that Node's incoming-edge diff in
+the Diff tab. The prior parent is the root of the mini-graph and has no
+in-view diff. In the 3-Node view, Position labels are the labels the Nodes
+_would have_ after Acceptance.
 
 Many Partitions can be pending at once — including more than one on the same
 target — and each appears as an entry in the graph-view dropdown. Acceptance
@@ -466,6 +481,10 @@ to the Partition's worktree.
 
 The Constructor is the only writable agent. Its prompt instructs it to:
 
+- Before each Construct run, the Coordinator resets the partition worktree to
+  `parent.commit_sha` (`reset --hard` + `clean -fdx`).
+- Verify `HEAD^{tree}` equals BeforeTree (`parent.tree`), not commit-hash
+  equality, before editing.
 - Not commit, not `git add`, not push, not fetch, not change branches.
 - Edit only the files inside its `cwd`.
 - Treat `git show <target.tree>:<path>` as the source of truth under
@@ -541,7 +560,7 @@ worktree state.
 | `sessions`   | `id` (PK), unique on `(repo_root, base_ref, source_ref)` | refs, trees, `base_node_id`, `created_at`. _No_ session-level worktree path; worktrees are per-Partition. _No_ session-level Partition settings either; settings are user-global and live in a single JSON file under the State directory.                                            |
 | `nodes`      | `(session_id, node_id)`                  | every Node: tree, commit sha, parent, Title, `created_at`. Slices use exactly the same shape as seed Nodes; there is no Node-type discriminator.                                                                                                                          |
 | `partitions` | `id` (PK autoincrement), index on `(session_id, target_node_id)` | per-Partition state: strategy (nullable until Plan Accept), accepted survey / plan JSON, phase, phase_state, candidate slice tree+commit (nullable until Constructor OK), `worktree_path`, `created_at`. Deleted at terminal action (Accept or Abandon).               |
-| `runs`       | `id` (PK autoincrement), index on `(session_id, target_node_id)` | every in-flight subagent Run: partition id, kind (survey / plan / construct), parent_run_id, status, parsed result JSON, raw result text, error message, timestamps. **Transient** — a Run row exists only while its Partition exists; both Acceptance and Abandon delete the Run rows alongside the Partition row.                                       |
+| `runs`       | `id` (PK autoincrement), index on `(session_id, target_node_id)` | every in-flight subagent Run: partition id, kind (survey / plan / construct), parent_run_id, status, parsed result JSON, raw result text, folded `transcript_text`, error message, timestamps. **Transient** — a Run row exists only while its Partition exists; both Acceptance and Abandon delete the Run rows alongside the Partition row.                                       |
 
 The SSE event stream and the per-Edge UI both scope to
 `(session_id, target_node_id, partition_id)`.
@@ -620,7 +639,7 @@ All routes that read or mutate Partition state scope by `partition_id`
 ### Streaming
 
 - `GET /api/sessions/:id/events` (SSE) — Coordinator-driven stream of
-  `Started`, `Phase`, `SdkMessage`, `Finished`, `Cancelled`, `Error` events
+  `Started`, `Phase`, `TranscriptDelta`, `Finished`, `Cancelled`, `Error` events
   for every Run in the Session. Heartbeat every 15 s.
 
 ---
@@ -636,10 +655,9 @@ layout:
   same x-coordinate, so the chain arrows render as straight vertical
   lines. A graph-view dropdown at the top of the pane switches between the
   canonical chain and any of the currently-pending candidate views; each
-  candidate view renders only the three Nodes of that Partition's
-  mini-graph (prior parent, candidate Slice, renamed target), with the
-  candidate Slice sitting at a fixed horizontal offset from the chain
-  column so its branching shape is visually obvious.
+  candidate view begins as the prior parent and target (2 Nodes) and expands
+  to three Nodes (prior parent, candidate Slice, renamed target) at Construct
+  review when a split Plan and candidate Slice are ready.
 - **Left column**: a Tabs control with four inner tabs:
   - **Diff** — the selected Node's `parent.tree → node.tree` unified diff.
     In a candidate view, the parent tree comes from

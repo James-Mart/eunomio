@@ -14,6 +14,7 @@ const HELPER_FILE: &str = "cursor-helper";
 /// alongside `cursor-helper`. They are extracted into the same temp directory
 /// so `helper/src/bindings-loader.cjs` can find them next to `process.execPath`.
 const HELPER_NATIVE_FILES: &[&str] = &["node_sqlite3.node"];
+const HELPER_EXECUTABLE_NATIVE_FILES: &[&str] = &["rg"];
 
 pub(super) async fn ensure_helper_extracted(data_dir: &Path) -> Result<PathBuf, AppError> {
     let version = env!("CARGO_PKG_VERSION");
@@ -22,6 +23,9 @@ pub(super) async fn ensure_helper_extracted(data_dir: &Path) -> Result<PathBuf, 
     extract_helper_asset(&dir, HELPER_FILE, true).await?;
     for name in HELPER_NATIVE_FILES {
         extract_helper_asset(&dir, name, false).await?;
+    }
+    for name in HELPER_EXECUTABLE_NATIVE_FILES {
+        extract_helper_asset(&dir, name, true).await?;
     }
     Ok(dir.join(HELPER_FILE))
 }

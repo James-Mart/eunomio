@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CircleAlert, PauseCircle } from "lucide-react";
+import { CircleAlert } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -156,17 +156,7 @@ export default function ConstructReview({
           <AlertTitle>Constructor blocked</AlertTitle>
           <AlertDescription>{payload.reason}</AlertDescription>
         </Alert>
-      ) : (
-        <Alert>
-          <PauseCircle className="h-4 w-4" />
-          <AlertTitle>Candidate ready for review</AlertTitle>
-          <AlertDescription>
-            Inspect the candidate via the candidate view in the graph pane, then
-            Accept here, re-run the Constructor with feedback, re-run the
-            Planner for a different slice, or Abandon.
-          </AlertDescription>
-        </Alert>
-      )}
+      ) : null}
 
       <div className="space-y-3 rounded-md border bg-muted/30 p-3">
         <div className="space-y-1.5">

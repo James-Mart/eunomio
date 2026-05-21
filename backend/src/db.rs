@@ -60,20 +60,12 @@ CREATE TABLE IF NOT EXISTS runs (
   result_text TEXT,
   error_message TEXT,
   prompt_text TEXT,
+  transcript_text TEXT,
   started_at INTEGER NOT NULL,
   finished_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS runs_by_edge ON runs (session_id, target_node_id);
 CREATE INDEX IF NOT EXISTS runs_by_partition ON runs (partition_id);
-
-CREATE TABLE IF NOT EXISTS run_messages (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  run_id INTEGER NOT NULL,
-  seq INTEGER NOT NULL,
-  ts INTEGER NOT NULL,
-  message_json TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS run_messages_by_run ON run_messages (run_id, seq);
 "#;
 
 pub async fn open(db_path: &Path) -> Result<Connection> {

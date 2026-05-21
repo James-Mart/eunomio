@@ -13,9 +13,10 @@ import {
 import {
   useResetLifecycle,
   usePartitionLifecycle,
-  usePartitionLifecyclesByTarget,
   type Lifecycle,
 } from "@/components/SessionEventsProvider";
+import PendingPartitionPicker from "@/components/tools/PendingPartitionPicker";
+import type { PendingPartitionOption } from "@/components/tools/ToolPanels";
 import {
   LifecycleStepper,
   type LifecycleStates,
@@ -34,6 +35,8 @@ type Props = {
   targetNodeId: string | null;
   activePartition: Partition | null;
   isCandidateSliceSelected: boolean;
+  pendingPartitionOptions: PendingPartitionOption[];
+  onSelectPartition: (p: Partition) => void;
   onPartitionStarted: (p: Partition) => void;
   onPartitionEnded: () => void;
 };
@@ -43,13 +46,12 @@ export default function PartitionTab({
   targetNodeId,
   activePartition,
   isCandidateSliceSelected,
+  pendingPartitionOptions,
+  onSelectPartition,
   onPartitionStarted,
   onPartitionEnded,
 }: Props) {
   const activeLifecycle = usePartitionLifecycle(activePartition?.id ?? null);
-  const pendingForTarget = usePartitionLifecyclesByTarget(
-    targetNodeId ?? "",
-  ).filter((l) => !l.finishedAt && !l.cancelledAt);
 
   const [partition, setPartition] = useState<Partition | null>(null);
   const [runs, setRuns] = useState<Run[]>([]);
@@ -105,14 +107,15 @@ export default function PartitionTab({
 
   return (
     <div className="space-y-4">
-      <LifecycleStepper states={states} />
+      {activePartition ? <LifecycleStepper states={states} /> : null}
       {phase === "idle" || phase === "cancelled" || phase === "finished" ? (
         targetNodeId ? (
           <BeginView
             sessionId={sessionId}
             targetNodeId={targetNodeId}
             phase={phase}
-            disabled={pendingForTarget.length > 0}
+            pendingPartitionOptions={pendingPartitionOptions}
+            onSelectPartition={onSelectPartition}
             onPartitionStarted={onPartitionStarted}
           />
         ) : null
@@ -218,16 +221,19 @@ function BeginView({
   sessionId,
   targetNodeId,
   phase,
-  disabled,
+  pendingPartitionOptions,
+  onSelectPartition,
   onPartitionStarted,
 }: {
   sessionId: string;
   targetNodeId: string;
   phase: Phase;
-  disabled: boolean;
+  pendingPartitionOptions: PendingPartitionOption[];
+  onSelectPartition: (p: Partition) => void;
   onPartitionStarted: (p: Partition) => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const hasPending = pendingPartitionOptions.length > 0;
   const submit = async () => {
     setBusy(true);
     try {
@@ -247,6 +253,12 @@ function BeginView({
   };
   return (
     <div className="space-y-3">
+      {hasPending ? (
+        <PendingPartitionPicker
+          options={pendingPartitionOptions}
+          onSelect={onSelectPartition}
+        />
+      ) : null}
       {phase === "finished" && (
         <p className="text-sm text-muted-foreground">
           Partition accepted. Begin another?
@@ -257,13 +269,7 @@ function BeginView({
           Partition was abandoned. Begin another?
         </p>
       )}
-      {disabled && (
-        <p className="text-sm text-muted-foreground">
-          A partition is pending on this node — select it from the View dropdown
-          above to review.
-        </p>
-      )}
-      <Button onClick={submit} disabled={busy || disabled}>
+      <Button onClick={submit} disabled={busy || hasPending}>
         {busy ? "Starting…" : "Begin partition"}
       </Button>
     </div>

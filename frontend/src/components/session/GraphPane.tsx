@@ -1,7 +1,9 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import {
   Background,
   ReactFlow,
+  ReactFlowProvider,
+  useReactFlow,
   type Node,
   type NodeMouseHandler,
   type NodeTypes,
@@ -20,7 +22,9 @@ import {
 import { cn } from "@/lib/utils";
 
 import {
-  phaseLabel,
+  candidateLayoutFingerprint,
+  partitionSiblingNumbers,
+  partitionViewLabel,
   type Chain,
   type SessionLayout,
   type View,
@@ -38,6 +42,53 @@ type Props = {
   onNodeClick: NodeMouseHandler;
 };
 
+function CandidateFitView({ fingerprint }: { fingerprint: string }) {
+  const { fitView } = useReactFlow();
+  useEffect(() => {
+    void fitView({ padding: 0.2 });
+  }, [fingerprint, fitView]);
+  return null;
+}
+
+function GraphFlow({
+  layout,
+  selectedNodeId,
+  onNodeClick,
+}: {
+  layout: SessionLayout;
+  selectedNodeId: string | null;
+  onNodeClick: NodeMouseHandler;
+}) {
+  const nodes = useMemo<Node<NodeCardData>[]>(
+    () =>
+      layout.nodes.map((n) =>
+        n.id === selectedNodeId ? { ...n, selected: true } : n,
+      ),
+    [layout, selectedNodeId],
+  );
+
+  const fitFingerprint =
+    layout.kind === "candidate" ? candidateLayoutFingerprint(layout) : null;
+
+  return (
+    <ReactFlow
+      nodes={nodes}
+      edges={layout.edges}
+      nodeTypes={nodeTypes}
+      colorMode="dark"
+      fitView={fitFingerprint === null}
+      nodesDraggable={false}
+      proOptions={{ hideAttribution: true }}
+      onNodeClick={onNodeClick}
+    >
+      <Background />
+      {fitFingerprint !== null ? (
+        <CandidateFitView fingerprint={fitFingerprint} />
+      ) : null}
+    </ReactFlow>
+  );
+}
+
 export function GraphPane({
   layout,
   chain,
@@ -47,16 +98,12 @@ export function GraphPane({
   selectedNodeId,
   onNodeClick,
 }: Props) {
-  const nodes = useMemo<Node<NodeCardData>[]>(
-    () =>
-      layout.nodes.map((n) =>
-        n.id === selectedNodeId ? { ...n, selected: true } : n,
-      ),
-    [layout, selectedNodeId],
-  );
-
   const viewSelectValue =
     view.kind === "candidate" ? String(view.partitionId) : view.kind;
+  const siblingNumbers = useMemo(
+    () => partitionSiblingNumbers(partitions),
+    [partitions],
+  );
 
   return (
     <div className="flex h-full flex-col">
@@ -69,16 +116,11 @@ export function GraphPane({
           <SelectContent>
             <SelectItem value="canonical">Canonical</SelectItem>
             <SelectItem value="original">Original</SelectItem>
-            {partitions.map((p) => {
-              const targetPos =
-                chain.positionByNodeId.get(p.targetNodeId) ?? "?";
-              const strategy = p.strategy ?? "synthetic";
-              return (
-                <SelectItem key={p.id} value={String(p.id)}>
-                  Partition on Node {targetPos} ({strategy}, {phaseLabel(p)})
-                </SelectItem>
-              );
-            })}
+            {partitions.map((p) => (
+              <SelectItem key={p.id} value={String(p.id)}>
+                {partitionViewLabel(p, chain, siblingNumbers.get(p.id) ?? 1)}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
@@ -89,18 +131,13 @@ export function GraphPane({
             "rounded-md border-2 border-amber-500/60",
         )}
       >
-        <ReactFlow
-          nodes={nodes}
-          edges={layout.edges}
-          nodeTypes={nodeTypes}
-          colorMode="dark"
-          fitView
-          nodesDraggable={false}
-          proOptions={{ hideAttribution: true }}
-          onNodeClick={onNodeClick}
-        >
-          <Background />
-        </ReactFlow>
+        <ReactFlowProvider>
+          <GraphFlow
+            layout={layout}
+            selectedNodeId={selectedNodeId}
+            onNodeClick={onNodeClick}
+          />
+        </ReactFlowProvider>
       </div>
     </div>
   );

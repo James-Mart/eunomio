@@ -20,9 +20,10 @@ read-only — do not edit, write, commit, or change refs.
    significant so the final list has at most 5.
 5. Describe themes **neutrally**: summarise what is in the diff, do not
    flag worries about it.
-6. If `{{USER_FEEDBACK}}` is non-empty, treat it as a hint about what an
-   earlier survey got wrong (a missed theme, a mischaracterisation, the
-   wrong granularity) and revise accordingly.
+6. When USER_FEEDBACK (see Inputs) is not the literal value `(none)`,
+   treat it as a hint about what an earlier survey got wrong (a missed
+   theme, a mischaracterisation, the wrong granularity) and revise
+   accordingly.
 
 ## Inputs
 

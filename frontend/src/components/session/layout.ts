@@ -4,10 +4,8 @@ import type {
   Graph,
   GraphNode,
   Partition,
-  PhaseName,
-  PhaseState,
 } from "@/lib/api";
-import type { NodeCardData } from "@/components/NodeCard";
+import type { NodeCardData, NodePartitionGlance } from "@/components/NodeCard";
 
 export const NODE_X = 0;
 export const NODE_Y_STEP = 140;
@@ -20,19 +18,49 @@ export type Chain = {
   positionByNodeId: Map<string, string>;
 };
 
-export type PhaseStatus = { phase: PhaseName; phaseState: PhaseState };
+export function partitionGlanceByNode(
+  partitions: Partition[],
+): Map<string, NodePartitionGlance> {
+  const byTarget = new Map<string, Partition[]>();
+  for (const p of partitions) {
+    const group = byTarget.get(p.targetNodeId);
+    if (group) group.push(p);
+    else byTarget.set(p.targetNodeId, [p]);
+  }
+  const out = new Map<string, NodePartitionGlance>();
+  for (const [targetNodeId, siblings] of byTarget) {
+    const blocked = siblings.some(
+      (p) =>
+        p.phaseState === "awaiting_review" || p.phaseState === "error",
+    );
+    out.set(targetNodeId, {
+      count: siblings.length,
+      status: blocked ? "blocked" : "running",
+    });
+  }
+  return out;
+}
 
 export type CanonicalLayout = {
   nodes: Node<NodeCardData>[];
   edges: FlowEdge[];
 };
 
-export type CandidateLayout = {
+export type CandidateLayoutBase = {
   nodes: Node<NodeCardData>[];
   edges: FlowEdge[];
-  candidateSliceNode: GraphNode;
-  renamedTargetNode: GraphNode;
+  rootNodeId: string;
+  parentNode: GraphNode;
+  targetNode: GraphNode;
 };
+
+export type CandidateLayout =
+  | (CandidateLayoutBase & { stage: "pending" })
+  | (CandidateLayoutBase & {
+      stage: "proposed";
+      candidateSliceNode: GraphNode;
+      renamedTargetNode: GraphNode;
+    });
 
 export type OriginalLayout = {
   nodes: Node<NodeCardData>[];
@@ -112,7 +140,7 @@ export function computeChain(graph: Graph): Chain {
 
 export function canonicalLayout(
   chain: Chain,
-  phaseStatusByNode: Map<string, PhaseStatus>,
+  partitionGlanceByNodeId: Map<string, NodePartitionGlance>,
 ): CanonicalLayout {
   const total = chain.ordered.length;
   const nodes: Node<NodeCardData>[] = chain.ordered.map((n, idx) => ({
@@ -121,7 +149,7 @@ export function canonicalLayout(
     position: { x: NODE_X, y: (total - 1 - idx) * NODE_Y_STEP },
     data: {
       positionLabel: chain.positionByNodeId.get(n.nodeId) ?? "",
-      phaseStatus: phaseStatusByNode.get(n.nodeId) ?? null,
+      partitionGlance: partitionGlanceByNodeId.get(n.nodeId) ?? null,
     },
   }));
   const edges: FlowEdge[] = chain.ordered
@@ -134,11 +162,11 @@ export function canonicalLayout(
   return { nodes, edges };
 }
 
-export function candidateLayout(
+function resolveCandidateEdge(
   chain: Chain,
   partition: Partition,
   graph: Graph,
-): CandidateLayout | null {
+): { targetIdx: number; target: GraphNode; parent: GraphNode } | null {
   const targetIdx = chain.ordered.findIndex(
     (n) => n.nodeId === partition.targetNodeId,
   );
@@ -147,79 +175,118 @@ export function candidateLayout(
   if (target.parentNodeId === null) return null;
   const parent = graph.nodes.find((n) => n.nodeId === target.parentNodeId);
   if (!parent) return null;
+  return { targetIdx, target, parent };
+}
+
+export function candidateLayout(
+  chain: Chain,
+  partition: Partition,
+  graph: Graph,
+): CandidateLayout | null {
+  const edge = resolveCandidateEdge(chain, partition, graph);
+  if (!edge) return null;
+  const { targetIdx, target, parent } = edge;
+  const rootNodeId = parent.nodeId;
+
   if (
-    !partition.candidateSliceTreeSha ||
-    !partition.candidateSliceCommitSha ||
-    !partition.plan ||
-    partition.plan.outcome !== "split"
+    isProposedCandidateStage(partition) &&
+    partition.plan?.outcome === "split"
   ) {
-    return null;
+    const planEdges = partition.plan.edges;
+    const candidateSlice: GraphNode = {
+      nodeId: CANDIDATE_SLICE_ID,
+      parentNodeId: parent.nodeId,
+      treeSha: partition.candidateSliceTreeSha!,
+      commitSha: partition.candidateSliceCommitSha!,
+      title: planEdges[0].title,
+      description: planEdges[0].description,
+      strategy: null,
+    };
+    const renamedTarget: GraphNode = {
+      ...target,
+      nodeId: CANDIDATE_TARGET_PREFIX + target.nodeId,
+      parentNodeId: CANDIDATE_SLICE_ID,
+      title: planEdges[1].title,
+      description: planEdges[1].description,
+    };
+
+    const isSeedFinal =
+      targetIdx === chain.ordered.length - 1 && target.title === "final";
+    const sliceLabel = String(targetIdx);
+    const targetLabel = isSeedFinal ? "final" : String(targetIdx + 1);
+    const parentLabel = chain.positionByNodeId.get(parent.nodeId) ?? "?";
+
+    return {
+      stage: "proposed",
+      rootNodeId,
+      parentNode: parent,
+      targetNode: target,
+      nodes: [
+        {
+          id: parent.nodeId,
+          type: "eunomia",
+          position: { x: NODE_X, y: 2 * NODE_Y_STEP },
+          data: { positionLabel: parentLabel },
+        },
+        {
+          id: candidateSlice.nodeId,
+          type: "eunomia",
+          position: { x: NODE_X, y: NODE_Y_STEP },
+          data: { positionLabel: sliceLabel },
+        },
+        {
+          id: renamedTarget.nodeId,
+          type: "eunomia",
+          position: { x: NODE_X, y: 0 },
+          data: { positionLabel: targetLabel },
+        },
+      ],
+      edges: [
+        {
+          id: `${parent.nodeId}->${candidateSlice.nodeId}`,
+          source: parent.nodeId,
+          target: candidateSlice.nodeId,
+        },
+        {
+          id: `${candidateSlice.nodeId}->${renamedTarget.nodeId}`,
+          source: candidateSlice.nodeId,
+          target: renamedTarget.nodeId,
+        },
+      ],
+      candidateSliceNode: candidateSlice,
+      renamedTargetNode: renamedTarget,
+    };
   }
-  const parentPosition = chain.positionByNodeId.get(parent.nodeId) ?? "?";
-  const planEdges = partition.plan.edges;
 
-  const candidateSlice: GraphNode = {
-    nodeId: CANDIDATE_SLICE_ID,
-    parentNodeId: parent.nodeId,
-    treeSha: partition.candidateSliceTreeSha,
-    commitSha: partition.candidateSliceCommitSha,
-    title: planEdges[0].title,
-    description: planEdges[0].description,
-    strategy: null,
-  };
-  const renamedTarget: GraphNode = {
-    ...target,
-    nodeId: CANDIDATE_TARGET_PREFIX + target.nodeId,
-    parentNodeId: CANDIDATE_SLICE_ID,
-    title: planEdges[1].title,
-    description: planEdges[1].description,
-  };
-
-  const isSeedFinal =
-    targetIdx === chain.ordered.length - 1 && target.title === "final";
-  const sliceLabel = String(targetIdx);
-  const targetLabel = isSeedFinal ? "final" : String(targetIdx + 1);
-  const parentLabel = parentPosition;
-
-  const nodes: Node<NodeCardData>[] = [
-    {
-      id: parent.nodeId,
-      type: "eunomia",
-      position: { x: NODE_X, y: 2 * NODE_Y_STEP },
-      data: { positionLabel: parentLabel },
-    },
-    {
-      id: candidateSlice.nodeId,
-      type: "eunomia",
-      position: { x: NODE_X, y: NODE_Y_STEP },
-      data: { positionLabel: sliceLabel },
-    },
-    {
-      id: renamedTarget.nodeId,
-      type: "eunomia",
-      position: { x: NODE_X, y: 0 },
-      data: { positionLabel: targetLabel },
-    },
-  ];
-
-  const edges: FlowEdge[] = [
-    {
-      id: `${parent.nodeId}->${candidateSlice.nodeId}`,
-      source: parent.nodeId,
-      target: candidateSlice.nodeId,
-    },
-    {
-      id: `${candidateSlice.nodeId}->${renamedTarget.nodeId}`,
-      source: candidateSlice.nodeId,
-      target: renamedTarget.nodeId,
-    },
-  ];
+  const parentLabel = chain.positionByNodeId.get(parent.nodeId) ?? "?";
+  const targetLabel = chain.positionByNodeId.get(target.nodeId) ?? "?";
 
   return {
-    nodes,
-    edges,
-    candidateSliceNode: candidateSlice,
-    renamedTargetNode: renamedTarget,
+    stage: "pending",
+    rootNodeId,
+    parentNode: parent,
+    targetNode: target,
+    nodes: [
+      {
+        id: target.nodeId,
+        type: "eunomia",
+        position: { x: NODE_X, y: 0 },
+        data: { positionLabel: targetLabel },
+      },
+      {
+        id: parent.nodeId,
+        type: "eunomia",
+        position: { x: NODE_X, y: 2 * NODE_Y_STEP },
+        data: { positionLabel: parentLabel },
+      },
+    ],
+    edges: [
+      {
+        id: `${parent.nodeId}->${target.nodeId}`,
+        source: parent.nodeId,
+        target: target.nodeId,
+      },
+    ],
   };
 }
 
@@ -234,20 +301,42 @@ export function findLeafNodeId(graph: Graph): string | null {
   return graph.nodes[graph.nodes.length - 1]?.nodeId ?? null;
 }
 
-export function willRenderCandidateLayout(p: Partition): boolean {
+export function isProposedCandidateStage(p: Partition): boolean {
   return (
     p.phase === "construct" &&
     p.phaseState === "awaiting_review" &&
     !!p.candidateSliceTreeSha &&
     !!p.candidateSliceCommitSha &&
-    !!p.plan
+    p.plan?.outcome === "split"
   );
 }
 
-export function phaseLabel(p: Partition): string {
-  if (p.phaseState === "error") return `${p.phase} error`;
-  if (p.phaseState === "awaiting_review") return `${p.phase} review`;
-  if (p.phase === "survey") return "surveying…";
-  if (p.phase === "plan") return "planning…";
-  return "constructing…";
+export function candidateLayoutFingerprint(layout: CandidateLayout): string {
+  return `${layout.stage}:${layout.nodes.map((n) => n.id).join(",")}`;
+}
+
+export function partitionSiblingNumbers(
+  partitions: Partition[],
+): Map<number, number> {
+  const byTarget = new Map<string, Partition[]>();
+  for (const p of partitions) {
+    const group = byTarget.get(p.targetNodeId);
+    if (group) group.push(p);
+    else byTarget.set(p.targetNodeId, [p]);
+  }
+  const out = new Map<number, number>();
+  for (const siblings of byTarget.values()) {
+    siblings.sort((a, b) => a.createdAt - b.createdAt || a.id - b.id);
+    siblings.forEach((p, i) => out.set(p.id, i + 1));
+  }
+  return out;
+}
+
+export function partitionViewLabel(
+  p: Partition,
+  chain: Chain,
+  siblingNumber: number,
+): string {
+  const positionLabel = chain.positionByNodeId.get(p.targetNodeId) ?? "?";
+  return `Partitioning ${positionLabel} - #${siblingNumber}`;
 }

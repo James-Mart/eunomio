@@ -99,9 +99,10 @@ Lean toward Indivisible when most of these hold:
 - When `{{STRATEGY_OVERRIDE}}` is `synthetic` / `vertical` /
   `horizontal`, you SHOULD still attempt a split within that strategy;
   Indivisible is permitted but discouraged under an explicit override.
-- When `{{USER_FEEDBACK}}` indicates the user has reconsidered a prior
-  Indivisible verdict and is asking you to try harder, override the
-  lazy bias and produce a Split plan, even if the result is suboptimal.
+- When USER_FEEDBACK (see Inputs) is not the literal value `(none)` and
+  indicates the user has reconsidered a prior Indivisible verdict and is
+  asking you to try harder, override the lazy bias and produce a Split
+  plan, even if the result is suboptimal.
 - Titles will become commit subjects: imperative voice, ≤72 chars.
 
 ## Output

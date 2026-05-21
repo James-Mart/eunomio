@@ -13,7 +13,6 @@ pub enum ConstructOutput {
 pub struct ConstructContext {
     pub before_tree: String,
     pub target_tree: String,
-    pub worktree_head_tree: String,
     pub strategy: String,
     pub slice_title: String,
     pub slice_description: String,
@@ -24,10 +23,6 @@ pub fn render_prompt(ctx: &ConstructContext, defs: &Subagents) -> String {
     let mut map = serde_json::Map::new();
     map.insert("BEFORE_TREE".into(), serde_json::json!(ctx.before_tree));
     map.insert("TARGET_TREE".into(), serde_json::json!(ctx.target_tree));
-    map.insert(
-        "WORKTREE_HEAD_TREE".into(),
-        serde_json::json!(ctx.worktree_head_tree),
-    );
     map.insert("STRATEGY".into(), serde_json::json!(ctx.strategy));
     map.insert("SLICE_TITLE".into(), serde_json::json!(ctx.slice_title));
     map.insert(
@@ -83,7 +78,6 @@ mod tests {
             &ConstructContext {
                 before_tree: "B".into(),
                 target_tree: "T".into(),
-                worktree_head_tree: "B".into(),
                 strategy: "synthetic".into(),
                 slice_title: "Add loader".into(),
                 slice_description: "Extracts the loader module".into(),
@@ -94,6 +88,10 @@ mod tests {
         assert!(out.contains("Add loader"));
         assert!(out.contains("synthetic"));
         assert!(out.contains("(none)"));
+        assert!(out.contains("BEFORE_TREE:"));
+        assert!(out.contains("git rev-parse HEAD^{tree}"));
+        assert!(!out.contains("WORKTREE_HEAD_TREE"));
+        assert!(!out.contains("If (none) is non-empty"));
     }
 
     #[test]

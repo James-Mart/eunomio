@@ -129,6 +129,18 @@ impl Coordinator {
         strategy_override: Option<PartitionStrategy>,
     ) -> Result<Run, AppError> {
         let partition = repo::partition::get(&state, partition_id).await?;
+        if kind == RunKind::Construct {
+            let (_, parent_node) = repo::node::target_and_parent(
+                &state,
+                &partition.session_id,
+                &partition.target_node_id,
+            )
+            .await?;
+            let parent =
+                parent_node.ok_or_else(|| AppError::BadRequest("no parent node".into()))?;
+            let worktree_path = PathBuf::from(&partition.worktree_path);
+            worktree::reset_to_parent(&worktree_path, &parent.commit_sha, true).await?;
+        }
         let prompt = self
             .build_prompt(
                 &state,
@@ -227,7 +239,33 @@ impl Coordinator {
         let mut final_result: Option<String> = None;
         let mut error: Option<(String, String)> = None;
         let mut cancelled = false;
-        let mut next_seq: i64 = 0;
+
+        let (chunk_tx, mut chunk_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+        let state_for_writer = state.clone();
+        let coord = self.clone();
+        let session_id_writer = session_id.clone();
+        let target_node_id_writer = target_node_id.clone();
+        let transcript_writer = tokio::spawn(async move {
+            while let Some(chunk) = chunk_rx.recv().await {
+                if let Err(e) =
+                    repo::run::append_transcript_text(&state_for_writer, run_id, &chunk).await
+                {
+                    tracing::warn!(error = %e, run_id, "persisting transcript_text failed");
+                }
+                if transcripts_enabled {
+                    coord.emit(
+                        &session_id_writer,
+                        SseEvent::TranscriptDelta {
+                            session_id: session_id_writer.clone(),
+                            target_node_id: target_node_id_writer.clone(),
+                            partition_id,
+                            run_id,
+                            text: chunk,
+                        },
+                    );
+                }
+            }
+        });
 
         while let Some(ev) = rx.recv().await {
             if self.inner.runs.is_abandoning(partition_id) {
@@ -236,39 +274,18 @@ impl Coordinator {
             match ev {
                 HelperEvent::Started { .. } => {}
                 HelperEvent::SdkMessage { message, .. } => {
-                    if transcripts_enabled {
-                        let seq = next_seq;
-                        next_seq += 1;
-                        let ts = db::unix_seconds();
-                        let payload = message.to_string();
-                        if let Err(e) = repo::run::insert_message(
-                            &state,
-                            run_id,
-                            seq,
-                            ts,
-                            payload,
-                        )
-                        .await
-                        {
-                            tracing::warn!(error = %e, run_id, "persisting run_message failed");
-                        }
+                    if let Some(chunk) = crate::cursor_bridge::fold_sdk_event(&message) {
+                        let _ = chunk_tx.send(chunk);
                     }
-                    self.emit(
-                        &session_id,
-                        SseEvent::SdkMessage {
-                            session_id: session_id.clone(),
-                            target_node_id: target_node_id.clone(),
-                            partition_id,
-                            run_id,
-                            message,
-                        },
-                    );
                 }
                 HelperEvent::Finished { result, .. } => final_result = Some(result),
                 HelperEvent::Error { code, message, .. } => error = Some((code, message)),
                 HelperEvent::Cancelled { .. } => cancelled = true,
             }
         }
+
+        drop(chunk_tx);
+        let _ = transcript_writer.await;
 
         self.inner.runs.forget(partition_id).await;
 

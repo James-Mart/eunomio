@@ -193,7 +193,6 @@ impl Coordinator {
             return Err(AppError::NotFound);
         }
         let prompt = repo::run::get_prompt(state, run_id).await?;
-        let messages = repo::run::list_messages(state, run_id).await?;
         let parsed_result = run
             .result_json
             .as_deref()
@@ -202,7 +201,7 @@ impl Coordinator {
             run_id: run.id,
             kind: run.kind,
             prompt,
-            messages,
+            transcript_text: run.transcript_text,
             raw_result: run.result_text,
             parsed_result,
             error_message: run.error_message,

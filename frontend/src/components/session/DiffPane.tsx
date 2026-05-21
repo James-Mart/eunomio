@@ -7,6 +7,8 @@ import {
   type SessionLayout,
 } from "./layout";
 
+export const CANDIDATE_ROOT_DIFF_MESSAGE = "No diff — root of partition view.";
+
 type Props = {
   sessionId: string;
   layout: SessionLayout;
@@ -39,6 +41,26 @@ export function DiffPane({
   }
 
   if (layout.kind === "candidate") {
+    if (selectedNodeId === layout.rootNodeId) {
+      return <DiffPaneEmpty message={CANDIDATE_ROOT_DIFF_MESSAGE} />;
+    }
+
+    if (layout.stage === "pending") {
+      if (
+        selectedNodeId === layout.targetNode.nodeId &&
+        selectedCanonicalNode
+      ) {
+        return (
+          <EdgePane
+            key={selectedCanonicalNode.nodeId}
+            sessionId={sessionId}
+            targetNodeId={selectedCanonicalNode.nodeId}
+          />
+        );
+      }
+      return <DiffPaneEmpty />;
+    }
+
     const slice = layout.candidateSliceNode;
     const renamed = layout.renamedTargetNode;
     const parent = graph.nodes.find((n) => n.nodeId === slice.parentNodeId);
@@ -68,15 +90,6 @@ export function DiffPane({
         />
       );
     }
-    if (selectedCanonicalNode) {
-      return (
-        <EdgePane
-          key={selectedCanonicalNode.nodeId}
-          sessionId={sessionId}
-          targetNodeId={selectedCanonicalNode.nodeId}
-        />
-      );
-    }
     return <DiffPaneEmpty />;
   }
 
@@ -90,10 +103,14 @@ export function DiffPane({
   );
 }
 
-function DiffPaneEmpty() {
+function DiffPaneEmpty({
+  message = "Select a node or partition to view diff.",
+}: {
+  message?: string;
+}) {
   return (
     <div className="flex h-full items-center justify-center bg-background p-6 text-sm text-muted-foreground">
-      Select a node or partition to view diff.
+      {message}
     </div>
   );
 }

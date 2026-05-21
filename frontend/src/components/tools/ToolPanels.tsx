@@ -3,6 +3,11 @@ import BranchTab from "@/components/BranchTab";
 import InfoTab from "@/components/InfoTab";
 import PartitionTab from "@/components/PartitionTab";
 
+export type PendingPartitionOption = {
+  partition: Partition;
+  label: string;
+};
+
 export type ToolsContext = {
   sessionId: string;
   nodeId: string | null;
@@ -11,6 +16,8 @@ export type ToolsContext = {
   nodeStrategy: PartitionStrategy | null;
   activePartition: Partition | null;
   isCandidateSliceSelected: boolean;
+  pendingPartitionOptions: PendingPartitionOption[];
+  onSelectPartition: (p: Partition) => void;
   onPartitionStarted: (p: Partition) => void;
   onPartitionEnded: () => void;
   onChange?: () => void;
@@ -32,6 +39,8 @@ export function PartitionToolPanel(ctx: ToolsContext) {
       targetNodeId={ctx.nodeId}
       activePartition={ctx.activePartition}
       isCandidateSliceSelected={ctx.isCandidateSliceSelected}
+      pendingPartitionOptions={ctx.pendingPartitionOptions}
+      onSelectPartition={ctx.onSelectPartition}
       onPartitionStarted={ctx.onPartitionStarted}
       onPartitionEnded={ctx.onPartitionEnded}
     />

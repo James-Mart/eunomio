@@ -4,7 +4,6 @@ import {
   api,
   type Graph,
   type Partition,
-  type PhaseState,
 } from "@/lib/api";
 import { formatError } from "@/lib/errors";
 import {
@@ -17,7 +16,7 @@ import {
   candidateLayout,
   computeChain,
   originalLayout,
-  type PhaseStatus,
+  partitionGlanceByNode,
   type SessionLayout,
   type View,
 } from "./layout";
@@ -94,31 +93,25 @@ export function useSessionData(sessionId: string): SessionData {
     [partitions, view],
   );
 
-  const phaseStatusByNode = useMemo(() => {
-    const m = new Map<string, PhaseStatus>();
-    for (const p of partitions) {
-      const existing = m.get(p.targetNodeId);
-      const urgent = (s: PhaseState) => s !== "running";
-      if (!existing || (!urgent(existing.phaseState) && urgent(p.phaseState))) {
-        m.set(p.targetNodeId, { phase: p.phase, phaseState: p.phaseState });
-      }
-    }
-    return m;
-  }, [partitions]);
+  const partitionGlanceByNodeId = useMemo(
+    () => partitionGlanceByNode(partitions),
+    [partitions],
+  );
 
   const layout = useMemo<SessionLayout | null>(() => {
     if (!chain || !graph) return null;
     if (view.kind === "candidate" && candidatePartition) {
       const lay = candidateLayout(chain, candidatePartition, graph);
       if (lay) return { kind: "candidate" as const, ...lay };
+      return null;
     }
     if (view.kind === "original") {
       const lay = originalLayout(chain);
       if (lay) return { kind: "original" as const, ...lay };
     }
-    const lay = canonicalLayout(chain, phaseStatusByNode);
+    const lay = canonicalLayout(chain, partitionGlanceByNodeId);
     return { kind: "canonical" as const, ...lay };
-  }, [chain, graph, view, candidatePartition, phaseStatusByNode]);
+  }, [chain, graph, view, candidatePartition, partitionGlanceByNodeId]);
 
   const registerStartedPartition = useCallback(
     (p: Partition) => {

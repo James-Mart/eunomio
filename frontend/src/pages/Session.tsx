@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import "@xyflow/react/dist/style.css";
 import type { NodeMouseHandler } from "@xyflow/react";
@@ -23,8 +23,9 @@ import {
 } from "@/components/session/MobileTabBar";
 import { SessionSkeleton } from "@/components/session/SessionSkeleton";
 import {
-  CANDIDATE_TARGET_PREFIX,
-  willRenderCandidateLayout,
+  candidateLayout,
+  partitionSiblingNumbers,
+  partitionViewLabel,
 } from "@/components/session/layout";
 import { useSessionActiveTab } from "@/components/session/useSessionActiveTab";
 import { useSessionData } from "@/components/session/useSessionData";
@@ -56,7 +57,7 @@ function SessionInner({ sessionId }: { sessionId: string }) {
     registerStartedPartition,
   } = data;
 
-  const selection = useSessionSelection(graph, layout);
+  const selection = useSessionSelection(graph, layout, view, candidatePartition);
   const {
     selectedNodeId,
     setSelectedNodeId,
@@ -84,6 +85,38 @@ function SessionInner({ sessionId }: { sessionId: string }) {
     panelIds: ["graph", "tools"],
   });
 
+  useEffect(() => {
+    if (view.kind !== "candidate" || !candidatePartition || !chain || !graph) {
+      return;
+    }
+    if (candidateLayout(chain, candidatePartition, graph) === null) {
+      setView({ kind: "canonical" });
+      setSelectedNodeId(null);
+    }
+  }, [view, candidatePartition, chain, graph, setSelectedNodeId, setView]);
+
+  const siblingNumbers = useMemo(
+    () => partitionSiblingNumbers(partitions),
+    [partitions],
+  );
+
+  const pendingPartitionOptions = useMemo(
+    () =>
+      view.kind !== "canonical" || !selectedCanonicalNode || !chain
+        ? []
+        : partitions
+            .filter((p) => p.targetNodeId === selectedCanonicalNode.nodeId)
+            .map((p) => ({
+              partition: p,
+              label: partitionViewLabel(
+                p,
+                chain,
+                siblingNumbers.get(p.id) ?? 1,
+              ),
+            })),
+    [partitions, selectedCanonicalNode, chain, view.kind, siblingNumbers],
+  );
+
   if (error) {
     return <div className="container py-10 text-destructive">{error}</div>;
   }
@@ -91,6 +124,11 @@ function SessionInner({ sessionId }: { sessionId: string }) {
   if (!layout || !graph || !chain) {
     return <SessionSkeleton />;
   }
+
+  const selectPartition = (p: Partition) => {
+    setView({ kind: "candidate", partitionId: p.id });
+    setSelectedNodeId(p.targetNodeId);
+  };
 
   const onSelectView = (next: string) => {
     if (next === "canonical") {
@@ -107,23 +145,33 @@ function SessionInner({ sessionId }: { sessionId: string }) {
     const pid = Number(next);
     const p = partitions.find((x) => x.id === pid);
     if (!p) return;
-    setView({ kind: "candidate", partitionId: pid });
-    setSelectedNodeId(
-      willRenderCandidateLayout(p)
-        ? CANDIDATE_TARGET_PREFIX + p.targetNodeId
-        : p.targetNodeId,
-    );
+    selectPartition(p);
   };
 
   const onPartitionStarted = (p: Partition) => {
     registerStartedPartition(p);
-    setSelectedNodeId(null);
+    selectPartition(p);
   };
 
   const onPartitionEnded = () => {
     setView((prev) => (prev.kind === "candidate" ? { kind: "canonical" } : prev));
     setSelectedNodeId(null);
     void refreshPartitions();
+  };
+
+  const toolsContext = {
+    sessionId,
+    nodeId: selectedCanonicalNode?.nodeId ?? null,
+    nodeTitle: selectedCanonicalNode?.title ?? null,
+    nodeDescription: selectedCanonicalNode?.description ?? null,
+    nodeStrategy: selectedCanonicalNode?.strategy ?? null,
+    activePartition: candidatePartition,
+    isCandidateSliceSelected,
+    pendingPartitionOptions,
+    onSelectPartition: selectPartition,
+    onPartitionStarted,
+    onPartitionEnded,
+    onChange: refresh,
   };
 
   const graphPane = (
@@ -148,20 +196,7 @@ function SessionInner({ sessionId }: { sessionId: string }) {
     />
   );
 
-  const toolsCardList = (
-    <ToolsCardList
-      sessionId={sessionId}
-      nodeId={selectedCanonicalNode?.nodeId ?? null}
-      nodeTitle={selectedCanonicalNode?.title ?? null}
-      nodeDescription={selectedCanonicalNode?.description ?? null}
-      nodeStrategy={selectedCanonicalNode?.strategy ?? null}
-      activePartition={candidatePartition}
-      isCandidateSliceSelected={isCandidateSliceSelected}
-      onPartitionStarted={onPartitionStarted}
-      onPartitionEnded={onPartitionEnded}
-      onChange={refresh}
-    />
-  );
+  const toolsCardList = <ToolsCardList {...toolsContext} />;
 
   return (
     <>
@@ -211,18 +246,7 @@ function SessionInner({ sessionId }: { sessionId: string }) {
                 maxSize="85%"
                 className="min-h-0 overflow-auto"
               >
-                <ToolsPane
-                  sessionId={sessionId}
-                  nodeId={selectedCanonicalNode?.nodeId ?? null}
-                  nodeTitle={selectedCanonicalNode?.title ?? null}
-                  nodeDescription={selectedCanonicalNode?.description ?? null}
-                  nodeStrategy={selectedCanonicalNode?.strategy ?? null}
-                  activePartition={candidatePartition}
-                  isCandidateSliceSelected={isCandidateSliceSelected}
-                  onPartitionStarted={onPartitionStarted}
-                  onPartitionEnded={onPartitionEnded}
-                  onChange={refresh}
-                />
+                <ToolsPane {...toolsContext} />
               </ResizablePanel>
             </ResizablePanelGroup>
           </ResizablePanel>

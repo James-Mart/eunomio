@@ -116,6 +116,7 @@ pub struct RunRow {
     pub result_json: Option<String>,
     pub result_text: Option<String>,
     pub error_message: Option<String>,
+    pub transcript_text: Option<String>,
     pub started_at: i64,
     pub finished_at: Option<i64>,
 }
@@ -141,19 +142,11 @@ impl From<RunRow> for Run {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TranscriptMessage {
-    pub seq: i64,
-    pub ts: i64,
-    pub message: serde_json::Value,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct Transcript {
     pub run_id: i64,
     pub kind: RunKind,
     pub prompt: Option<String>,
-    pub messages: Vec<TranscriptMessage>,
+    pub transcript_text: Option<String>,
     pub raw_result: Option<String>,
     pub parsed_result: Option<serde_json::Value>,
     pub error_message: Option<String>,

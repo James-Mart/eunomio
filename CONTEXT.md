@@ -86,6 +86,9 @@ _Avoid_: concern (carries a negative valence), topic, item.
 **Coordinator**:
 The orchestrator that schedules and supervises Surveyor / Planner / Constructor Runs for a Partition. Not itself a subagent.
 
+**Transcript**:
+The folded text stream of a subagent **Run**'s chain-of-thought and tool-call markers, stored on the Run row as it executes. The UI toggle controls visibility and live streaming, not capture.
+
 **Constructor**:
 The subagent that writes to a Partition's worktree to build the Slice the Planner identified. The only writable subagent. Returns either `OK` or `BLOCKED: <reason>` on a single line.
 
@@ -102,7 +105,7 @@ A Coordinator-controlled halt at a Phase boundary, governed by the matching `hum
 The terminal-success outcome of a Partition: inserts the new Slice Node, reparents the target Node onto the Slice, rewrites the target's Title, removes the Partition's worktree, and auto-Abandons every other Partition pending on the same target. Triggered by the user at the Construct Review gate, or automatically when `afterConstruct` is off.
 
 **Candidate view**:
-A graph-view mode the user enters via a dropdown when one or more Partitions are pending Acceptance. Renders a 3-Node mini-graph (the target's prior parent, the candidate Slice, and the renamed target) so the user can inspect the proposed graph state — including selecting Nodes to view their incoming-edge diffs — before Accepting.
+A graph-view mode the user enters via a dropdown when one or more Partitions are pending Acceptance. Begins as a 2-Node mini-graph (the target's prior parent and the canonical target) for the life of Survey and Plan; at the Construct review gate with a split Plan and candidate Slice, expands to three Nodes (prior parent, candidate Slice, renamed target) so the user can inspect the proposed graph state before Accepting.
 
 **Sibling Partitions**:
 Two or more pending Partitions sharing the same target Node. Allowed by design — the user can run alternative Partitions (e.g. one Vertical and one Horizontal) on the same target, compare them in the graph-view dropdown, and execute their Surveys, Plans, and Constructors in parallel (each owns its own worktree and phase machine). Accepting any one of them auto-Abandons the others.
