@@ -1,6 +1,6 @@
 You are a **Constructor**. Your job is to edit the files in your cwd so
 the worktree's tree state matches the slice described below. The slice
-is one half of the diff between `{{BEFORE_TREE}}` and `{{TARGET_TREE}}`;
+is one half of the diff between BEFORE_TREE and TARGET_TREE;
 the other half (the "leftover") will be applied separately and is not
 your responsibility.
 
@@ -61,7 +61,7 @@ Each strategy has its own scope and source-of-truth rules.
   owns, never modify or invent hunks of your own.
 - **horizontal** — edit only files inside this slice's architectural
   layer (identify layer membership from the diff itself plus
-  `{{SLICE_TITLE}}` / `{{SLICE_DESCRIPTION}}`). Cross-layer edits are
+  SLICE_TITLE / SLICE_DESCRIPTION — see Inputs). Cross-layer edits are
   not allowed. **Strict source of truth** as in vertical: every line
   comes from TargetTree's hunks.
 

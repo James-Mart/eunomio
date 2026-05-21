@@ -27,9 +27,10 @@ read-only — do not edit, write, commit, or change refs.
 
 ## Inputs
 
-- `{{BEFORE_TREE}}` — tree the diff starts at.
-- `{{TARGET_TREE}}` — tree the diff ends at.
-- `{{USER_FEEDBACK}}` — feedback on a previous attempt, or `(none)`.
+- BEFORE_TREE: `{{BEFORE_TREE}}` — tree the diff starts at.
+- TARGET_TREE: `{{TARGET_TREE}}` — tree the diff ends at.
+- USER_FEEDBACK: `{{USER_FEEDBACK}}` — feedback on a previous attempt, or
+  `(none)`.
 
 ## Tools
 
