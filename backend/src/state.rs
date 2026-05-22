@@ -3,6 +3,7 @@ use crate::{
     credentials::KeyStore,
     cursor_bridge::{CursorHelperRunner, SubagentRunner},
     db,
+    launch::LaunchIntent,
     subagents::load_subagents,
     tunnel::TunnelRegistry,
     types::*,
@@ -30,6 +31,7 @@ pub struct AppStateInner {
     pub cursor_models: OnceCell<Vec<CursorModel>>,
     pub coordinator: Coordinator,
     pub tunnel: TunnelRegistry,
+    pub launch: LaunchIntent,
 }
 
 impl std::ops::Deref for AppState {
@@ -42,6 +44,7 @@ impl std::ops::Deref for AppState {
 pub struct BuildStateOptions {
     pub data_dir: PathBuf,
     pub launch_key_hint: Option<String>,
+    pub launch_pull_request: Option<String>,
     pub tunnel_enabled: bool,
     pub dev_tunnel: bool,
     pub runner: Option<Arc<dyn SubagentRunner>>,
@@ -56,6 +59,7 @@ pub async fn build_state(
     build_state_with_options(BuildStateOptions {
         data_dir,
         launch_key_hint,
+        launch_pull_request: None,
         tunnel_enabled,
         dev_tunnel,
         runner: None,
@@ -73,6 +77,7 @@ pub async fn build_state_with_runner(
     build_state_with_options(BuildStateOptions {
         data_dir,
         launch_key_hint,
+        launch_pull_request: None,
         tunnel_enabled,
         dev_tunnel,
         runner: Some(runner),
@@ -100,6 +105,7 @@ pub async fn build_state_with_options(opts: BuildStateOptions) -> Result<AppStat
         cursor_models: OnceCell::new(),
         coordinator: coordinator.clone(),
         tunnel,
+        launch: LaunchIntent::new(opts.launch_pull_request),
     }));
     coordinator.process_startup_recovery(&state).await?;
     Ok(state)

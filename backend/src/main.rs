@@ -43,6 +43,10 @@ struct ServeArgs {
     /// Hidden from --help.
     #[arg(long, hide = true)]
     dev_tunnel: bool,
+
+    /// GitHub pull request URL to open on first UI load
+    #[arg(long)]
+    pr: Option<String>,
 }
 
 #[tokio::main]
@@ -91,13 +95,22 @@ async fn serve(args: ServeArgs) -> Result<()> {
     let launch_key_hint = std::env::var("CURSOR_API_KEY").ok();
     std::env::remove_var("CURSOR_API_KEY");
 
+    if let Some(ref url) = args.pr {
+        eunomio::github::parse_github_pull_url(url).map_err(|e| anyhow::anyhow!("{e}"))?;
+        tracing::info!(pull_request_url = %url, "launch pull request configured");
+    }
+
     let tunnel_enabled = args.enable_tunnel || args.dev_tunnel;
 
-    let state = eunomio::state::build_state(
-        data_dir,
-        launch_key_hint,
-        tunnel_enabled,
-        args.dev_tunnel,
+    let state = eunomio::state::build_state_with_options(
+        eunomio::state::BuildStateOptions {
+            data_dir,
+            launch_key_hint,
+            launch_pull_request: args.pr,
+            tunnel_enabled,
+            dev_tunnel: args.dev_tunnel,
+            runner: None,
+        },
     )
     .await?;
 

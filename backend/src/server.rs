@@ -1,5 +1,6 @@
 use crate::{
     auth::{auth_routes, public_auth_routes, require_csrf_header, require_principal, CurrentPrincipal},
+    launch::public_launch_routes,
     branching, edges, embed,
     error::AppError,
     middleware::host_guard,
@@ -26,6 +27,7 @@ pub use crate::state::{build_state, build_state_with_runner};
 fn protected_routes() -> Router<AppState> {
     Router::new()
         .route("/api/sessions", post(create_session).get(list_sessions))
+        .route("/api/sessions/validate", post(validate_session))
         .route(
             "/api/sessions/:id",
             get(get_session).delete(delete_session),
@@ -81,6 +83,7 @@ fn protected_routes() -> Router<AppState> {
         .route("/api/subagent-prompts", get(get_subagent_prompts))
         .route("/api/nodes/:node_id/session", get(get_node_session))
         .route("/api/repo", get(get_repo_hints))
+        .route("/api/repo/resolve-pull-request", post(resolve_pull_request))
         .route(
             "/api/tunnel",
             get(get_tunnel).post(start_tunnel).delete(stop_tunnel),
@@ -94,6 +97,7 @@ pub fn router(state: AppState) -> Router {
 
     Router::new()
         .merge(public_auth_routes())
+        .merge(public_launch_routes())
         .merge(protected)
         .fallback(embed::fallback)
         .layer(TraceLayer::new_for_http())
@@ -123,6 +127,14 @@ async fn create_session(
         sessions::CreateOutcome::Existed => StatusCode::OK,
     };
     Ok((status, Json(session)))
+}
+
+async fn validate_session(
+    State(state): State<AppState>,
+    Json(req): Json<CreateSessionRequest>,
+) -> Result<StatusCode, AppError> {
+    sessions::validate(&state, &req).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn list_sessions(
@@ -328,6 +340,13 @@ async fn get_node_session(
 
 async fn get_repo_hints() -> Json<RepoHints> {
     Json(crate::repo_store::cwd_hints().await)
+}
+
+async fn resolve_pull_request(
+    Json(req): Json<ResolvePullRequestRequest>,
+) -> Result<Json<ResolvedPullRequest>, AppError> {
+    let resolved = crate::github::resolve_pull_request(&req.pull_request_url).await?;
+    Ok(Json(resolved))
 }
 
 async fn get_tunnel(State(state): State<AppState>) -> Json<TunnelStatus> {

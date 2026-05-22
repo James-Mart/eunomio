@@ -45,3 +45,10 @@ export function remoteRepoHost(url: string): RemoteRepoHost {
 
   return "unknown";
 }
+
+const GITHUB_PULL_URL_RE =
+  /^https:\/\/github\.com\/[^/]+\/[^/]+?(?:\.git)?\/pull\/\d+\/?$/;
+
+export function isGithubPullRequestUrl(url: string): boolean {
+  return GITHUB_PULL_URL_RE.test(url.trim());
+}

@@ -12,9 +12,10 @@ import { formatError } from "@/lib/errors";
 
 type Props = {
   onSuccess: () => void;
+  pendingPullRequestUrl?: string | null;
 };
 
-export default function Login({ onSuccess }: Props) {
+export default function Login({ onSuccess, pendingPullRequestUrl }: Props) {
   const passwordRef = useRef<HTMLInputElement>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -75,6 +76,12 @@ export default function Login({ onSuccess }: Props) {
             <p className="mt-1 text-sm text-muted-foreground">
               Local account for this Eunomio instance.
             </p>
+            {pendingPullRequestUrl ? (
+              <p className="mt-3 text-sm text-muted-foreground">
+                Sign in to open{" "}
+                <span className="font-mono text-xs break-all">{pendingPullRequestUrl}</span>
+              </p>
+            ) : null}
           </div>
         </div>
 

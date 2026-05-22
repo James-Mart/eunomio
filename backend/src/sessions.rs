@@ -13,6 +13,11 @@ pub enum CreateOutcome {
     Existed,
 }
 
+pub async fn validate(state: &AppState, dto: &CreateSessionRequest) -> Result<(), AppError> {
+    prepare_seed(state, dto).await?;
+    Ok(())
+}
+
 pub async fn create(
     state: &AppState,
     org_id: &str,
@@ -42,8 +47,15 @@ pub async fn create(
         return Ok((session, CreateOutcome::Existed));
     }
 
-    let git_root = repo_store::materialize_git_root(&state.data_dir, &parsed).await?;
-    let seed = seed_session(&git_root, parsed.is_local, &base_ref, &source_ref).await?;
+    let (parsed, seed) = prepare_seed(
+        state,
+        &CreateSessionRequest {
+            remote_url: remote_url.clone(),
+            base_ref: base_ref.clone(),
+            source_ref: source_ref.clone(),
+        },
+    )
+    .await?;
 
     let session_id = Uuid::new_v4().to_string();
     let base_node_id = Uuid::new_v4().to_string();
@@ -101,6 +113,16 @@ pub async fn delete(state: &AppState, org_id: &str, session_id: &str) -> Result<
     .await?;
 
     Ok(())
+}
+
+async fn prepare_seed(
+    state: &AppState,
+    dto: &CreateSessionRequest,
+) -> Result<(repo_store::ParsedRemote, SessionSeed), AppError> {
+    let parsed = repo_store::parse_remote_url(&dto.remote_url)?;
+    let git_root = repo_store::materialize_git_root(&state.data_dir, &parsed).await?;
+    let seed = seed_session(&git_root, parsed.is_local, &dto.base_ref, &dto.source_ref).await?;
+    Ok((parsed, seed))
 }
 
 struct SessionSeed {

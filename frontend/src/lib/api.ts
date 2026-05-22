@@ -209,6 +209,16 @@ export type RepoHints = {
   suggestedBaseRef?: string;
 };
 
+export type ResolvedPullRequest = {
+  remoteUrl: string;
+  sourceRef: string;
+  baseRef: string;
+};
+
+export type LaunchPullRequest = {
+  pullRequestUrl: string | null;
+};
+
 export type TunnelState = "idle" | "running" | "error";
 
 export type TunnelStatus = {
@@ -275,12 +285,16 @@ export type PatchCredentialsRequest = {
 export const api = {
   getMe: () => request<Principal>("GET", "/me"),
   getAuthSetup: () => request<AuthSetup>("GET", "/auth/setup"),
+  consumeLaunchPullRequest: () =>
+    request<LaunchPullRequest>("GET", "/launch/pull-request"),
   login: (body: LoginRequest) => request<{ ok: true }>("POST", "/auth/login", body),
   logout: () => request<{ ok: true }>("POST", "/auth/logout"),
   patchCredentials: (body: PatchCredentialsRequest) =>
     request<{ ok: true }>("PATCH", "/auth/credentials", body),
   createSession: (remoteUrl: string, baseRef: string, sourceRef: string) =>
     request<Session>("POST", "/sessions", { remoteUrl, baseRef, sourceRef }),
+  validateSession: (remoteUrl: string, baseRef: string, sourceRef: string) =>
+    request<void>("POST", "/sessions/validate", { remoteUrl, baseRef, sourceRef }),
   getSession: (id: string) => request<Session>("GET", `/sessions/${id}`),
   listSessions: () => request<Session[]>("GET", "/sessions"),
   getGraph: (id: string) => request<Graph>("GET", `/sessions/${id}/graph`),
@@ -314,6 +328,10 @@ export const api = {
     request<PartitionSettings>("PATCH", `/partition-settings`, patch),
   listCursorModels: () => request<CursorModels>("GET", "/cursor-models"),
   getRepoHints: () => request<RepoHints>("GET", "/repo"),
+  resolvePullRequest: (pullRequestUrl: string) =>
+    request<ResolvedPullRequest>("POST", "/repo/resolve-pull-request", {
+      pullRequestUrl,
+    }),
   beginPartition: (sessionId: string, targetNodeId: string) =>
     request<Partition>(
       "POST",

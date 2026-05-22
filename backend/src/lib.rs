@@ -9,6 +9,8 @@ pub mod edges;
 pub mod embed;
 pub mod error;
 pub mod git;
+pub mod github;
+pub mod launch;
 pub mod middleware;
 pub mod partition_settings;
 pub mod process_util;

@@ -123,6 +123,20 @@ pub struct CursorModels {
     pub models: Vec<CursorModel>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolvePullRequestRequest {
+    pub pull_request_url: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolvedPullRequest {
+    pub remote_url: String,
+    pub source_ref: String,
+    pub base_ref: String,
+}
+
 #[derive(Debug, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct RepoHints {

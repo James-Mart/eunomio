@@ -77,13 +77,29 @@ impl TestApp {
     where
         F: FnOnce(&Path),
     {
+        Self::spawn_with_options_and_repo(setup, Some("env-launch-key".to_string()), None).await
+    }
+
+    pub async fn spawn_with_launch_pull_request(url: &str) -> Self {
+        Self::spawn_with_options_and_repo(default_repo, None, Some(url.to_string())).await
+    }
+
+    async fn spawn_with_options_and_repo<F>(
+        setup: F,
+        launch_key_hint: Option<String>,
+        launch_pull_request: Option<String>,
+    ) -> Self
+    where
+        F: FnOnce(&Path),
+    {
         let repo = tempfile::tempdir().expect("tempdir for repo");
         let data = tempfile::tempdir().expect("tempdir for data");
         setup(repo.path());
         let data_root = data.path().canonicalize().expect("canonicalise data path");
         let state = build_state_with_options(BuildStateOptions {
             data_dir: data_root,
-            launch_key_hint: Some("env-launch-key".to_string()),
+            launch_key_hint,
+            launch_pull_request,
             tunnel_enabled: false,
             dev_tunnel: false,
             runner: None,
