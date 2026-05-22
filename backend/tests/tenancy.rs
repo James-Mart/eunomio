@@ -6,13 +6,12 @@ use pretty_assertions::assert_eq;
 use uuid::Uuid;
 
 mod common;
-use common::{insert_local_fixture, TestApp};
+use common::{app::TestApp, fixture::insert_local_fixture};
 
 const EVIL_ORG: &str = "evil";
 
 struct Fixture {
     org_id: String,
-    user_id: String,
     session_id: String,
     base_node_id: String,
     final_node_id: String,
@@ -50,35 +49,38 @@ async fn seed_fixture(state: &eunomio::state::AppState) -> Fixture {
 
     let partition_id = partition::insert_pending(
         state,
-        org_id.clone(),
-        user_id.clone(),
-        session_id.clone(),
-        final_node_id.clone(),
-        "/tmp/worktree".into(),
-        None,
-        now,
+        partition::NewPartitionInsert {
+            org_id: org_id.clone(),
+            user_id: user_id.clone(),
+            session_id: session_id.clone(),
+            target_node_id: final_node_id.clone(),
+            worktree_path: "/tmp/worktree".into(),
+            remaining_depth: None,
+            now,
+        },
     )
     .await
     .unwrap();
 
     let run_id = run::start(
         state,
-        org_id.clone(),
-        user_id.clone(),
-        partition_id.clone(),
-        session_id.clone(),
-        final_node_id.clone(),
-        RunKind::Survey,
-        None,
-        "prompt".into(),
-        now,
+        run::NewRunInsert {
+            org_id: org_id.clone(),
+            user_id: user_id.clone(),
+            partition_id: partition_id.clone(),
+            session_id: session_id.clone(),
+            target_node_id: final_node_id.clone(),
+            kind: RunKind::Survey,
+            parent_run_id: None,
+            prompt_text: "prompt".into(),
+            started_at: now,
+        },
     )
     .await
     .unwrap();
 
     Fixture {
         org_id,
-        user_id,
         session_id,
         base_node_id,
         final_node_id,
@@ -437,13 +439,15 @@ async fn insert_carries_org_and_user_ids() {
 
     let partition_id = partition::insert_pending(
         &app.state,
-        org_id.clone(),
-        user_id.clone(),
-        session_id.clone(),
-        final_node_id.clone(),
-        "/tmp/wt".into(),
-        Some(2),
-        now,
+        partition::NewPartitionInsert {
+            org_id: org_id.clone(),
+            user_id: user_id.clone(),
+            session_id: session_id.clone(),
+            target_node_id: final_node_id.clone(),
+            worktree_path: "/tmp/wt".into(),
+            remaining_depth: Some(2),
+            now,
+        },
     )
     .await
     .unwrap();
@@ -468,15 +472,17 @@ async fn insert_carries_org_and_user_ids() {
 
     let run_id = run::start(
         &app.state,
-        org_id.clone(),
-        user_id.clone(),
-        partition_id,
-        session_id,
-        final_node_id,
-        RunKind::Plan,
-        None,
-        "p".into(),
-        now,
+        run::NewRunInsert {
+            org_id: org_id.clone(),
+            user_id: user_id.clone(),
+            partition_id,
+            session_id,
+            target_node_id: final_node_id,
+            kind: RunKind::Plan,
+            parent_run_id: None,
+            prompt_text: "p".into(),
+            started_at: now,
+        },
     )
     .await
     .unwrap();

@@ -44,11 +44,11 @@ impl Coordinator {
             state.clone(),
             org_id.to_string(),
             partition_id.to_string(),
-            RunKind::Plan,
-            Some(run_id.to_string()),
-            None,
-            None,
-            None,
+            StartRunRequest {
+                kind: RunKind::Plan,
+                parent_run_id: Some(run_id.to_string()),
+                ..Default::default()
+            },
         )
         .await?;
         Ok(new_row.into())
@@ -92,11 +92,11 @@ impl Coordinator {
             state.clone(),
             org_id.to_string(),
             partition_id.to_string(),
-            RunKind::Construct,
-            Some(run_id.to_string()),
-            None,
-            None,
-            None,
+            StartRunRequest {
+                kind: RunKind::Construct,
+                parent_run_id: Some(run_id.to_string()),
+                ..Default::default()
+            },
         )
         .await?;
         Ok(new_row.into())

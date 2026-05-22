@@ -1,16 +1,17 @@
 use crate::{error::AppError, git, types::RepoHints};
 use anyhow::{anyhow, Result};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-static CLONE_LOCKS: std::sync::OnceLock<
-    Arc<Mutex<std::collections::HashMap<String, Arc<Mutex<()>>>>>,
-> = std::sync::OnceLock::new();
+type CloneLockMap = Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>;
 
-fn clone_locks() -> Arc<Mutex<std::collections::HashMap<String, Arc<Mutex<()>>>>> {
+static CLONE_LOCKS: std::sync::OnceLock<CloneLockMap> = std::sync::OnceLock::new();
+
+fn clone_locks() -> CloneLockMap {
     CLONE_LOCKS
-        .get_or_init(|| Arc::new(Mutex::new(std::collections::HashMap::new())))
+        .get_or_init(|| Arc::new(Mutex::new(HashMap::new())))
         .clone()
 }
 
@@ -50,13 +51,11 @@ pub fn parse_remote_url(input: &str) -> Result<ParsedRemote, AppError> {
         trimmed.to_string()
     };
 
-    if is_local {
-        if !std::path::Path::new(&literal).is_dir() {
-            return Err(AppError::BadRequest(format!(
-                "local path {} is not a directory",
-                literal
-            )));
-        }
+    if is_local && !std::path::Path::new(&literal).is_dir() {
+        return Err(AppError::BadRequest(format!(
+            "local path {} is not a directory",
+            literal
+        )));
     }
 
     let normalized_remote = git::normalize_remote_identity(&literal, is_local);
@@ -106,7 +105,7 @@ pub async fn materialize_git_root(
         .await
         .map_err(|e| AppError::Internal(anyhow!("create repos dir: {e}")))?;
 
-    with_slug_lock(&slug, &data_dir, || async {
+    with_slug_lock(&slug, data_dir, || async {
         if clone_dir.exists() {
             git::remote_set_url(&clone_dir, &parsed.literal_remote)
                 .await

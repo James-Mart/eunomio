@@ -28,7 +28,7 @@ pub async fn list_models_with_keystore(
         cursor_api_key: api_key,
     })
     .map_err(|e| unavailable(&format!("serializing list-models request: {e}")))?;
-    let mut child = launch_helper_stdio(&binary, "list-models", &payload).await?;
+    let child = launch_helper_stdio(&binary, "list-models", &payload).await?;
     let output = child
         .wait_with_output()
         .await

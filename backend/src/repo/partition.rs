@@ -200,18 +200,28 @@ pub async fn delete_many_with_runs(
     Ok(())
 }
 
-pub async fn insert_pending(
-    state: &AppState,
-    org_id: String,
-    user_id: String,
-    session_id: String,
-    target_node_id: String,
-    worktree_path: String,
-    remaining_depth: Option<i64>,
-    now: i64,
-) -> Result<String, AppError> {
+pub struct NewPartitionInsert {
+    pub org_id: String,
+    pub user_id: String,
+    pub session_id: String,
+    pub target_node_id: String,
+    pub worktree_path: String,
+    pub remaining_depth: Option<i64>,
+    pub now: i64,
+}
+
+pub async fn insert_pending(state: &AppState, row: NewPartitionInsert) -> Result<String, AppError> {
     let id = Uuid::new_v4().to_string();
     let partition_id = id.clone();
+    let NewPartitionInsert {
+        org_id,
+        user_id,
+        session_id,
+        target_node_id,
+        worktree_path,
+        remaining_depth,
+        now,
+    } = row;
     let inserted_id = state
         .db
         .call(move |conn| {

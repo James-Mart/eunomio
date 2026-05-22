@@ -6,7 +6,7 @@ use crate::{
     types::*,
 };
 
-use super::Coordinator;
+use super::{scope::PhaseScope, Coordinator};
 
 impl Coordinator {
     /// Decide what happens when a run finishes successfully: park at a
@@ -16,45 +16,25 @@ impl Coordinator {
     pub(super) async fn handle_phase_terminal(
         &self,
         state: &AppState,
-        org_id: &str,
-        partition_id: &str,
+        scope: &PhaseScope,
         kind: RunKind,
         run_id: &str,
-        session_id: &str,
-        target_node_id: &str,
         payload: Option<serde_json::Value>,
     ) -> Result<(), AppError> {
-        let settings = load_for_partition(state, org_id, session_id).await?;
+        let settings = load_for_partition(state, &scope.org_id, &scope.session_id).await?;
         let hitl = settings.coordinator.human_in_the_loop;
 
         if kind == RunKind::Plan && is_indivisible(payload.as_ref()) {
             return self
-                .on_indivisible_plan(
-                    state,
-                    org_id,
-                    partition_id,
-                    session_id,
-                    target_node_id,
-                    payload,
-                    hitl,
-                )
+                .on_indivisible_plan(state, scope, payload, hitl)
                 .await;
         }
 
         let gate = gate_for(kind, hitl);
         if gate {
-            self.park_at_gate(
-                state,
-                org_id,
-                partition_id,
-                kind,
-                session_id,
-                target_node_id,
-                payload,
-            )
-            .await
+            self.park_at_gate(state, scope, kind, payload).await
         } else {
-            self.auto_advance(state, org_id, partition_id, run_id, kind);
+            self.auto_advance(state, &scope.org_id, &scope.partition_id, run_id, kind);
             Ok(())
         }
     }
@@ -62,29 +42,18 @@ impl Coordinator {
     async fn on_indivisible_plan(
         &self,
         state: &AppState,
-        org_id: &str,
-        partition_id: &str,
-        session_id: &str,
-        target_node_id: &str,
+        scope: &PhaseScope,
         payload: Option<serde_json::Value>,
         hitl: HumanInTheLoop,
     ) -> Result<(), AppError> {
         if hitl.after_indivisible {
-            self.park_at_gate(
-                state,
-                org_id,
-                partition_id,
-                RunKind::Plan,
-                session_id,
-                target_node_id,
-                payload,
-            )
-            .await
+            self.park_at_gate(state, scope, RunKind::Plan, payload)
+                .await
         } else {
             let coord = self.clone();
             let state_owned = state.clone();
-            let org_id = org_id.to_string();
-            let partition_id = partition_id.to_string();
+            let org_id = scope.org_id.clone();
+            let partition_id = scope.partition_id.clone();
             tokio::spawn(async move {
                 if let Err(e) = coord
                     .abandon_partition(&state_owned, &org_id, &partition_id)
@@ -100,21 +69,23 @@ impl Coordinator {
     async fn park_at_gate(
         &self,
         state: &AppState,
-        org_id: &str,
-        partition_id: &str,
+        scope: &PhaseScope,
         kind: RunKind,
-        session_id: &str,
-        target_node_id: &str,
         payload: Option<serde_json::Value>,
     ) -> Result<(), AppError> {
-        repo::partition::set_phase_state(state, org_id, partition_id, PhaseState::AwaitingReview)
-            .await?;
+        repo::partition::set_phase_state(
+            state,
+            &scope.org_id,
+            &scope.partition_id,
+            PhaseState::AwaitingReview,
+        )
+        .await?;
         self.emit(
-            session_id,
+            &scope.session_id,
             SseEvent::Phase {
-                session_id: session_id.to_string(),
-                target_node_id: target_node_id.to_string(),
-                partition_id: partition_id.to_string(),
+                session_id: scope.session_id.clone(),
+                target_node_id: scope.target_node_id.clone(),
+                partition_id: scope.partition_id.clone(),
                 name: kind.phase(),
                 state: PhaseState::AwaitingReview,
                 payload,

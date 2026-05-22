@@ -53,20 +53,32 @@ pub async fn list_for_partition(
     Ok(rows)
 }
 
-pub async fn start(
-    state: &AppState,
-    org_id: String,
-    user_id: String,
-    partition_id: String,
-    session_id: String,
-    target_node_id: String,
-    kind: RunKind,
-    parent_run_id: Option<String>,
-    prompt_text: String,
-    started_at: i64,
-) -> Result<String, AppError> {
+pub struct NewRunInsert {
+    pub org_id: String,
+    pub user_id: String,
+    pub partition_id: String,
+    pub session_id: String,
+    pub target_node_id: String,
+    pub kind: RunKind,
+    pub parent_run_id: Option<String>,
+    pub prompt_text: String,
+    pub started_at: i64,
+}
+
+pub async fn start(state: &AppState, row: NewRunInsert) -> Result<String, AppError> {
     let id = Uuid::new_v4().to_string();
     let run_id = id.clone();
+    let NewRunInsert {
+        org_id,
+        user_id,
+        partition_id,
+        session_id,
+        target_node_id,
+        kind,
+        parent_run_id,
+        prompt_text,
+        started_at,
+    } = row;
     let kind_str = kind.as_str().to_string();
     let inserted_id = state
         .db

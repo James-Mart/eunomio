@@ -3,7 +3,10 @@ use pretty_assertions::assert_eq;
 use std::path::Path;
 
 mod common;
-use common::{git, write, TestApp};
+use common::{
+    app::TestApp,
+    git::{git, local_session_body, write},
+};
 
 fn repo_with_two_features(path: &Path) {
     git(path, &["init", "-q", "-b", "main"]);
@@ -35,7 +38,7 @@ async fn repeated_create_returns_existing_session() {
         .auth_json(
             "POST",
             "/api/sessions",
-            common::local_session_body(&app.repo_path(), "main", "feature"),
+            local_session_body(&app.repo_path(), "main", "feature"),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED, "first create body: {body}");
@@ -46,7 +49,7 @@ async fn repeated_create_returns_existing_session() {
         .auth_json(
             "POST",
             "/api/sessions",
-            common::local_session_body(&app.repo_path(), "main", "feature"),
+            local_session_body(&app.repo_path(), "main", "feature"),
         )
         .await;
     assert_eq!(status, StatusCode::OK, "repeat create body: {body}");
@@ -57,7 +60,7 @@ async fn repeated_create_returns_existing_session() {
         .auth_json(
             "POST",
             "/api/sessions",
-            common::local_session_body(&app.repo_path(), "main", "other"),
+            local_session_body(&app.repo_path(), "main", "other"),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED, "other create body: {body}");

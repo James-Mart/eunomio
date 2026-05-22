@@ -13,7 +13,7 @@ use tokio::sync::{mpsc, Mutex as TokioMutex};
 use tokio::time::timeout;
 
 mod common;
-use common::TestApp;
+use common::app::TestApp;
 
 const SURVEY_RESULT: &str = "```json\n{\"summary\":\"s\",\"themes\":[{\"id\":\"t-1\",\"title\":\"T\",\"description\":\"D\"}]}\n```";
 
@@ -74,7 +74,7 @@ async fn create_session_and_pick_target(app: &TestApp) -> (String, String) {
     let (status, body) = app.auth_json(
         "POST",
         "/api/sessions",
-        common::local_session_body(&app.repo_path(), "main", "feature"),
+        common::git::local_session_body(&app.repo_path(), "main", "feature"),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "create body: {body}");
@@ -146,7 +146,7 @@ async fn happy_path_drives_partition_to_accept() {
         .unwrap()
         .join("worktrees")
         .join(&session_id)
-        .join(partition_id.to_string())
+        .join(&partition_id)
         .join("worktree");
     assert!(worktree_root.exists(), "worktree should exist after begin");
 
@@ -410,7 +410,7 @@ async fn abandon_mid_run_cleans_up() {
         .unwrap()
         .join("worktrees")
         .join(&session_id)
-        .join(partition_id.to_string())
+        .join(&partition_id)
         .join("worktree");
     assert!(worktree_root.exists());
 
@@ -1615,7 +1615,7 @@ fn partition_worktree_path(app: &TestApp, session_id: &str, partition_id: &str) 
         .unwrap()
         .join("worktrees")
         .join(session_id)
-        .join(partition_id.to_string())
+        .join(partition_id)
         .join("worktree")
 }
 
@@ -1668,9 +1668,9 @@ async fn construct_spawn_resets_dirty_worktree() {
     .await;
     let _ = wait_for_phase(&mut rx, PhaseName::Construct, PhaseState::AwaitingReview).await;
 
-    common::write(&worktree_root, "dirty-junk.txt", "junk\n");
-    common::write(&worktree_root, "a.txt", "modified\n");
-    let dirty_status = common::git(&worktree_root, &["status", "--porcelain"]);
+    common::git::write(&worktree_root, "dirty-junk.txt", "junk\n");
+    common::git::write(&worktree_root, "a.txt", "modified\n");
+    let dirty_status = common::git::git(&worktree_root, &["status", "--porcelain"]);
     assert!(
         !dirty_status.is_empty(),
         "worktree should be dirty before re-run: {dirty_status:?}"
@@ -1686,7 +1686,7 @@ async fn construct_spawn_resets_dirty_worktree() {
 
     let _ = wait_for_phase(&mut rx, PhaseName::Construct, PhaseState::Running).await;
 
-    let clean_status = common::git(&worktree_root, &["status", "--porcelain"]);
+    let clean_status = common::git::git(&worktree_root, &["status", "--porcelain"]);
     assert_eq!(
         clean_status, "",
         "construct spawn should reset worktree to parent baseline"

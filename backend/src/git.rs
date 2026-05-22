@@ -514,10 +514,7 @@ pub fn normalize_network_url(url: &str) -> String {
     }
     if let Some((_, after_at)) = trimmed.rsplit_once('@') {
         if !trimmed.contains("://") {
-            let (host, path) = after_at
-                .split_once(':')
-                .map(|(h, p)| (h, p))
-                .unwrap_or((after_at, ""));
+            let (host, path) = after_at.split_once(':').unwrap_or((after_at, ""));
             return if path.is_empty() {
                 host.to_string()
             } else {

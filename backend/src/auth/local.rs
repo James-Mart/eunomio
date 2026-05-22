@@ -125,7 +125,7 @@ pub async fn login(
                 ],
             )?;
             audit::record_in_tx(
-                &*tx,
+                &tx,
                 Some(org::LOCAL_ORG_ID),
                 Some(&user_id),
                 "login_success",
@@ -134,7 +134,7 @@ pub async fn login(
                 serde_json::json!({ "username": username_json }),
             )?;
             audit::record_in_tx(
-                &*tx,
+                &tx,
                 Some(org::LOCAL_ORG_ID),
                 Some(&user_id),
                 "session_rotated",

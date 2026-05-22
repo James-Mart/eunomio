@@ -1,9 +1,7 @@
 use serde_json::Value;
 
 pub fn fold_sdk_event(message: &Value) -> Option<String> {
-    let Some(obj) = message.as_object() else {
-        return None;
-    };
+    let obj = message.as_object()?;
 
     match obj.get("type").and_then(|v| v.as_str()) {
         Some("status") => None,

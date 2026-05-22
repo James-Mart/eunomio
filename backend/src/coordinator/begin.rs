@@ -75,13 +75,15 @@ impl Coordinator {
         let now = db::unix_seconds();
         let inserted_id = repo::partition::insert_pending(
             state,
-            org_id.to_string(),
-            user_id,
-            session_id.to_string(),
-            target_node_id.to_string(),
-            String::new(),
-            remaining_depth,
-            now,
+            repo::partition::NewPartitionInsert {
+                org_id: org_id.to_string(),
+                user_id,
+                session_id: session_id.to_string(),
+                target_node_id: target_node_id.to_string(),
+                worktree_path: String::new(),
+                remaining_depth,
+                now,
+            },
         )
         .await?;
 
@@ -125,11 +127,10 @@ impl Coordinator {
             state.clone(),
             org_id.to_string(),
             inserted_id,
-            RunKind::Survey,
-            None,
-            None,
-            None,
-            None,
+            StartRunRequest {
+                kind: RunKind::Survey,
+                ..Default::default()
+            },
         )
         .await?;
 

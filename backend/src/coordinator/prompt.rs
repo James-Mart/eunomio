@@ -111,6 +111,7 @@ impl Coordinator {
         subagents::surveyor::render_prompt(&ctx, template)
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn plan_prompt(
         &self,
         state: &AppState,

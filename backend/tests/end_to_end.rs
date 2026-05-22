@@ -3,7 +3,10 @@ use pretty_assertions::assert_eq;
 use serde_json::json;
 
 mod common;
-use common::{git, local_session_body, TestApp};
+use common::{
+    app::TestApp,
+    git::{git, local_session_body},
+};
 
 #[tokio::test]
 async fn happy_path_create_rename_branch() {

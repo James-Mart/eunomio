@@ -2,7 +2,7 @@ use crate::{error::AppError, repo, state::AppState, types::*, worktree};
 use serde::Serialize;
 use std::path::PathBuf;
 
-use super::{parse_split_plan, Coordinator};
+use super::{parse_split_plan, scope::PhaseScope, Coordinator};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,15 +30,14 @@ impl Coordinator {
         partition_id: &str,
         run_id: &str,
         raw: &str,
-        session_id: &str,
-        target_node_id: &str,
     ) -> Result<(), AppError> {
         let row = repo::partition::get(state, org_id, partition_id).await?;
+        let scope = PhaseScope::from_partition(org_id, &row);
         let (_t, parent) = repo::node::target_and_parent(
             state,
-            org_id,
-            &row.session_id,
-            &row.target_node_id,
+            &scope.org_id,
+            &scope.session_id,
+            &scope.target_node_id,
         )
         .await?;
         let parent =
@@ -55,7 +54,7 @@ impl Coordinator {
         })?;
         let slice_title = split.edges[0].title.clone();
 
-        let git_root = repo::session::git_root(state, org_id, &row.session_id).await?;
+        let git_root = repo::session::git_root(state, &scope.org_id, &scope.session_id).await?;
         let worktree_path = PathBuf::from(&row.worktree_path);
         let (tree_sha, commit_sha) = worktree::capture_slice_commit(
             &git_root,
@@ -71,8 +70,8 @@ impl Coordinator {
             .map_err(|e| AppError::Internal(anyhow::anyhow!("construct-ok json: {e}")))?;
         repo::partition::accept_constructor_ok(
             state,
-            org_id,
-            partition_id,
+            &scope.org_id,
+            &scope.partition_id,
             payload.candidate_tree_sha.clone(),
             payload.candidate_commit_sha.clone(),
             run_id,
@@ -83,12 +82,9 @@ impl Coordinator {
 
         self.handle_phase_terminal(
             state,
-            org_id,
-            partition_id,
+            &scope,
             RunKind::Construct,
             run_id,
-            session_id,
-            target_node_id,
             serde_json::to_value(&payload).ok(),
         )
         .await?;
@@ -103,15 +99,14 @@ impl Coordinator {
         run_id: &str,
         raw: &str,
         reason: &str,
-        session_id: &str,
-        target_node_id: &str,
     ) -> Result<(), AppError> {
         let row = repo::partition::get(state, org_id, partition_id).await?;
+        let scope = PhaseScope::from_partition(org_id, &row);
         let (_t, parent) = repo::node::target_and_parent(
             state,
-            org_id,
-            &row.session_id,
-            &row.target_node_id,
+            &scope.org_id,
+            &scope.session_id,
+            &scope.target_node_id,
         )
         .await?;
         let parent =
@@ -124,19 +119,19 @@ impl Coordinator {
         });
         repo::partition::accept_constructor_blocked(
             state,
-            org_id,
-            partition_id,
+            &scope.org_id,
+            &scope.partition_id,
             run_id,
             result_json.to_string(),
             raw.to_string(),
         )
         .await?;
         self.emit(
-            session_id,
+            &scope.session_id,
             SseEvent::Phase {
-                session_id: session_id.to_string(),
-                target_node_id: target_node_id.to_string(),
-                partition_id: partition_id.to_string(),
+                session_id: scope.session_id.clone(),
+                target_node_id: scope.target_node_id.clone(),
+                partition_id: scope.partition_id.clone(),
                 name: PhaseName::Construct,
                 state: PhaseState::AwaitingReview,
                 payload: Some(serde_json::json!({"outcome": "blocked", "reason": reason})),

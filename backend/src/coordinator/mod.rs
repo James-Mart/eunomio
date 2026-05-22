@@ -20,6 +20,7 @@ mod gates;
 mod prompt;
 mod recovery;
 mod run_loop;
+mod scope;
 
 const BROADCAST_CAPACITY: usize = 64;
 

@@ -134,7 +134,7 @@ async fn post_logout(
                     tokio_rusqlite::params![session_id],
                 )?;
                 super::audit::record_in_tx(
-                    &*tx,
+                    &tx,
                     Some(&org_id),
                     Some(&user_id),
                     "logout",

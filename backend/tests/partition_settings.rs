@@ -3,7 +3,10 @@ use eunomio::partition_settings;
 use pretty_assertions::assert_eq;
 
 mod common;
-use common::{authenticated_empty_request, authenticated_json_request, login, TestApp, TEST_CURSOR_KEY};
+use common::{
+    app::{TestApp, TEST_CURSOR_KEY},
+    http::{authenticated_empty_request, authenticated_json_request, login},
+};
 
 #[tokio::test]
 async fn per_user_settings_isolated() {

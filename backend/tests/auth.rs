@@ -6,9 +6,12 @@ use pretty_assertions::assert_eq;
 
 mod common;
 use common::{
-    authenticated_empty_request, authenticated_json_request, empty_request, json_request, login,
-    local_session_body, parse_session_cookie, request_with_headers, TestApp, TEST_CURSOR_KEY,
-    TEST_USERNAME,
+    app::{TestApp, TEST_CURSOR_KEY, TEST_USERNAME},
+    git::local_session_body,
+    http::{
+        authenticated_empty_request, authenticated_json_request, empty_request, json_request,
+        login, parse_session_cookie, request_with_headers,
+    },
 };
 
 async fn count_auth_events(state: &eunomio::state::AppState, event_type: &str) -> i64 {

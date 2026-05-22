@@ -1,18 +1,17 @@
 mod common;
-
-use common::git;
+use common::git::{git, write};
 use std::path::Path;
 
 fn init_repo_with_branches(path: &Path) {
     git(path, &["init", "-q", "-b", "main"]);
     git(path, &["config", "user.email", "test@example.com"]);
     git(path, &["config", "user.name", "Test"]);
-    common::write(path, "base.txt", "base\n");
+    write(path, "base.txt", "base\n");
     git(path, &["add", "."]);
     git(path, &["commit", "-q", "-m", "base"]);
 
     git(path, &["checkout", "-q", "-b", "feature"]);
-    common::write(path, "feature.txt", "feature\n");
+    write(path, "feature.txt", "feature\n");
     git(path, &["add", "."]);
     git(path, &["commit", "-q", "-m", "feature"]);
 
