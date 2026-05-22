@@ -132,6 +132,27 @@ ln -sf /path/to/eunomia/target/release/eunomia ~/.local/bin/eunomia
 
 State (SQLite DB + per-Partition worktrees) lives in `~/.eunomia/`, shared across every repo a user runs Eunomia against.
 
+## Git repository access
+
+Eunomia shells out to `git` on your `PATH` for every repository operation. It does not implement its own credential layer — auth behaves exactly like running `git` in your shell.
+
+### REPO_ROOT (today)
+
+The server must start inside, or be pointed at with `--repo-root` / `EUNOMIA_REPO_ROOT`, an existing git working tree. Session `baseRef` and `sourceRef` are resolved with `git merge-base` and `git rev-parse` against that tree. Refs such as `origin/main` or a branch name must already exist in the local object database; run `git fetch` first if needed.
+
+### Public vs private remotes
+
+| Situation | Works? |
+| --- | --- |
+| Public remote, refs already fetched into `REPO_ROOT` | Yes |
+| Private remote, `REPO_ROOT` is a clone you can already fetch in a normal shell | Yes — same SSH keys / credential helper as your terminal |
+| Private remote, objects or refs not present locally | No — session create fails until you fetch |
+| HTTPS private URL with no credentials configured on the host | No — eunomia has no token UI |
+
+Private repositories work when your local clone already has access: if `git fetch origin` succeeds in `REPO_ROOT`, eunomia can use those refs. Configure auth the usual way (SSH agent, `git credential`, host-specific tokens via a credential helper, etc.) before starting a session.
+
+See [`SPEC.md` § Repository access](SPEC.md#repository-access) for how this fits the session model.
+
 ### Trust model
 
 Eunomia binds `127.0.0.1` and treats the local OS user as the trust boundary; a Host-header guard on the local listener closes CSRF and DNS-rebinding paths. The optional Cloudflare tunnel grants any URL holder **full admin** of this instance — the share link is not view-only. Subagents run as ordinary local processes (no sandbox), so prompt-injected agent runs can do anything the eunomia process can do. See [`SECURITY.md`](SECURITY.md) for the full trust model, the tunnel rotation procedure, the cloudflared pin/verify story, and known deferred items.

@@ -644,6 +644,24 @@ All routes that read or mutate Partition state scope by `partition_id`
 
 ---
 
+## Repository access
+
+Every Session is scoped to a **REPO_ROOT** — a local git working tree the
+server was started in (or pointed at). `baseRef` and `sourceRef` must resolve
+in that tree's object database; remote-tracking names like `origin/main` only
+work after a fetch.
+
+Eunomia delegates all authentication to the host's git installation. It has
+no credential UI. **Public** remotes work once refs are fetched into
+REPO_ROOT. **Private** remotes work only when the same machine can already
+clone or fetch that remote non-interactively (SSH keys, credential helper,
+etc.). Session create fails at ref resolution if objects are missing; clone or
+fetch failures surface as ordinary git stderr.
+
+Operational detail and a summary table live in [`README.md`](README.md#git-repository-access).
+
+---
+
 ## 8. UI shape (sketch)
 
 The frontend is React + Vite. The Commit Review pane is a two-column
