@@ -4,7 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Plus, Trash2 } from "lucide-react";
+import { PlusIcon, TrashIcon } from "@primer/octicons-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -59,7 +59,8 @@ export default function CreateSession() {
   }, []);
 
   return (
-    <div className="container max-w-2xl py-10">
+    <div className="min-h-0 flex-1 overflow-auto">
+      <div className="container max-w-2xl py-10">
       <div className="mb-6">
         <MobileShareCard />
       </div>
@@ -68,8 +69,8 @@ export default function CreateSession() {
         <h1 className="text-2xl font-semibold tracking-tight">Sessions</h1>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
-            <Button size="sm">
-              <Plus className="h-4 w-4 mr-1" />
+            <Button size="sm" variant="outline">
+              <PlusIcon className="h-4 w-4 mr-1" />
               New
             </Button>
           </DialogTrigger>
@@ -90,6 +91,7 @@ export default function CreateSession() {
         onContinue={(id) => navigate(`/sessions/${id}`)}
         onDeleted={handleDeleted}
       />
+      </div>
     </div>
   );
 }
@@ -180,10 +182,10 @@ function SessionRow({
       <div className="flex-1 min-w-0">
         <div className="text-sm font-medium truncate">{session.sourceRef}</div>
         <div className="text-xs text-muted-foreground">
-          from <span className="break-all">{session.baseRef}</span> · created {created}
+          from <span className="font-mono break-all">{session.baseRef}</span> · created {created}
         </div>
       </div>
-      <Button size="sm" onClick={onContinue} className="shrink-0">
+      <Button size="sm" variant="outline" onClick={onContinue} className="shrink-0">
         Continue
       </Button>
       <Dialog open={confirmOpen} onOpenChange={(open) => !deleting && setConfirmOpen(open)}>
@@ -194,7 +196,7 @@ function SessionRow({
             className="shrink-0 h-9 w-9 text-muted-foreground hover:text-destructive"
             aria-label="Delete session"
           >
-            <Trash2 className="h-4 w-4" />
+            <TrashIcon className="h-4 w-4" />
           </Button>
         </DialogTrigger>
         <DialogContent>

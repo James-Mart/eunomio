@@ -27,7 +27,7 @@ function NodeCard({ data, selected }: NodeCardProps) {
       <Card
         className={cn(
           "w-[180px] shadow-md",
-          blocked && "ring-2 ring-red-500/80",
+          blocked && "ring-2 ring-danger/80",
           selected && "ring-offset-2 ring-offset-background",
           selected && !blocked && "ring-2 ring-primary",
         )}
@@ -62,8 +62,8 @@ function PartitionCountChip({
       className={cn(
         "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
         blocked
-          ? "text-red-500 ring-2 ring-red-500/80"
-          : "animate-pulse bg-amber-500/20 text-amber-500",
+          ? "text-danger ring-2 ring-danger/80"
+          : "animate-pulse bg-attention/15 text-attention",
       )}
       aria-label={
         blocked

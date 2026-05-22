@@ -276,9 +276,13 @@ async fn get_node_session(
 async fn get_repo_info(State(state): State<AppState>) -> Result<Json<RepoInfo>, AppError> {
     let current_branch = crate::git::current_branch(&state.repo_root).await?;
     let name = crate::git::repo_name(&state.repo_root).await?;
+    let owner = crate::git::origin_remote_url(&state.repo_root)
+        .await?
+        .and_then(|url| crate::git::repo_owner_from_remote_url(&url));
     Ok(Json(RepoInfo {
         name,
         repo_root: state.repo_root.to_string_lossy().into_owned(),
+        owner,
         current_branch,
     }))
 }

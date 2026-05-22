@@ -136,7 +136,7 @@ export function GraphPane({
         className={cn(
           "flex-1 min-h-0",
           layout.kind === "candidate" &&
-            "rounded-md border-2 border-amber-500/60",
+            "rounded-md border-2 border-attention/60",
         )}
       >
         <ReactFlowProvider>

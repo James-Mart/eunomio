@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { XIcon } from "@primer/octicons-react";
 import { clearSystemError, useSystemErrors } from "@/lib/systemErrors";
 
 export default function SystemErrorBanner() {
@@ -19,7 +19,7 @@ export default function SystemErrorBanner() {
             className="rounded-sm p-1 opacity-80 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-destructive-foreground"
             aria-label={`Dismiss ${err.code}`}
           >
-            <X className="h-4 w-4" />
+            <XIcon className="h-4 w-4" />
           </button>
         </div>
       ))}

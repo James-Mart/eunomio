@@ -1,4 +1,4 @@
-import { Copy } from "lucide-react";
+import { CopyIcon } from "@primer/octicons-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -42,7 +42,7 @@ function CopyTextButton({
       aria-label={ariaLabel}
       onClick={() => void copyText(text)}
     >
-      <Copy className="h-3.5 w-3.5" />
+      <CopyIcon className="h-3.5 w-3.5" />
     </Button>
   );
 }

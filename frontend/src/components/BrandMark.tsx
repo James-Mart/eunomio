@@ -28,8 +28,11 @@ export function BrandMark({ className }: Props) {
         textAnchor="middle"
         dominantBaseline="central"
         fontSize="24"
-        fontWeight="700"
         fill="currentColor"
+        style={{
+          fontFamily: "var(--brand-mark-font)",
+          fontWeight: "var(--brand-mark-weight)",
+        }}
       >
         ε
       </text>

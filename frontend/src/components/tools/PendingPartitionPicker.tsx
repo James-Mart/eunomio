@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { PauseCircle } from "lucide-react";
+import { StopIcon } from "@primer/octicons-react";
 
 import type { Partition } from "@/lib/api";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -59,7 +59,7 @@ export default function PendingPartitionPicker({ options, onSelect }: Props) {
       </div>
       {selected && isConstructAwaitingReview(selected.partition) ? (
         <Alert>
-          <PauseCircle className="h-4 w-4" />
+          <StopIcon className="h-4 w-4" />
           <AlertTitle>Candidate ready for review</AlertTitle>
           <AlertDescription>
             Inspect the candidate via the candidate view in the graph pane, then

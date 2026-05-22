@@ -1,9 +1,6 @@
 import { useEffect, useState } from "react";
-import { Settings } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import PartitionSettingsDialog from "@/components/PartitionSettingsDialog";
 import {
   BranchToolPanel,
   InfoToolPanel,
@@ -17,7 +14,6 @@ import {
 type ToolsTab = "partition" | "info" | "branch";
 
 export default function ToolsPane(ctx: ToolsContext) {
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [tab, setTab] = useState<ToolsTab>("partition");
   const showNodeTabs = showNodeTools(ctx);
 
@@ -35,25 +31,24 @@ export default function ToolsPane(ctx: ToolsContext) {
     <Tabs
       value={tab}
       onValueChange={(v) => setTab(v as ToolsTab)}
-      className="flex min-h-full flex-col gap-3 px-4 pt-4 pb-6"
+      className="flex min-h-full w-full flex-col gap-3 px-4 pt-4 pb-6"
     >
-      <div className="flex items-center justify-between gap-2">
-        <TabsList>
-          <TabsTrigger value="partition">Partition</TabsTrigger>
-          {showNodeTabs && <TabsTrigger value="info">Info</TabsTrigger>}
-          {showNodeTabs && <TabsTrigger value="branch">Branch</TabsTrigger>}
-        </TabsList>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 text-muted-foreground"
-          onClick={() => setSettingsOpen(true)}
-          aria-label="Partition settings"
-        >
-          <Settings className="h-4 w-4" aria-hidden="true" />
-        </Button>
-      </div>
-      <TabsContent value="partition" className="mt-0 flex-1 min-h-0">
+      <TabsList variant="underline" className="w-full">
+        <TabsTrigger variant="underline" value="partition">
+          Partition
+        </TabsTrigger>
+        {showNodeTabs && (
+          <TabsTrigger variant="underline" value="info">
+            Info
+          </TabsTrigger>
+        )}
+        {showNodeTabs && (
+          <TabsTrigger variant="underline" value="branch">
+            Branch
+          </TabsTrigger>
+        )}
+      </TabsList>
+      <TabsContent value="partition" className="mt-0 w-full flex-1 min-h-0">
         {PartitionToolPanel(ctx)}
       </TabsContent>
       {showNodeTabs && (
@@ -66,11 +61,6 @@ export default function ToolsPane(ctx: ToolsContext) {
           {BranchToolPanel(ctx)}
         </TabsContent>
       )}
-
-      <PartitionSettingsDialog
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-      />
     </Tabs>
   );
 }

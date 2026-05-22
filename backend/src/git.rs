@@ -237,13 +237,17 @@ mod name_status_tests {
 
 #[cfg(test)]
 mod repo_name_tests {
-    use super::repo_name_from_remote_url;
+    use super::{repo_name_from_remote_url, repo_owner_from_remote_url};
 
     #[test]
     fn parses_https_remote() {
         assert_eq!(
             repo_name_from_remote_url("https://github.com/psibase/eunomia.git"),
             "eunomia.git"
+        );
+        assert_eq!(
+            repo_owner_from_remote_url("https://github.com/psibase/eunomia.git"),
+            Some("psibase".to_string())
         );
     }
 
@@ -253,6 +257,10 @@ mod repo_name_tests {
             repo_name_from_remote_url("git@github.com:James-Mart/eunomia.git"),
             "eunomia.git"
         );
+        assert_eq!(
+            repo_owner_from_remote_url("git@github.com:James-Mart/eunomia.git"),
+            Some("James-Mart".to_string())
+        );
     }
 
     #[test]
@@ -261,6 +269,10 @@ mod repo_name_tests {
             repo_name_from_remote_url("ssh://git@github.com/psibase/eunomia.git"),
             "eunomia.git"
         );
+        assert_eq!(
+            repo_owner_from_remote_url("ssh://git@github.com/psibase/eunomia.git"),
+            Some("psibase".to_string())
+        );
     }
 
     #[test]
@@ -268,6 +280,10 @@ mod repo_name_tests {
         assert_eq!(
             repo_name_from_remote_url("https://github.com/org/repo.git/"),
             "repo.git"
+        );
+        assert_eq!(
+            repo_owner_from_remote_url("https://github.com/org/repo.git/"),
+            Some("org".to_string())
         );
     }
 }
@@ -383,23 +399,45 @@ pub async fn origin_remote_url(repo: &Path) -> Result<Option<String>> {
 
 /// Derive a short repo name from a git remote URL (HTTPS, SSH, or SCP-style).
 pub fn repo_name_from_remote_url(url: &str) -> String {
+    remote_path_segments(url)
+        .last()
+        .cloned()
+        .unwrap_or_else(|| url.trim().trim_end_matches('/').to_string())
+}
+
+/// Derive repo owner from a git remote URL when path is `owner/repo`.
+pub fn repo_owner_from_remote_url(url: &str) -> Option<String> {
+    let segments = remote_path_segments(url);
+    if segments.len() >= 2 {
+        Some(segments[segments.len() - 2].clone())
+    } else {
+        None
+    }
+}
+
+fn remote_path_segments(url: &str) -> Vec<String> {
     let trimmed = url.trim().trim_end_matches('/');
 
-    // SCP-style: git@host:owner/repo
-    if let Some((_, path)) = trimmed.rsplit_once('@') {
+    if let Some((_, after_at)) = trimmed.rsplit_once('@') {
         if !trimmed.contains("://") {
-            if let Some(name) = path.rsplit('/').next().filter(|s| !s.is_empty()) {
-                return name.to_string();
-            }
+            let path = after_at
+                .split_once(':')
+                .map(|(_, repo_path)| repo_path)
+                .unwrap_or(after_at);
+            return path
+                .split('/')
+                .filter(|s| !s.is_empty())
+                .map(String::from)
+                .collect();
         }
     }
 
-    trimmed
-        .rsplit('/')
-        .next()
+    let after_scheme = trimmed.split("://").nth(1).unwrap_or(trimmed);
+    let path = after_scheme.split_once('/').map(|(_, p)| p).unwrap_or("");
+    path.split('/')
         .filter(|s| !s.is_empty())
-        .unwrap_or(trimmed)
-        .to_string()
+        .map(String::from)
+        .collect()
 }
 
 pub async fn repo_name(repo: &Path) -> Result<String> {

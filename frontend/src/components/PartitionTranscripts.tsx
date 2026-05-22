@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight, Copy } from "lucide-react";
+import { ChevronRightIcon, CopyIcon } from "@primer/octicons-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -38,7 +38,7 @@ function CopyTextButton({
       aria-label={ariaLabel}
       onClick={() => void copyText(text)}
     >
-      <Copy className="h-3.5 w-3.5" />
+      <CopyIcon className="h-3.5 w-3.5" />
     </Button>
   );
 }
@@ -164,7 +164,7 @@ function RunTranscriptSection({
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-2 px-3 py-2 text-left"
       >
-        <ChevronRight
+        <ChevronRightIcon
           className={cn(
             "h-3.5 w-3.5 shrink-0 transition-transform",
             open && "rotate-90",

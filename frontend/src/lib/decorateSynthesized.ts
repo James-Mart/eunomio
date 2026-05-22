@@ -13,21 +13,21 @@ const STICKY_HEADER_CSS =
 // post-render are wrapped in `.eunomia-synthesized`; matching gutter cells get
 // `data-eunomia-synthesized-gutter`.
 const SYNTHESIZED_CSS =
-  ".eunomia-synthesized{display:inline;background-image:linear-gradient(100deg,rgba(167,139,250,0) 0%,rgba(167,139,250,0.16) 25%,rgba(167,139,250,0.45) 50%,rgba(167,139,250,0.16) 75%,rgba(167,139,250,0) 100%);background-size:300% 100%;background-repeat:no-repeat;background-position:200% 0;animation:eunomia-shimmer 3.5s linear infinite;border-radius:1px;}" +
+  ".eunomia-synthesized{display:inline;background-image:linear-gradient(100deg,hsl(var(--synth)/0) 0%,hsl(var(--synth)/0.16) 25%,hsl(var(--synth)/0.45) 50%,hsl(var(--synth)/0.16) 75%,hsl(var(--synth)/0) 100%);background-size:300% 100%;background-repeat:no-repeat;background-position:200% 0;animation:eunomia-shimmer 3.5s linear infinite;border-radius:1px;}" +
   "@keyframes eunomia-shimmer{0%{background-position:200% 0;}100%{background-position:-100% 0;}}" +
   "[data-eunomia-synthesized-gutter]{position:relative;}" +
-  "[data-eunomia-synthesized-gutter]::after{content:'\\2731';position:absolute;right:2px;top:50%;transform:translateY(-50%);font-size:0.7em;line-height:1;color:rgb(196,181,253);pointer-events:none;}";
+  "[data-eunomia-synthesized-gutter]::after{content:'\\2731';position:absolute;right:2px;top:50%;transform:translateY(-50%);font-size:0.7em;line-height:1;color:hsl(var(--synth-muted));pointer-events:none;}";
 
 const UNMODIFIED_LINES_CSS =
   "[data-separator=line-info] [data-separator-content]," +
   "[data-separator=line-info] [data-expand-button]," +
   "[data-separator=line-info-basic] [data-separator-content]," +
   "[data-separator=line-info-basic] [data-expand-button]" +
-  "{background-color:rgba(56,139,253,0.15);color:#4493f8;}" +
+  "{background-color:hsl(var(--link)/0.15);color:hsl(var(--link)/0.85);}" +
   "[data-separator=line-info] [data-expand-button]:hover," +
   "[data-separator=line-info] [data-separator-content]:hover," +
   "[data-separator=line-info-basic] [data-expand-button]:hover" +
-  "{background-color:rgba(56,139,253,0.25);color:#58a6ff;}";
+  "{background-color:hsl(var(--link)/0.25);color:hsl(var(--link));}";
 
 export const FILEDIFF_CSS = STICKY_HEADER_CSS + SYNTHESIZED_CSS + UNMODIFIED_LINES_CSS;
 

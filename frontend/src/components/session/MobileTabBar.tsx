@@ -1,19 +1,21 @@
 import type { ReactNode } from "react";
 import {
-  GitCompareArrows,
-  Network,
-  Wrench,
-  type LucideIcon,
-} from "lucide-react";
+  GitCompareIcon,
+  GraphIcon,
+  ToolsIcon,
+  type IconProps,
+} from "@primer/octicons-react";
 
 import { cn } from "@/lib/utils";
 
 import type { ActiveTab } from "./useSessionActiveTab";
 
-const TABS: { value: ActiveTab; label: string; icon: LucideIcon }[] = [
-  { value: "graph", label: "Graph", icon: Network },
-  { value: "diff", label: "Diff", icon: GitCompareArrows },
-  { value: "tools", label: "Tools", icon: Wrench },
+type IconComponent = React.ComponentType<IconProps>;
+
+const TABS: { value: ActiveTab; label: string; icon: IconComponent }[] = [
+  { value: "graph", label: "Graph", icon: GraphIcon },
+  { value: "diff", label: "Diff", icon: GitCompareIcon },
+  { value: "tools", label: "Tools", icon: ToolsIcon },
 ];
 
 export function TabPanel({

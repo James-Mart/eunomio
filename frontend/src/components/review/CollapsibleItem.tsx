@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronRightIcon } from "@primer/octicons-react";
 
 import { cn } from "@/lib/utils";
 
@@ -25,7 +25,7 @@ export default function CollapsibleItem({
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-2 px-3 py-2 text-left"
       >
-        <ChevronRight
+        <ChevronRightIcon
           className={cn(
             "h-3.5 w-3.5 shrink-0 transition-transform",
             open && "rotate-90",

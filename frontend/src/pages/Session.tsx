@@ -209,8 +209,8 @@ function SessionInner({ sessionId }: { sessionId: string }) {
   const toolsCardList = <ToolsCardList {...toolsContext} />;
 
   return (
-    <>
-      <div className="hidden md:block h-[calc(100vh-3.5rem)]">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="hidden min-h-0 flex-1 md:flex md:flex-col">
         <ResizablePanelGroup
           orientation="horizontal"
           defaultLayout={desktopSplitLayout.defaultLayout}
@@ -263,7 +263,7 @@ function SessionInner({ sessionId }: { sessionId: string }) {
         </ResizablePanelGroup>
       </div>
 
-      <div className="md:hidden flex h-[calc(100dvh-3.5rem)] flex-col">
+      <div className="flex min-h-0 flex-1 flex-col md:hidden">
         <div className="relative flex-1 min-h-0">
           <TabPanel id="graph" active={activeTab === "graph"}>
             {graphPane}
@@ -277,6 +277,6 @@ function SessionInner({ sessionId }: { sessionId: string }) {
         </div>
         <BottomTabBar value={activeTab} onChange={setActiveTab} />
       </div>
-    </>
+    </div>
   );
 }

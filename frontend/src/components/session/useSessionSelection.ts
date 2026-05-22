@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import type { Graph, GraphNode, Partition } from "@/lib/api";
 
@@ -25,12 +25,18 @@ export function useSessionSelection(
 ): SessionSelection {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
-  const didInitRef = useRef(false);
-  useEffect(() => {
-    if (!graph || didInitRef.current) return;
-    didInitRef.current = true;
+  const selectionInitializedRef = useRef(false);
+  useLayoutEffect(() => {
+    if (!graph || selectionInitializedRef.current) return;
+    selectionInitializedRef.current = true;
     setSelectedNodeId(findLeafNodeId(graph));
   }, [graph]);
+
+  const resolvedSelectedNodeId = selectionInitializedRef.current
+    ? selectedNodeId
+    : graph
+      ? findLeafNodeId(graph)
+      : null;
 
   useEffect(() => {
     if (!layout || !selectedNodeId) return;
@@ -82,20 +88,20 @@ export function useSessionSelection(
   }, [view, candidatePartition, layout]);
 
   const selectedCanonicalNode = useMemo<GraphNode | null>(() => {
-    if (!graph || !selectedNodeId) return null;
-    const resolved = selectedNodeId.startsWith(CANDIDATE_TARGET_PREFIX)
-      ? selectedNodeId.slice(CANDIDATE_TARGET_PREFIX.length)
-      : selectedNodeId;
+    if (!graph || !resolvedSelectedNodeId) return null;
+    const resolved = resolvedSelectedNodeId.startsWith(CANDIDATE_TARGET_PREFIX)
+      ? resolvedSelectedNodeId.slice(CANDIDATE_TARGET_PREFIX.length)
+      : resolvedSelectedNodeId;
     return graph.nodes.find((n) => n.nodeId === resolved) ?? null;
-  }, [graph, selectedNodeId]);
+  }, [graph, resolvedSelectedNodeId]);
 
   const isCandidateSliceSelected =
     layout?.kind === "candidate" &&
     layout.stage === "proposed" &&
-    selectedNodeId === CANDIDATE_SLICE_ID;
+    resolvedSelectedNodeId === CANDIDATE_SLICE_ID;
 
   return {
-    selectedNodeId,
+    selectedNodeId: resolvedSelectedNodeId,
     setSelectedNodeId,
     selectedCanonicalNode,
     isCandidateSliceSelected,

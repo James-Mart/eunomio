@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { CircleAlert, Loader2 } from "lucide-react";
+import { AlertIcon, SyncIcon } from "@primer/octicons-react";
 import { toast } from "sonner";
 
 import {
@@ -106,7 +106,7 @@ export default function PartitionTab({
   }, [activeLifecycle, resetLifecycle, onPartitionEnded]);
 
   return (
-    <div className="space-y-4">
+    <div className="w-full space-y-4">
       {activePartition ? <LifecycleStepper states={states} /> : null}
       {phase === "idle" || phase === "cancelled" || phase === "finished" ? (
         targetNodeId ? (
@@ -287,7 +287,7 @@ function RunningView({
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2 rounded-md border bg-muted/50 p-3 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
+        <SyncIcon className="h-4 w-4 animate-spin" />
         <span>{label}</span>
       </div>
       <Button
@@ -318,7 +318,7 @@ function ErrorView({
   return (
     <div className="space-y-3">
       <Alert variant="destructive">
-        <CircleAlert className="h-4 w-4" />
+        <AlertIcon className="h-4 w-4" />
         <AlertTitle>Partition error</AlertTitle>
         <AlertDescription>{message}</AlertDescription>
       </Alert>

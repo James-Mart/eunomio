@@ -122,6 +122,8 @@ pub struct RepoInfo {
     pub name: String,
     pub repo_root: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub current_branch: Option<String>,
 }
 

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { PauseCircle } from "lucide-react";
+import { StopIcon } from "@primer/octicons-react";
 import { toast } from "sonner";
 
 import { api, type ChangeSurvey } from "@/lib/api";
@@ -59,7 +59,7 @@ export default function SurveyReview({
   return (
     <div className="space-y-3">
       <Alert>
-        <PauseCircle className="h-4 w-4" />
+        <StopIcon className="h-4 w-4" />
         <AlertTitle>Survey ready for review</AlertTitle>
         <AlertDescription>
           Accept the survey to start planning, or re-run with feedback.

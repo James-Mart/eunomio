@@ -1,8 +1,10 @@
-@import url("https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@600&display=swap");
+@import "@fontsource/mona-sans/400.css";
+@import "@fontsource/mona-sans/600.css";
+@import "@fontsource/mona-sans/700.css";
 
 :root {
-  --brand-mark-font: "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
-  --brand-mark-weight: 600;
+  --brand-mark-font: "Mona Sans", ui-sans-serif, system-ui, sans-serif;
+  --brand-mark-weight: 700;
 }
 
 .brand-mark {

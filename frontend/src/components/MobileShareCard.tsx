@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { QRCodeSVG } from "qrcode.react";
-import { Copy, Loader2, QrCode, Square } from "lucide-react";
+import { CopyIcon, DeviceMobileIcon, StopIcon, SyncIcon } from "@primer/octicons-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -117,7 +117,7 @@ export default function MobileShareCard() {
       <Card>
         <CardHeader className="p-4 pb-2">
           <div className="flex items-center gap-2">
-            <QrCode className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            <DeviceMobileIcon className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
             <CardTitle className="text-base font-semibold">Continue on mobile</CardTitle>
           </div>
           <CardDescription className="text-xs">
@@ -179,7 +179,7 @@ function Controls({
       <div className="space-y-2">
         <p className="text-sm text-destructive">{status.errorMessage ?? "Tunnel error"}</p>
         <Button size="sm" onClick={onGetQr} disabled={pending}>
-          {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Try again"}
+          {pending ? <SyncIcon className="h-3.5 w-3.5 animate-spin" /> : "Try again"}
         </Button>
       </div>
     );
@@ -189,12 +189,12 @@ function Controls({
       <Button size="sm" onClick={onGetQr} disabled={pending}>
         {pending && status.state !== "running" ? (
           <>
-            <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+            <SyncIcon className="mr-2 h-3.5 w-3.5 animate-spin" />
             Allocating tunnel&hellip;
           </>
         ) : (
           <>
-            <QrCode className="mr-2 h-3.5 w-3.5" />
+            <DeviceMobileIcon className="mr-2 h-3.5 w-3.5" />
             Get QR Code
           </>
         )}
@@ -202,10 +202,10 @@ function Controls({
       {status.state === "running" && (
         <Button size="sm" variant="outline" onClick={onStop} disabled={pending}>
           {pending ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <SyncIcon className="h-3.5 w-3.5 animate-spin" />
           ) : (
             <>
-              <Square className="mr-2 h-3.5 w-3.5" />
+              <StopIcon className="mr-2 h-3.5 w-3.5" />
               Stop
             </>
           )}
@@ -221,7 +221,7 @@ function ModalBody({ status }: { status: TunnelStatus | null }) {
   if (status?.state !== "running" || !status.url) {
     return (
       <div className="flex flex-col items-center gap-3 py-6 text-sm text-muted-foreground">
-        <Loader2 className="h-5 w-5 animate-spin" />
+        <SyncIcon className="h-5 w-5 animate-spin" />
         Allocating tunnel&hellip;
       </div>
     );
@@ -229,7 +229,7 @@ function ModalBody({ status }: { status: TunnelStatus | null }) {
   if (status.tokenRequired && !status.token) {
     return (
       <div className="flex flex-col items-center gap-3 py-6 text-sm text-muted-foreground">
-        <Loader2 className="h-5 w-5 animate-spin" />
+        <SyncIcon className="h-5 w-5 animate-spin" />
         Allocating tunnel&hellip;
       </div>
     );
@@ -259,7 +259,7 @@ function ModalBody({ status }: { status: TunnelStatus | null }) {
             aria-label="Copy share URL"
             onClick={() => copy(shareUrl)}
           >
-            <Copy className="h-3.5 w-3.5" />
+            <CopyIcon className="h-3.5 w-3.5" />
           </Button>
         </div>
       )}

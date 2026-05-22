@@ -1,20 +1,23 @@
+import { Fragment } from "react";
+import type { IconProps } from "@primer/octicons-react";
 import {
-  CircleAlert,
-  CircleCheck,
-  Code2,
-  ListChecks,
-  PauseCircle,
-  Telescope,
-  type LucideIcon,
-} from "lucide-react";
+  AlertIcon,
+  CheckCircleIcon,
+  CodeIcon,
+  SearchIcon,
+  StopIcon,
+  TasklistIcon,
+} from "@primer/octicons-react";
 
 import { cn } from "@/lib/utils";
 import type { PhaseName, PhaseState } from "@/lib/sessionEvents";
 
-const STEPS: { name: PhaseName; label: string; icon: LucideIcon }[] = [
-  { name: "survey", label: "Survey", icon: Telescope },
-  { name: "plan", label: "Plan", icon: ListChecks },
-  { name: "construct", label: "Construct", icon: Code2 },
+type IconComponent = React.ComponentType<IconProps>;
+
+const STEPS: { name: PhaseName; label: string; icon: IconComponent }[] = [
+  { name: "survey", label: "Survey", icon: SearchIcon },
+  { name: "plan", label: "Plan", icon: TasklistIcon },
+  { name: "construct", label: "Construct", icon: CodeIcon },
 ];
 
 export type LifecycleStateValue = PhaseState | "pending" | "done";
@@ -46,8 +49,8 @@ export function LifecycleStepper({
   return (
     <ol
       className={cn(
-        "flex items-center",
-        compact ? "gap-1" : "w-full gap-2",
+        "flex w-full list-none items-center p-0",
+        compact && "gap-1",
       )}
       aria-label="Partition lifecycle"
     >
@@ -55,21 +58,22 @@ export function LifecycleStepper({
         const state = states[step.name];
         const showSeparator = !compact && idx < STEPS.length - 1;
         return (
-          <li
-            key={step.name}
-            className={cn(
-              "flex items-center",
-              compact ? "" : "flex-1 gap-2",
-            )}
-          >
-            <Step
-              label={step.label}
-              icon={step.icon}
-              state={state}
-              compact={compact}
-            />
-            {showSeparator && <div className="h-px flex-1 bg-border" aria-hidden />}
-          </li>
+          <Fragment key={step.name}>
+            <li className="flex shrink-0 items-center">
+              <Step
+                label={step.label}
+                icon={step.icon}
+                state={state}
+                compact={compact}
+              />
+            </li>
+            {showSeparator ? (
+              <li
+                className="mx-2 h-px min-w-2 flex-1 bg-border"
+                aria-hidden
+              />
+            ) : null}
+          </Fragment>
         );
       })}
     </ol>
@@ -83,7 +87,7 @@ function Step({
   compact,
 }: {
   label: string;
-  icon: LucideIcon;
+  icon: IconComponent;
   state: LifecycleStateValue;
   compact: boolean;
 }) {
@@ -106,14 +110,14 @@ function Step({
   );
 }
 
-function statusIconFor(state: LifecycleStateValue, fallback: LucideIcon): LucideIcon {
+function statusIconFor(state: LifecycleStateValue, fallback: IconComponent): IconComponent {
   switch (state) {
     case "awaiting_review":
-      return PauseCircle;
+      return StopIcon;
     case "done":
-      return CircleCheck;
+      return CheckCircleIcon;
     case "error":
-      return CircleAlert;
+      return AlertIcon;
     default:
       return fallback;
   }
@@ -124,12 +128,12 @@ function colorFor(state: LifecycleStateValue): string {
     case "pending":
       return "text-muted-foreground/50";
     case "running":
-      return "text-amber-500";
+      return "text-attention";
     case "awaiting_review":
-      return "text-red-500";
+      return "text-danger";
     case "done":
-      return "text-emerald-500";
+      return "text-success";
     case "error":
-      return "text-red-500";
+      return "text-danger";
   }
 }

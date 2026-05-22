@@ -11,12 +11,29 @@ const config = {
       screens: { "2xl": "1400px" },
     },
     extend: {
+      fontFamily: {
+        sans: ["var(--font-sans)"],
+        mono: ["var(--font-mono)"],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
+        link: "hsl(var(--link))",
+        success: {
+          DEFAULT: "hsl(var(--success))",
+          foreground: "hsl(var(--success-foreground))",
+        },
+        attention: {
+          DEFAULT: "hsl(var(--attention))",
+          foreground: "hsl(var(--attention-foreground))",
+        },
+        danger: {
+          DEFAULT: "hsl(var(--danger))",
+          foreground: "hsl(var(--danger-foreground))",
+        },
         primary: {
           DEFAULT: "hsl(var(--primary))",
           foreground: "hsl(var(--primary-foreground))",
@@ -44,6 +61,14 @@ const config = {
         card: {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
+        },
+        header: {
+          DEFAULT: "hsl(var(--header-bg))",
+          foreground: "hsl(var(--foreground))",
+        },
+        synth: {
+          DEFAULT: "hsl(var(--synth))",
+          muted: "hsl(var(--synth-muted))",
         },
       },
       borderRadius: {

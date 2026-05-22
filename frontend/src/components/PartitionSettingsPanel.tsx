@@ -1,14 +1,29 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
-  Code2,
-  ListChecks,
-  ScrollText,
-  Telescope,
-  Workflow,
-  type LucideIcon,
-} from "lucide-react";
+  ArrowLeftIcon,
+  ChevronRightIcon,
+  CodeIcon,
+  FileIcon,
+  ProjectRoadmapIcon,
+  SearchIcon,
+  TasklistIcon,
+  type IconProps,
+} from "@primer/octicons-react";
 import { toast } from "sonner";
 
+import {
+  useSettingsDrill,
+  type SettingsCategory,
+} from "@/components/SettingsDrillContext";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   api,
   type CursorModel,
@@ -20,55 +35,47 @@ import {
 } from "@/lib/api";
 import { formatError } from "@/lib/errors";
 import { useAbortableEffect } from "@/lib/useAbortableEffect";
+import { useIsDesktop } from "@/lib/useIsDesktop";
 import { cn } from "@/lib/utils";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
-type Category = "general" | "coordinator" | "surveyor" | "planner" | "constructor";
 type SubagentCategory = "surveyor" | "planner" | "constructor";
 
-type CategoryMeta = { label: string; icon: LucideIcon };
+type IconComponent = React.ComponentType<IconProps>;
 
-const CATEGORIES: Record<Category, CategoryMeta> = {
-  general: { label: "General", icon: ScrollText },
-  coordinator: { label: "Coordinator", icon: Workflow },
-  surveyor: { label: "Surveyor", icon: Telescope },
-  planner: { label: "Planner", icon: ListChecks },
-  constructor: { label: "Constructor", icon: Code2 },
+type CategoryMeta = { label: string; icon: IconComponent };
+
+const CATEGORIES: Record<SettingsCategory, CategoryMeta> = {
+  general: { label: "General", icon: FileIcon },
+  coordinator: { label: "Coordinator", icon: ProjectRoadmapIcon },
+  surveyor: { label: "Surveyor", icon: SearchIcon },
+  planner: { label: "Planner", icon: TasklistIcon },
+  constructor: { label: "Constructor", icon: CodeIcon },
 };
 
-const ORDER: Category[] = [
-  "general",
-  "coordinator",
+const TOP_ORDER: SettingsCategory[] = ["general", "coordinator"];
+const SUBAGENT_ORDER: SubagentCategory[] = [
   "surveyor",
   "planner",
   "constructor",
 ];
 
-type Props = {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-};
-
 type ModelsState =
   | { kind: "loading" }
   | { kind: "success"; models: CursorModel[] };
 
-export default function PartitionSettingsDialog({ open, onOpenChange }: Props) {
-  const [active, setActive] = useState<Category>("general");
+export default function PartitionSettingsPanel() {
+  const isDesktop = useIsDesktop();
+  const { activeCategory, setActiveCategory, resetDrill } = useSettingsDrill();
+  const [desktopActive, setDesktopActive] =
+    useState<SettingsCategory>("general");
   const [settings, setSettings] = useState<PartitionSettings | null>(null);
   const [models, setModels] = useState<ModelsState>({ kind: "loading" });
 
+  useEffect(() => {
+    resetDrill();
+  }, [resetDrill]);
+
   useAbortableEffect(async (signal) => {
-    if (!open) return;
     setSettings(null);
     setModels({ kind: "loading" });
     const [s, m] = await Promise.all([
@@ -78,7 +85,7 @@ export default function PartitionSettingsDialog({ open, onOpenChange }: Props) {
     if (signal.aborted) return;
     if (s) setSettings(s);
     if (m) setModels({ kind: "success", models: m.models });
-  }, [open]);
+  }, []);
 
   const applyOptimistic = async <K extends keyof PartitionSettings>(
     key: K,
@@ -139,67 +146,222 @@ export default function PartitionSettingsDialog({ open, onOpenChange }: Props) {
       "Failed to save override",
     );
 
+  const renderPanel = (category: SettingsCategory) => {
+    if (category === "general") {
+      return (
+        <GeneralPanel
+          settings={settings}
+          onChange={(next) =>
+            settings &&
+            applyOptimistic("general", next, "Failed to save settings")
+          }
+        />
+      );
+    }
+    if (category === "coordinator") {
+      return (
+        <CoordinatorPanel
+          settings={settings}
+          models={models}
+          onModelChange={onCoordinatorModelChange}
+          onHitlChange={onHitlChange}
+          onMaxIterationsChange={onMaxIterationsChange}
+        />
+      );
+    }
+    return (
+      <SubagentPanel
+        role={category}
+        settings={settings}
+        models={models}
+        onModelChange={(v) => updateRoleModel(category, v)}
+        onOverrideChange={(v) => updateRoleOverride(category, v)}
+      />
+    );
+  };
+
+  if (!isDesktop && activeCategory === null) {
+    return (
+      <MobileCategoryIndex onSelect={setActiveCategory} />
+    );
+  }
+
+  if (!isDesktop && activeCategory !== null) {
+    return (
+      <MobileCategoryDetail
+        category={activeCategory}
+        onBack={() => setActiveCategory(null)}
+      >
+        {renderPanel(activeCategory)}
+      </MobileCategoryDetail>
+    );
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[640px] p-0">
-        <DialogTitle className="sr-only">Partition settings</DialogTitle>
-        <div className="flex h-[460px]">
-          <div className="flex-1 p-6 overflow-auto">
-            <h3 className="text-lg font-medium mb-4">{CATEGORIES[active].label}</h3>
-            {active === "general" ? (
-              <GeneralPanel
-                settings={settings}
-                onChange={(next) =>
-                  settings &&
-                  applyOptimistic("general", next, "Failed to save settings")
-                }
-              />
-            ) : active === "coordinator" ? (
-              <CoordinatorPanel
-                settings={settings}
-                models={models}
-                onModelChange={onCoordinatorModelChange}
-                onHitlChange={onHitlChange}
-                onMaxIterationsChange={onMaxIterationsChange}
-              />
-            ) : (
-              <SubagentPanel
-                role={active}
-                settings={settings}
-                models={models}
-                onModelChange={(v) => updateRoleModel(active, v)}
-                onOverrideChange={(v) => updateRoleOverride(active, v)}
-              />
-            )}
-          </div>
-          <nav
-            className="w-14 md:w-44 border-l flex flex-col gap-1 pt-12 pb-3"
-            aria-label="Settings categories"
-          >
-            {ORDER.map((cat) => {
-              const meta = CATEGORIES[cat];
-              const Icon = meta.icon;
-              const isActive = cat === active;
-              return (
-                <button
-                  key={cat}
-                  type="button"
-                  onClick={() => setActive(cat)}
-                  aria-label={meta.label}
-                  className={cn(
-                    "mx-2 flex items-center gap-2 rounded-md px-2 py-2 text-sm text-left",
-                    isActive ? "bg-muted" : "hover:bg-muted/50",
-                  )}
-                >
-                  <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  <span className="hidden md:inline">{meta.label}</span>
-                </button>
-              );
-            })}
-          </nav>
+    <div className="flex min-h-0 flex-1">
+      <CategorySidebar active={desktopActive} onSelect={setDesktopActive} />
+      <main className="min-w-0 flex-1 overflow-auto">
+        <div className="mx-auto max-w-6xl px-4 py-8">
+          <h1 className="mb-6 border-b border-border pb-4 text-2xl font-semibold">
+            {CATEGORIES[desktopActive].label}
+          </h1>
+          {renderPanel(desktopActive)}
         </div>
-      </DialogContent>
-    </Dialog>
+      </main>
+    </div>
+  );
+}
+
+function CategorySidebar({
+  active,
+  onSelect,
+}: {
+  active: SettingsCategory;
+  onSelect: (category: SettingsCategory) => void;
+}) {
+  return (
+    <nav
+      aria-label="Settings categories"
+      className="w-56 shrink-0 border-r border-border py-4"
+    >
+      {TOP_ORDER.map((cat) => (
+        <SidebarItem
+          key={cat}
+          category={cat}
+          active={active}
+          onSelect={onSelect}
+        />
+      ))}
+      <div className="px-3 pb-1 pt-4 text-xs font-semibold text-muted-foreground">
+        Subagents
+      </div>
+      {SUBAGENT_ORDER.map((cat) => (
+        <SidebarItem
+          key={cat}
+          category={cat}
+          active={active}
+          onSelect={onSelect}
+        />
+      ))}
+    </nav>
+  );
+}
+
+function SidebarItem({
+  category,
+  active,
+  onSelect,
+}: {
+  category: SettingsCategory;
+  active: SettingsCategory;
+  onSelect: (category: SettingsCategory) => void;
+}) {
+  const meta = CATEGORIES[category];
+  const Icon = meta.icon;
+  const isActive = category === active;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(category)}
+      className={cn(
+        "flex w-full items-center gap-2 border-l-2 px-3 py-2 text-left text-sm",
+        isActive
+          ? "border-attention bg-muted text-foreground"
+          : "border-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+      )}
+    >
+      <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+      {meta.label}
+    </button>
+  );
+}
+
+function MobileCategoryIndex({
+  onSelect,
+}: {
+  onSelect: (category: SettingsCategory) => void;
+}) {
+  return (
+    <div className="min-h-0 flex-1 overflow-auto">
+      <div className="px-4 py-6">
+        <h1 className="mb-2 text-2xl font-semibold">Settings</h1>
+        <div className="mt-4">
+          {TOP_ORDER.map((cat) => (
+            <MobileCategoryRow
+              key={cat}
+              category={cat}
+              onSelect={onSelect}
+            />
+          ))}
+          <div className="px-0 pb-1 pt-4 text-xs font-semibold text-muted-foreground">
+            Subagents
+          </div>
+          {SUBAGENT_ORDER.map((cat) => (
+            <MobileCategoryRow
+              key={cat}
+              category={cat}
+              onSelect={onSelect}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MobileCategoryRow({
+  category,
+  onSelect,
+}: {
+  category: SettingsCategory;
+  onSelect: (category: SettingsCategory) => void;
+}) {
+  const meta = CATEGORIES[category];
+  const Icon = meta.icon;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(category)}
+      className="flex w-full items-center gap-3 border-b border-border py-3 text-left"
+    >
+      <Icon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <span className="flex-1 text-sm">{meta.label}</span>
+      <ChevronRightIcon
+        className="h-4 w-4 shrink-0 text-muted-foreground"
+        aria-hidden="true"
+      />
+    </button>
+  );
+}
+
+function MobileCategoryDetail({
+  category,
+  onBack,
+  children,
+}: {
+  category: SettingsCategory;
+  onBack: () => void;
+  children: React.ReactNode;
+}) {
+  const meta = CATEGORIES[category];
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="sticky top-0 z-10 flex shrink-0 items-center gap-3 border-b border-border bg-background px-4 py-3">
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="Back to settings"
+          className="inline-flex items-center text-link"
+        >
+          <ArrowLeftIcon className="h-4 w-4" aria-hidden="true" />
+        </button>
+        <span className="text-sm font-medium text-foreground">{meta.label}</span>
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto px-4 py-6">{children}</div>
+    </div>
   );
 }
 

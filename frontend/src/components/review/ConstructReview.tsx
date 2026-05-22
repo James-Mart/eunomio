@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CircleAlert } from "lucide-react";
+import { AlertIcon } from "@primer/octicons-react";
 import { toast } from "sonner";
 
 import {
@@ -152,7 +152,7 @@ export default function ConstructReview({
       )}
       {blocked ? (
         <Alert variant="destructive">
-          <CircleAlert className="h-4 w-4" />
+          <AlertIcon className="h-4 w-4" />
           <AlertTitle>Constructor blocked</AlertTitle>
           <AlertDescription>{payload.reason}</AlertDescription>
         </Alert>

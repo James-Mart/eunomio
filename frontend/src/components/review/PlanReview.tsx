@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CircleAlert, PauseCircle } from "lucide-react";
+import { AlertIcon, StopIcon } from "@primer/octicons-react";
 import { toast } from "sonner";
 
 import { api, type Plan, type PartitionStrategy } from "@/lib/api";
@@ -74,7 +74,7 @@ export default function PlanReview({
     <div className="space-y-3">
       {isIndivisible ? (
         <Alert>
-          <CircleAlert className="h-4 w-4" />
+          <AlertIcon className="h-4 w-4" />
           <AlertTitle>Planner declined to split</AlertTitle>
           <AlertDescription className="space-y-2">
             <p>{plan.rationale}</p>
@@ -86,7 +86,7 @@ export default function PlanReview({
         </Alert>
       ) : (
         <Alert>
-          <PauseCircle className="h-4 w-4" />
+          <StopIcon className="h-4 w-4" />
           <AlertTitle>Plan ready for review</AlertTitle>
           <AlertDescription>
             Accept the plan to start constructing, or re-run with feedback.

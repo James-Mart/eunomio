@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { processFile, type FileDiffMetadata } from "@pierre/diffs";
 import { FileDiff, Virtualizer } from "@pierre/diffs/react";
 import { FileTree, useFileTree, useFileTreeSelection } from "@pierre/trees/react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon } from "@primer/octicons-react";
 
 import {
   ApiError,
@@ -22,7 +22,7 @@ import {
   ResizablePanelGroup,
   useDefaultLayout,
 } from "@/components/ui/resizable";
-import { Skeleton } from "@/components/ui/skeleton";
+import { DiffPaneSkeleton } from "@/components/session/DiffPaneSkeleton";
 import { useIsDesktop } from "@/lib/useIsDesktop";
 import { cn, cssEscape } from "@/lib/utils";
 
@@ -253,7 +253,7 @@ export default function EdgePane(props: Props) {
   }
 
   if (!edge) {
-    return <EdgePaneSkeleton />;
+    return <DiffPaneSkeleton />;
   }
 
   if (fileDiffs.length === 0) {
@@ -311,7 +311,7 @@ export default function EdgePane(props: Props) {
               onClick={onWrapperClick}
               className={cn(
                 "my-2 overflow-hidden rounded-md",
-                activeFilePath === file.name && "border-2 border-[#388bfd]",
+                activeFilePath === file.name && "border-2 border-link",
               )}
             >
               <FileDiff
@@ -330,9 +330,9 @@ export default function EdgePane(props: Props) {
                     className="inline-flex h-5 w-5 items-center justify-center text-muted-foreground"
                   >
                     {isCollapsed ? (
-                      <ChevronRight className="h-4 w-4" />
+                      <ChevronRightIcon className="h-4 w-4" />
                     ) : (
-                      <ChevronDown className="h-4 w-4" />
+                      <ChevronDownIcon className="h-4 w-4" />
                     )}
                   </span>
                 )}
@@ -412,32 +412,6 @@ function SegmentedToggle<T extends string>({
           </button>
         );
       })}
-    </div>
-  );
-}
-
-function EdgePaneSkeleton() {
-  return (
-    <div className="flex h-full w-full">
-      <div className="hidden md:flex w-64 shrink-0 flex-col gap-2 border-r p-3">
-        {Array.from({ length: 8 }).map((_, i) => (
-          <Skeleton
-            key={i}
-            className="h-4"
-            style={{ width: `${60 + ((i * 13) % 35)}%` }}
-          />
-        ))}
-      </div>
-      <div className="flex-1 min-w-0 space-y-4 p-3">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} className="space-y-2">
-            <Skeleton className="h-6 w-1/3" />
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-5/6" />
-            <Skeleton className="h-4 w-2/3" />
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

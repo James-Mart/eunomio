@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { XIcon } from "@primer/octicons-react";
 import { useSearchParams } from "react-router-dom";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -33,7 +33,7 @@ export default function SessionNotFoundBanner() {
         className="absolute right-4 top-4 rounded-sm p-1 opacity-80 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-destructive"
         aria-label="Dismiss session not found"
       >
-        <X className="h-4 w-4" />
+        <XIcon className="h-4 w-4" />
       </button>
     </Alert>
   );
