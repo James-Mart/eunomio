@@ -11,10 +11,8 @@ your responsibility.
    target file contents with `git show {{TARGET_TREE}}:<path>`. You
    determine the set of files in scope yourself; no path list is passed
    in.
-2. Run `git rev-parse HEAD^{tree}` and confirm it equals
-   `{{BEFORE_TREE}}`. Do **not** compare `git rev-parse HEAD` — that is
-   a commit object, not a tree. If the trees differ, output
-   `BLOCKED: worktree baseline mismatch`.
+2. Verify the worktree baseline (see **Baseline verification** below). If
+   the trees differ, output `BLOCKED: worktree baseline mismatch`.
 3. Apply the slice to your cwd using whatever edits are needed under
    the strategy's scope and source-of-truth rules below. Edit only
    files inside your cwd.
@@ -25,6 +23,20 @@ your responsibility.
    revise accordingly.
 6. Print exactly `OK` on success, or `BLOCKED: <reason>` if the slice
    cannot be built under the rules.
+
+## Baseline verification
+
+`{{BEFORE_TREE}}` and `{{TARGET_TREE}}` are **tree object SHAs**, not
+commits. Verify the worktree like this:
+
+```bash
+git rev-parse HEAD^{tree}
+```
+
+Confirm the output equals `{{BEFORE_TREE}}` exactly.
+
+Only output `BLOCKED: worktree baseline mismatch` when
+`git rev-parse HEAD^{tree}` does not equal `{{BEFORE_TREE}}`.
 
 ## Inputs
 
