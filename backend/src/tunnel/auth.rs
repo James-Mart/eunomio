@@ -7,8 +7,8 @@ use axum::{
 };
 use uuid::Uuid;
 
-const SHARE_COOKIE: &str = "eunomia_share_token";
-const SHARE_QUERY: &str = "eunomia_token";
+const SHARE_COOKIE: &str = "eunomio_share_token";
+const SHARE_QUERY: &str = "eunomio_token";
 
 pub(super) async fn check_token(
     State(token): State<Uuid>,

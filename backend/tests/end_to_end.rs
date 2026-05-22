@@ -55,14 +55,14 @@ async fn happy_path_create_rename_branch() {
         .auth_json(
             "POST",
             &format!("/api/sessions/{session_id}/nodes/{final_node_id}/branch"),
-            json!({ "branchName": "eunomia-test" }),
+            json!({ "branchName": "eunomio-test" }),
         )
         .await;
     assert_eq!(status, StatusCode::OK, "branch body: {body}");
 
     let log = git(
         &repo,
-        &["log", "--format=%H %T %s", "eunomia-test"],
+        &["log", "--format=%H %T %s", "eunomio-test"],
     );
     let lines: Vec<&str> = log.lines().collect();
     assert_eq!(lines.len(), 2, "expected 2 commits, got: {log}");
@@ -80,7 +80,7 @@ async fn happy_path_create_rename_branch() {
         .auth_json(
             "POST",
             &format!("/api/sessions/{session_id}/nodes/{final_node_id}/branch"),
-            json!({ "branchName": "eunomia-test" }),
+            json!({ "branchName": "eunomio-test" }),
         )
         .await;
     assert_eq!(status, StatusCode::CONFLICT, "expected conflict body: {body}");
@@ -89,7 +89,7 @@ async fn happy_path_create_rename_branch() {
         .auth_json(
             "POST",
             &format!("/api/sessions/{session_id}/nodes/{final_node_id}/branch"),
-            json!({ "branchName": "eunomia-test", "force": true }),
+            json!({ "branchName": "eunomio-test", "force": true }),
         )
         .await;
     assert_eq!(status, StatusCode::OK);
@@ -108,6 +108,6 @@ async fn happy_path_create_rename_branch() {
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 
-    let branch_log = git(&repo, &["log", "--format=%H", "eunomia-test"]);
+    let branch_log = git(&repo, &["log", "--format=%H", "eunomio-test"]);
     assert!(!branch_log.is_empty(), "user branch must survive deletion");
 }

@@ -31,7 +31,7 @@ import {
   type View,
 } from "./layout";
 
-const nodeTypes: NodeTypes = { eunomia: NodeCard };
+const nodeTypes: NodeTypes = { eunomio: NodeCard };
 
 type Props = {
   layout: SessionLayout;

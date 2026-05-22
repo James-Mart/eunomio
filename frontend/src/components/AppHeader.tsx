@@ -13,7 +13,7 @@ export default function AppHeader() {
   return (
     <header className="shrink-0 border-b border-border bg-header">
       <div className="flex h-12 items-center gap-3 px-4">
-        <Link to="/" aria-label="Eunomia home" className="shrink-0">
+        <Link to="/" aria-label="Eunomio home" className="shrink-0">
           <BrandMark className="text-xl" />
         </Link>
         <div className="h-6 w-px shrink-0 bg-border" aria-hidden="true" />

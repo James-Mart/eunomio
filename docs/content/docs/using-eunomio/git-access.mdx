@@ -3,7 +3,7 @@ title: Git access
 description: Local paths, network remotes, and credentials.
 ---
 
-Eunomia shells out to `git` on your `PATH` for every repository operation. It does not implement its own credential layer — auth behaves exactly like running `git` in your shell.
+Eunomio shells out to `git` on your `PATH` for every repository operation. It does not implement its own credential layer — auth behaves exactly like running `git` in your shell.
 
 ## Session repository modes
 
@@ -12,7 +12,7 @@ Each session specifies a **repository** (local path or remote URL) at create tim
 | Mode | Git root | Branch create |
 | --- | --- | --- |
 | **Local path** | Your working tree in-place | Supported |
-| **Network remote** | Managed bare clone under `~/.eunomia/repos/` | Not supported (no push) |
+| **Network remote** | Managed bare clone under `~/.eunomio/repos/` | Not supported (no push) |
 
 ## Public vs private remotes
 
@@ -31,4 +31,4 @@ Creating a branch from a node walks back to base and rebuilds commits with `git 
 
 ## Repo hints
 
-When you open the create-session form, eunomia may prefill suggested remote URL and refs from your current working directory via `GET /api/repo`. These are hints only — not server state.
+When you open the create-session form, eunomio may prefill suggested remote URL and refs from your current working directory via `GET /api/repo`. These are hints only — not server state.

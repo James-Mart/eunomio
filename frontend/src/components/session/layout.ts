@@ -88,13 +88,13 @@ export function originalLayout(chain: Chain): OriginalLayout | null {
   const nodes: Node<NodeCardData>[] = [
     {
       id: finalNode.nodeId,
-      type: "eunomia",
+      type: "eunomio",
       position: { x: NODE_X, y: 0 },
       data: { positionLabel: "final" },
     },
     {
       id: baseNode.nodeId,
-      type: "eunomia",
+      type: "eunomio",
       position: { x: NODE_X, y: NODE_Y_STEP },
       data: { positionLabel: "base" },
     },
@@ -145,7 +145,7 @@ export function canonicalLayout(
   const total = chain.ordered.length;
   const nodes: Node<NodeCardData>[] = chain.ordered.map((n, idx) => ({
     id: n.nodeId,
-    type: "eunomia",
+    type: "eunomio",
     position: { x: NODE_X, y: (total - 1 - idx) * NODE_Y_STEP },
     data: {
       positionLabel: chain.positionByNodeId.get(n.nodeId) ?? "",
@@ -224,19 +224,19 @@ export function candidateLayout(
       nodes: [
         {
           id: parent.nodeId,
-          type: "eunomia",
+          type: "eunomio",
           position: { x: NODE_X, y: 2 * NODE_Y_STEP },
           data: { positionLabel: parentLabel },
         },
         {
           id: candidateSlice.nodeId,
-          type: "eunomia",
+          type: "eunomio",
           position: { x: NODE_X, y: NODE_Y_STEP },
           data: { positionLabel: sliceLabel },
         },
         {
           id: renamedTarget.nodeId,
-          type: "eunomia",
+          type: "eunomio",
           position: { x: NODE_X, y: 0 },
           data: { positionLabel: targetLabel },
         },
@@ -269,13 +269,13 @@ export function candidateLayout(
     nodes: [
       {
         id: target.nodeId,
-        type: "eunomia",
+        type: "eunomio",
         position: { x: NODE_X, y: 0 },
         data: { positionLabel: targetLabel },
       },
       {
         id: parent.nodeId,
-        type: "eunomia",
+        type: "eunomio",
         position: { x: NODE_X, y: 2 * NODE_Y_STEP },
         data: { positionLabel: parentLabel },
       },

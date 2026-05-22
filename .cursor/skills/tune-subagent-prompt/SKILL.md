@@ -1,11 +1,11 @@
 ---
 name: tune-subagent-prompt
-description: Orchestrate survey subagent prompt tuning via eunomia subagent-run, prompt-analyst critique, and tuning-log.json. Kickoff requires kind, targetNodeId, and hitl (true|false).
+description: Orchestrate survey subagent prompt tuning via eunomio subagent-run, prompt-analyst critique, and tuning-log.json. Kickoff requires kind, targetNodeId, and hitl (true|false).
 ---
 
 # Tune subagent prompt
 
-Iteratively tune an Eunomia subagent prompt for **survey** runs (`kind: survey`). API and CLI support all kinds; this skill workflow is survey-only in v1.
+Iteratively tune an Eunomio subagent prompt for **survey** runs (`kind: survey`). API and CLI support all kinds; this skill workflow is survey-only in v1.
 
 ## Kickoff parameters
 
@@ -17,13 +17,13 @@ Iteratively tune an Eunomia subagent prompt for **survey** runs (`kind: survey`)
 
 ## Two HITL concepts
 
-- **Partition HITL** (Eunomia settings): always enable survey HITL in Step 0 so the partition parks at `awaiting_review` for re-runs.
+- **Partition HITL** (Eunomio settings): always enable survey HITL in Step 0 so the partition parks at `awaiting_review` for re-runs.
 - **Skill HITL** (`hitl` kickoff flag): when `true`, stop after each orchestrator verdict and ask the human to confirm or override before acting.
 
 ## Prerequisites
 
-- Eunomia server running (default `http://127.0.0.1:3001`).
-- Repo root is the Eunomia project (for embedded prompts and CLI).
+- Eunomio server running (default `http://127.0.0.1:3001`).
+- Repo root is the Eunomio project (for embedded prompts and CLI).
 
 ## Step 0 — begin partition
 
@@ -54,7 +54,7 @@ Set `partitionId`, `hitl`, and seed `currentPrompt` from `GET /api/subagent-prom
 2. Run CLI (no `userFeedback`):
 
 ```bash
-eunomia subagent-run \
+eunomio subagent-run \
   --base-url http://127.0.0.1:3001 \
   --partition-id <partitionId> \
   --kind survey \

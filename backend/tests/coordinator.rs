@@ -1,10 +1,10 @@
 use async_trait::async_trait;
 use axum::http::StatusCode;
-use eunomia::cursor_bridge::{
+use eunomio::cursor_bridge::{
     FakeSubagentRunner, HelperEvent, RunHandle, RunRequest, SubagentRunner,
 };
-use eunomia::error::AppError;
-use eunomia::types::{PhaseName, PhaseState, SseEvent};
+use eunomio::error::AppError;
+use eunomio::types::{PhaseName, PhaseState, SseEvent};
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use std::sync::Arc;
@@ -1800,8 +1800,8 @@ async fn prompt_override_appears_in_transcript_prompt() {
 
 #[tokio::test]
 async fn subagent_run_cli_smoke() {
-    use eunomia::cli::subagent_run::{run, SubagentRunArgs};
-    use eunomia::types::RunKind;
+    use eunomio::cli::subagent_run::{run, SubagentRunArgs};
+    use eunomio::types::RunKind;
 
     let runner = Arc::new(FakeSubagentRunner::new(vec![
         survey_script(),

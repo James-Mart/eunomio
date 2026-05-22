@@ -234,7 +234,7 @@ export class ApiError extends Error {
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = { "X-Eunomia-Request": "1" };
+  const headers: Record<string, string> = { "X-Eunomio-Request": "1" };
   if (body !== undefined) headers["content-type"] = "application/json";
   const init: RequestInit = {
     method,

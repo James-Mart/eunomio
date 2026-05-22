@@ -1,7 +1,7 @@
-use eunomia::db;
-use eunomia::error::AppError;
-use eunomia::repo::{node, partition, run, session, tree};
-use eunomia::types::{PartitionStrategy, PhaseName, PhaseState, RunKind};
+use eunomio::db;
+use eunomio::error::AppError;
+use eunomio::repo::{node, partition, run, session, tree};
+use eunomio::types::{PartitionStrategy, PhaseName, PhaseState, RunKind};
 use pretty_assertions::assert_eq;
 use uuid::Uuid;
 
@@ -20,7 +20,7 @@ struct Fixture {
     run_id: String,
 }
 
-async fn seed_fixture(state: &eunomia::state::AppState) -> Fixture {
+async fn seed_fixture(state: &eunomio::state::AppState) -> Fixture {
     let (org_id, user_id) = insert_local_fixture(state).await;
     let session_id = Uuid::new_v4().to_string();
     let base_node_id = Uuid::new_v4().to_string();

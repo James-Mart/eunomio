@@ -2,7 +2,7 @@ use crate::{db, error::AppError, state::AppState};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use getrandom::getrandom;
 
-pub const COOKIE_NAME: &str = "eunomia_local_session";
+pub const COOKIE_NAME: &str = "eunomio_local_session";
 pub const ABSOLUTE_LIFETIME_SECS: i64 = 30 * 24 * 60 * 60;
 pub const IDLE_LIFETIME_SECS: i64 = 7 * 24 * 60 * 60;
 

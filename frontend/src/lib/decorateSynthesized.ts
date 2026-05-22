@@ -1,22 +1,22 @@
 import type { FileLineRanges } from "@/lib/api";
 import { cssEscape } from "@/lib/utils";
 
-const SYNTH_WRAP_CLASS = "eunomia-synthesized";
-const SYNTH_LINE_ATTR = "data-eunomia-synthesized";
-const SYNTH_GUTTER_ATTR = "data-eunomia-synthesized-gutter";
+const SYNTH_WRAP_CLASS = "eunomio-synthesized";
+const SYNTH_LINE_ATTR = "data-eunomio-synthesized";
+const SYNTH_GUTTER_ATTR = "data-eunomio-synthesized-gutter";
 
 const STICKY_HEADER_CSS =
   "[data-diffs-header] { position: sticky; top: 0; z-index: 5; cursor: pointer; background-color: var(--diffs-bg-separator); border-bottom: 1px solid var(--diffs-bg-buffer); }";
 
 // Per-word shimmer + per-line gutter glyph injected into each FileDiff's shadow
 // DOM via the library's `unsafeCSS` option. Decoration spans we create at
-// post-render are wrapped in `.eunomia-synthesized`; matching gutter cells get
-// `data-eunomia-synthesized-gutter`.
+// post-render are wrapped in `.eunomio-synthesized`; matching gutter cells get
+// `data-eunomio-synthesized-gutter`.
 const SYNTHESIZED_CSS =
-  ".eunomia-synthesized{display:inline;background-image:linear-gradient(100deg,hsl(var(--synth)/0) 0%,hsl(var(--synth)/0.16) 25%,hsl(var(--synth)/0.45) 50%,hsl(var(--synth)/0.16) 75%,hsl(var(--synth)/0) 100%);background-size:300% 100%;background-repeat:no-repeat;background-position:200% 0;animation:eunomia-shimmer 3.5s linear infinite;border-radius:1px;}" +
-  "@keyframes eunomia-shimmer{0%{background-position:200% 0;}100%{background-position:-100% 0;}}" +
-  "[data-eunomia-synthesized-gutter]{position:relative;}" +
-  "[data-eunomia-synthesized-gutter]::after{content:'\\2731';position:absolute;right:2px;top:50%;transform:translateY(-50%);font-size:0.7em;line-height:1;color:hsl(var(--synth-muted));pointer-events:none;}";
+  ".eunomio-synthesized{display:inline;background-image:linear-gradient(100deg,hsl(var(--synth)/0) 0%,hsl(var(--synth)/0.16) 25%,hsl(var(--synth)/0.45) 50%,hsl(var(--synth)/0.16) 75%,hsl(var(--synth)/0) 100%);background-size:300% 100%;background-repeat:no-repeat;background-position:200% 0;animation:eunomio-shimmer 3.5s linear infinite;border-radius:1px;}" +
+  "@keyframes eunomio-shimmer{0%{background-position:200% 0;}100%{background-position:-100% 0;}}" +
+  "[data-eunomio-synthesized-gutter]{position:relative;}" +
+  "[data-eunomio-synthesized-gutter]::after{content:'\\2731';position:absolute;right:2px;top:50%;transform:translateY(-50%);font-size:0.7em;line-height:1;color:hsl(var(--synth-muted));pointer-events:none;}";
 
 const UNMODIFIED_LINES_CSS =
   "[data-separator=line-info] [data-separator-content]," +
@@ -55,7 +55,7 @@ export function buildLookup(files: FileLineRanges[]): SpanLookup {
 // styles and DOM from outside don't reach in. The library exposes
 // `onPostRender(node, instance)` after each render pass; we walk
 // `node.shadowRoot` and wrap synthesized character ranges in spans tagged with
-// `.eunomia-synthesized`, then mark matching gutter cells.
+// `.eunomio-synthesized`, then mark matching gutter cells.
 export function decorateFileContainer(
   node: HTMLElement,
   childForFile: Map<number, LineSpans> | undefined,

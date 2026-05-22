@@ -1,7 +1,7 @@
 use axum::http::{header, Request, StatusCode};
 use axum::body::Body;
-use eunomia::auth::session::{ABSOLUTE_LIFETIME_SECS, COOKIE_NAME, IDLE_LIFETIME_SECS};
-use eunomia::db;
+use eunomio::auth::session::{ABSOLUTE_LIFETIME_SECS, COOKIE_NAME, IDLE_LIFETIME_SECS};
+use eunomio::db;
 use pretty_assertions::assert_eq;
 
 mod common;
@@ -11,7 +11,7 @@ use common::{
     TEST_USERNAME,
 };
 
-async fn count_auth_events(state: &eunomia::state::AppState, event_type: &str) -> i64 {
+async fn count_auth_events(state: &eunomio::state::AppState, event_type: &str) -> i64 {
     state
         .db
         .call({
@@ -29,7 +29,7 @@ async fn count_auth_events(state: &eunomia::state::AppState, event_type: &str) -
         .unwrap()
 }
 
-async fn count_auth_sessions(state: &eunomia::state::AppState) -> i64 {
+async fn count_auth_sessions(state: &eunomio::state::AppState) -> i64 {
     state
         .db
         .call(|conn| {
@@ -94,7 +94,7 @@ async fn login_creates_session_cookie() {
         .uri("/api/auth/login")
         .header(header::HOST, "127.0.0.1")
         .header("content-type", "application/json")
-        .header("X-Eunomia-Request", "1")
+        .header("X-Eunomio-Request", "1")
         .body(Body::from(
             serde_json::to_vec(&serde_json::json!({
                 "username": TEST_USERNAME,

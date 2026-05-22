@@ -105,7 +105,7 @@ pub fn router(state: AppState) -> Router {
 pub async fn serve(state: AppState, port: u16) -> Result<()> {
     let app = router(state.clone());
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    tracing::info!("eunomia listening on http://{}", addr);
+    tracing::info!("eunomio listening on http://{}", addr);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;
     Ok(())

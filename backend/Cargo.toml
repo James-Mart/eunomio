@@ -1,10 +1,10 @@
 [package]
-name = "eunomia"
+name = "eunomio"
 version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "eunomia"
+name = "eunomio"
 path = "src/main.rs"
 
 [dependencies]

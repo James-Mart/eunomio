@@ -129,7 +129,7 @@ export default function MobileShareCard() {
             <CardTitle className="text-base font-semibold">Continue on mobile</CardTitle>
           </div>
           <CardDescription className="text-xs">
-            Scan a QR code on your phone to access this Eunomia instance remotely. Warning:
+            Scan a QR code on your phone to access this Eunomio instance remotely. Warning:
             the link grants full control, not just view access.
             {status && !status.tokenRequired && (
               <>
@@ -158,7 +158,7 @@ export default function MobileShareCard() {
             <DialogTitle>Continue on mobile</DialogTitle>
             <DialogDescription>
               Scan this with your phone&rsquo;s camera. Anyone with this link has full control
-              of this repo&rsquo;s Eunomia instance &mdash; they can view diffs, accept or
+              of this repo&rsquo;s Eunomio instance &mdash; they can view diffs, accept or
               abandon partitions, change settings, and trigger API-billing runs.
             </DialogDescription>
           </DialogHeader>
@@ -292,7 +292,7 @@ function ModalBody({ status }: { status: TunnelStatus | null }) {
 function buildShareUrl(url: string, token: string | null): string {
   const base = url.endsWith("/") ? url.slice(0, -1) : url;
   if (token === null) return `${base}/`;
-  return `${base}/?eunomia_token=${token}`;
+  return `${base}/?eunomio_token=${token}`;
 }
 
 async function copy(text: string) {

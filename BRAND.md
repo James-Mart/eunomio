@@ -417,9 +417,9 @@ A strong developer-oriented product execution is:
 
 When in doubt: simplify, use the grid, preserve contrast, show useful product structure, and add one developer-native detail rather than five decorative ones.
 
-## 17. Product UI tokens (eunomia implementation)
+## 17. Product UI tokens (eunomio implementation)
 
-The eunomia frontend implements these guidelines with a concrete token system in `frontend/src/tokens.css`:
+The eunomio frontend implements these guidelines with a concrete token system in `frontend/src/tokens.css`:
 
 | Token / asset | Value / role |
 | --- | --- |
@@ -430,7 +430,7 @@ The eunomia frontend implements these guidelines with a concrete token system in
 | `--success` | `#3fb950` (Primer) — done/open lifecycle and status (not primary buttons) |
 | `--attention` | `#d29922` — running/warning states, active tab underline |
 | `--danger` | `#f85149` — errors, blocked states |
-| `--synth` / `--synth-muted` | Purple — AI-synthesized diff hunks (eunomia-specific) |
+| `--synth` / `--synth-muted` | Purple — AI-synthesized diff hunks (eunomio-specific) |
 | Typography | Mona Sans (`@fontsource/mona-sans`) |
 | Icons | Octicons (`@primer/octicons-react`) |
 | Header | `#010409` surface (`--header-bg`); tier 1: logo + `owner / repo` breadcrumb; session routes show mono `baseRef ← sourceRef` (emphasis on sourceRef); tier 2: underline **Session \| Settings** tabs |

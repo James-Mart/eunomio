@@ -1,7 +1,7 @@
 use crate::error::AppError;
 use axum::{extract::Request, middleware::Next, response::Response};
 
-const CSRF_HEADER: &str = "X-Eunomia-Request";
+const CSRF_HEADER: &str = "X-Eunomio-Request";
 
 pub async fn require_csrf_header(req: Request, next: Next) -> Result<Response, AppError> {
     let method = req.method().clone();

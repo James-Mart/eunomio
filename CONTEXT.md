@@ -1,11 +1,11 @@
-# Eunomia
+# Eunomio
 
 A standalone tool for turning a noisy "ref A → ref B" diff into a clean, reviewable commit history by exploring a graph of synthesized commits.
 
 ## Language
 
 **Session**:
-One Eunomia working context, scoped to a `(remote, baseRef, sourceRef)` triple.
+One Eunomio working context, scoped to a `(remote, baseRef, sourceRef)` triple.
 
 **Remote**:
 The normalized repository identity for a Session (`local:` + path or `remote:` + network URL). Network remotes get a managed bare clone under the state directory; local paths are used in-place.
@@ -15,7 +15,7 @@ _Avoid_: REPO_ROOT, host repo.
 Optional cwd-detected form prefills from `GET /api/repo` (`suggestedRemoteUrl`, `suggestedSourceRef`, `suggestedBaseRef`). Not server state.
 
 **State directory**:
-`~/.eunomia/` by default. Holds the SQLite database, managed bare clones (`repos/`), and every Partition's worktree. Shared across all Sessions.
+`~/.eunomio/` by default. Holds the SQLite database, managed bare clones (`repos/`), and every Partition's worktree. Shared across all Sessions.
 
 **Partition worktree**:
 The detached git worktree owned by a single pending Partition. The only place subagents are ever allowed to write. Each Partition has its own, so Constructors from different Partitions are mutually isolated.
@@ -96,7 +96,7 @@ The folded text stream of a subagent **Run**'s chain-of-thought and tool-call ma
 The subagent that writes to a Partition's worktree to build the Slice the Planner identified. The only writable subagent. Returns either `OK` or `BLOCKED: <reason>` on a single line.
 
 **Partition settings**:
-User-global configuration that applies to every Partition across every Session for this user. Stored as a single JSON file under the **State directory** (`~/.eunomia/settings.json`), not on the `sessions` row. Structured by subagent role (Surveyor / Planner / Constructor) plus Coordinator. The Coordinator owns the three HITL flags (`afterSurvey`, `afterPlanning`, `afterConstruct`) and the default model that applies to every subagent unless overridden on the subagent's own tab.
+User-global configuration that applies to every Partition across every Session for this user. Stored as a single JSON file under the **State directory** (`~/.eunomio/settings.json`), not on the `sessions` row. Structured by subagent role (Surveyor / Planner / Constructor) plus Coordinator. The Coordinator owns the three HITL flags (`afterSurvey`, `afterPlanning`, `afterConstruct`) and the default model that applies to every subagent unless overridden on the subagent's own tab.
 
 **Phase**:
 A stage of a Partition — `Survey`, `Plan`, or `Construct`. The Coordinator drives the Partition through phases in this fixed order. Phases are the granularity at which Review gates apply.

@@ -7,7 +7,7 @@ commit, or change refs.
 
 1. Run `git diff --histogram {{BEFORE_TREE}} {{TARGET_TREE}}` to read the
    full diff. Histogram produces smaller, more readable hunks on
-   code-movement diffs and is the canonical algorithm for Eunomia.
+   code-movement diffs and is the canonical algorithm for Eunomio.
 2. Use `git show {{TARGET_TREE}}:<path>` and `git ls-tree -r {{TARGET_TREE}}`
    to inspect any file's target content. Your cwd is a git worktree whose
    `.git` resolves both trees.

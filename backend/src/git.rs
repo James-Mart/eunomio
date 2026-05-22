@@ -262,11 +262,11 @@ mod repo_name_tests {
     #[test]
     fn parses_https_remote() {
         assert_eq!(
-            repo_name_from_remote_url("https://github.com/psibase/eunomia.git"),
-            "eunomia.git"
+            repo_name_from_remote_url("https://github.com/psibase/eunomio.git"),
+            "eunomio.git"
         );
         assert_eq!(
-            repo_owner_from_remote_url("https://github.com/psibase/eunomia.git"),
+            repo_owner_from_remote_url("https://github.com/psibase/eunomio.git"),
             Some("psibase".to_string())
         );
     }
@@ -274,11 +274,11 @@ mod repo_name_tests {
     #[test]
     fn parses_scp_style_remote() {
         assert_eq!(
-            repo_name_from_remote_url("git@github.com:James-Mart/eunomia.git"),
-            "eunomia.git"
+            repo_name_from_remote_url("git@github.com:James-Mart/eunomio.git"),
+            "eunomio.git"
         );
         assert_eq!(
-            repo_owner_from_remote_url("git@github.com:James-Mart/eunomia.git"),
+            repo_owner_from_remote_url("git@github.com:James-Mart/eunomio.git"),
             Some("James-Mart".to_string())
         );
     }
@@ -286,11 +286,11 @@ mod repo_name_tests {
     #[test]
     fn parses_ssh_url_remote() {
         assert_eq!(
-            repo_name_from_remote_url("ssh://git@github.com/psibase/eunomia.git"),
-            "eunomia.git"
+            repo_name_from_remote_url("ssh://git@github.com/psibase/eunomio.git"),
+            "eunomio.git"
         );
         assert_eq!(
-            repo_owner_from_remote_url("ssh://git@github.com/psibase/eunomia.git"),
+            repo_owner_from_remote_url("ssh://git@github.com/psibase/eunomio.git"),
             Some("psibase".to_string())
         );
     }

@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
-#[command(name = "eunomia", version, about = "Eunomia commit-review server", args_conflicts_with_subcommands = true)]
+#[command(name = "eunomio", version, about = "Eunomio commit-review server", args_conflicts_with_subcommands = true)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -15,7 +15,7 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// Run one subagent against a partition and print transcript JSON
-    SubagentRun(eunomia::cli::subagent_run::SubagentRunArgs),
+    SubagentRun(eunomio::cli::subagent_run::SubagentRunArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -50,13 +50,13 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,eunomia=info")),
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,eunomio=info")),
         )
         .init();
 
     let cli = Cli::parse();
     match cli.command {
-        Some(Commands::SubagentRun(args)) => eunomia::cli::subagent_run::run(args).await,
+        Some(Commands::SubagentRun(args)) => eunomio::cli::subagent_run::run(args).await,
         None => serve(cli.serve).await,
     }
 }
@@ -64,17 +64,17 @@ async fn main() -> Result<()> {
 async fn serve(args: ServeArgs) -> Result<()> {
     let data_dir = args
         .data_dir
-        .or_else(|| dirs::home_dir().map(|h| h.join(".eunomia")))
+        .or_else(|| dirs::home_dir().map(|h| h.join(".eunomio")))
         .context("could not determine data dir; pass --data-dir")?;
 
-    tracing::info!(data_dir = %data_dir.display(), port = args.port, "starting eunomia");
+    tracing::info!(data_dir = %data_dir.display(), port = args.port, "starting eunomio");
 
     if args.new {
-        let db_path = data_dir.join("eunomia.db");
+        let db_path = data_dir.join("eunomio.db");
         for suffix in ["", "-wal", "-shm"] {
             let p = db_path.with_file_name(format!(
                 "{}{}",
-                db_path.file_name().and_then(|n| n.to_str()).unwrap_or("eunomia.db"),
+                db_path.file_name().and_then(|n| n.to_str()).unwrap_or("eunomio.db"),
                 suffix
             ));
             match tokio::fs::remove_file(&p).await {
@@ -93,7 +93,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
 
     let tunnel_enabled = args.enable_tunnel || args.dev_tunnel;
 
-    let state = eunomia::state::build_state(
+    let state = eunomio::state::build_state(
         data_dir,
         launch_key_hint,
         tunnel_enabled,
@@ -104,7 +104,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
     if tunnel_enabled {
         match state
             .tunnel
-            .start(eunomia::server::router(state.clone()))
+            .start(eunomio::server::router(state.clone()))
             .await
         {
             Ok(dto) => {
@@ -121,5 +121,5 @@ async fn serve(args: ServeArgs) -> Result<()> {
         }
     }
 
-    eunomia::server::serve(state, args.port).await
+    eunomio::server::serve(state, args.port).await
 }

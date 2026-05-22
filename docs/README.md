@@ -1,4 +1,4 @@
-# Eunomia documentation site
+# Eunomio documentation site
 
 User-facing docs built with [Fumadocs](https://fumadocs.dev) and Next.js. This file is for contributors only — it is not published on the site.
 

@@ -1,4 +1,4 @@
-# Eunomia
+# Eunomio
 
 Turn a noisy "ref A → ref B" diff into a clean, reviewable commit history by exploring a graph of AI-assisted, human-supervised commits.
 
@@ -19,7 +19,7 @@ Build the release binary:
 
 ```bash
 npm run build
-# → target/release/eunomia
+# → target/release/eunomio
 ```
 
 ## Maintainer docs

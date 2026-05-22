@@ -35,7 +35,7 @@ await build({
 
 // Native bindings can't ride inside the SEA blob (Node SEA only embeds JS, and
 // loading a `.node` requires it to live on disk for `process.dlopen`). We copy
-// them into `dist/` so they get embedded into the eunomia Rust binary by
+// them into `dist/` so they get embedded into the eunomio Rust binary by
 // rust-embed and extracted next to `cursor-helper` at runtime. See
 // `helper/src/bindings-loader.cjs` for the runtime loader.
 const nativeBindings = [

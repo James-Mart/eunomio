@@ -84,7 +84,7 @@ pub async fn build_state_with_options(opts: BuildStateOptions) -> Result<AppStat
     tokio::fs::create_dir_all(&opts.data_dir)
         .await
         .with_context(|| format!("create_dir_all {}", opts.data_dir.display()))?;
-    let db = db::open(&opts.data_dir.join("eunomia.db")).await?;
+    let db = db::open(&opts.data_dir.join("eunomio.db")).await?;
     let keystore = KeyStore::new(opts.data_dir.clone(), opts.launch_key_hint);
     let tunnel = TunnelRegistry::new(opts.data_dir.clone(), opts.tunnel_enabled, opts.dev_tunnel);
     let subagents = load_subagents()?;

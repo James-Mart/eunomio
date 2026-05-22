@@ -1,4 +1,4 @@
-use eunomia::credentials::KeyStore;
+use eunomio::credentials::KeyStore;
 use pretty_assertions::assert_eq;
 use std::path::PathBuf;
 use tempfile::TempDir;

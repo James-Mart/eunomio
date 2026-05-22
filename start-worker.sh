@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Start a Cursor Agent private cloud worker for this repo (display name: eunomia).
+# Start a Cursor Agent private cloud worker for this repo (display name: eunomio).
 # Requires the `cursor`/`agent` CLI.
 # This script intentionally uses the "My Machines" flow (not self-hosted pool).
 # Auth modes:
 #   1) Default: user login (recommended) via `agent login`
 #   2) Explicit API key (fallback): ./start-worker.sh --api-key <key>
-#      or EUNOMIA_WORKER_API_KEY=<key> ./start-worker.sh
+#      or EUNOMIO_WORKER_API_KEY=<key> ./start-worker.sh
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-API_KEY="${EUNOMIA_WORKER_API_KEY:-}"
+API_KEY="${EUNOMIO_WORKER_API_KEY:-}"
 
 usage() {
   cat <<'EOF'
@@ -65,10 +65,10 @@ if [[ -n "$API_KEY" ]]; then
   exec env -u CURSOR_API_KEY cursor agent --api-key "$API_KEY" worker \
     --worker-dir "$SCRIPT_DIR" \
     start \
-    --name eunomia
+    --name eunomio
 fi
 
 exec env -u CURSOR_API_KEY cursor agent worker \
   --worker-dir "$SCRIPT_DIR" \
   start \
-  --name eunomia
+  --name eunomio

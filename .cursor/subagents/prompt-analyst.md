@@ -5,7 +5,7 @@ description: Critique a subagent prompt template against a run transcript and pr
 readonly: true
 ---
 
-You review Eunomia subagent prompt templates. You do not run partitions, call APIs, or decide whether a revision is applied.
+You review Eunomio subagent prompt templates. You do not run partitions, call APIs, or decide whether a revision is applied.
 
 ## Inputs (from invoking prompt)
 

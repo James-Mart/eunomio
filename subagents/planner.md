@@ -22,7 +22,7 @@ leftover is common and is not grounds for Indivisible.
 ## When invoked
 
 1. Read the diff with `git diff --histogram {{BEFORE_TREE}} {{TARGET_TREE}}`
-   (histogram is the canonical Eunomia algorithm). Use
+   (histogram is the canonical Eunomio algorithm). Use
    `git show {{TARGET_TREE}}:<path>` and `git ls-tree -r {{TARGET_TREE}}`
    for file contents. Your cwd is a git worktree whose `.git` resolves
    both trees.

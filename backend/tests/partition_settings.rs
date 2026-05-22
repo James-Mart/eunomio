@@ -1,5 +1,5 @@
 use axum::http::StatusCode;
-use eunomia::partition_settings;
+use eunomio::partition_settings;
 use pretty_assertions::assert_eq;
 
 mod common;

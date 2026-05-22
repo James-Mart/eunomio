@@ -73,7 +73,7 @@ export default function Login({ onSuccess }: Props) {
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Sign in</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Local account for this Eunomia instance.
+              Local account for this Eunomio instance.
             </p>
           </div>
         </div>

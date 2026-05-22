@@ -38,12 +38,12 @@ async fn bare_clone_resolves_origin_prefixed_refs() {
         ],
     );
 
-    let mb = eunomia::git::merge_base(&bare, "origin/main", "origin/feature")
+    let mb = eunomio::git::merge_base(&bare, "origin/main", "origin/feature")
         .await
         .expect("merge-base with origin/ refs");
     assert_eq!(mb.len(), 40);
 
-    let resolved = eunomia::git::resolve_ref_name(&bare, "origin/feature")
+    let resolved = eunomio::git::resolve_ref_name(&bare, "origin/feature")
         .await
         .expect("resolve origin/feature");
     assert_eq!(resolved, "feature");

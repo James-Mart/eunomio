@@ -3,11 +3,11 @@ use axum::{
     http::{header, Request, StatusCode},
     Router,
 };
-use eunomia::auth::session::COOKIE_NAME;
-use eunomia::cursor_bridge::SubagentRunner;
-use eunomia::repo::{org, user};
-use eunomia::server::router;
-use eunomia::state::{build_state, build_state_with_options, build_state_with_runner, AppState, BuildStateOptions};
+use eunomio::auth::session::COOKIE_NAME;
+use eunomio::cursor_bridge::SubagentRunner;
+use eunomio::repo::{org, user};
+use eunomio::server::router;
+use eunomio::state::{build_state, build_state_with_options, build_state_with_runner, AppState, BuildStateOptions};
 use http_body_util::BodyExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -17,7 +17,7 @@ use tower::ServiceExt;
 
 pub const TEST_USERNAME: &str = "testuser";
 pub const TEST_CURSOR_KEY: &str = "test-cursor-key";
-const CSRF_HEADER: &str = "X-Eunomia-Request";
+const CSRF_HEADER: &str = "X-Eunomio-Request";
 
 #[allow(dead_code)]
 pub struct TestApp {

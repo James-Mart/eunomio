@@ -18,8 +18,8 @@ pub struct SubagentRunArgs {
     #[arg(long)]
     pub prompt_file: Option<PathBuf>,
 
-    /// Session cookie value (`eunomia_local_session=…`) for authenticated API calls.
-    #[arg(long, env = "EUNOMIA_SESSION_COOKIE")]
+    /// Session cookie value (`eunomio_local_session=…`) for authenticated API calls.
+    #[arg(long, env = "EUNOMIO_SESSION_COOKIE")]
     pub session_cookie: Option<String>,
 }
 
@@ -51,11 +51,11 @@ pub async fn run(args: SubagentRunArgs) -> Result<()> {
     let cookie = args
         .session_cookie
         .as_deref()
-        .context("session cookie required; pass --session-cookie or set EUNOMIA_SESSION_COOKIE")?;
+        .context("session cookie required; pass --session-cookie or set EUNOMIO_SESSION_COOKIE")?;
 
     let run_resp: serde_json::Value = client
         .post(format!("{base}/api/partitions/{}/runs", args.partition_id))
-        .header("X-Eunomia-Request", "1")
+        .header("X-Eunomio-Request", "1")
         .header("Cookie", cookie)
         .json(&body)
         .send()

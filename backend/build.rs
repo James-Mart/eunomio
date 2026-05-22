@@ -1,14 +1,14 @@
 use std::path::PathBuf;
 
 fn main() {
-    println!("cargo:rerun-if-env-changed=EUNOMIA_HELPER_BINARY");
+    println!("cargo:rerun-if-env-changed=EUNOMIO_HELPER_BINARY");
     let manifest_dir =
         PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let dist = manifest_dir.join("../helper/dist");
     std::fs::create_dir_all(&dist).expect("create helper/dist");
     let target = dist.join("cursor-helper");
 
-    if let Ok(src) = std::env::var("EUNOMIA_HELPER_BINARY") {
+    if let Ok(src) = std::env::var("EUNOMIO_HELPER_BINARY") {
         let src_path = PathBuf::from(&src);
         println!("cargo:rerun-if-changed={}", src_path.display());
         if src_path.exists() {
@@ -23,7 +23,7 @@ fn main() {
             }
         } else {
             println!(
-                "cargo:warning=EUNOMIA_HELPER_BINARY={} does not exist; cursor-helper will be missing",
+                "cargo:warning=EUNOMIO_HELPER_BINARY={} does not exist; cursor-helper will be missing",
                 src
             );
         }
