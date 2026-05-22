@@ -1,47 +1,195 @@
-# Architecture (dev mode + remote viewing)
+# Architecture
 
-Two layers of "live reload" in dev — Vite HMR for the UI, cargo-watch for the backend — plus an in-app cloudflared tunnel for sharing the UI on the public internet. Dev reload and the tunnel are independent: restarting either side does not affect the other.
+Maintainer reference for how eunomia is built and how it behaves at runtime. User-facing documentation lives in [`docs/`](docs/) (run `npm run dev:docs`). Canonical terminology is in [`CONTEXT.md`](CONTEXT.md).
+
+---
+
+## Dev mode and run modes
+
+Two layers of live reload in dev — Vite HMR for the UI, cargo-watch for the backend — plus an optional in-app cloudflared tunnel for sharing the UI on the public internet. Dev reload and the tunnel are independent.
 
 ```mermaid
 flowchart LR
-  browser["browser<br/>(your laptop)"]
-  vite["vite dev server<br/>:5173<br/>(HMR, /api proxy)"]
-  rust["eunomia (axum)<br/>:3001<br/>cargo-watch restarts on .rs change"]
-  repo[("per-session git root<br/>(local path or managed clone)")]
-  state[("~/.eunomia/<br/>sqlite + repos + worktrees")]
+  browser["browser"]
+  vite["vite :5173"]
+  rust["eunomia axum :3001"]
+  repo[("git root")]
+  state[("~/.eunomia/")]
 
-  browser -->|"http"| vite
-  vite -->|"/api/* proxy"| rust
+  browser --> vite
+  vite -->|"/api proxy"| rust
   rust --> repo
   rust --> state
 ```
 
-## What lives where
+| Process | Port | Restarts on… |
+| --- | --- | --- |
+| `vite` | 5173 | `frontend/src/**` → HMR |
+| `eunomia` (axum) | 3001 | `backend/src/**` or `Cargo.toml` → cargo-watch |
 
-| Process          | Port | Restarts on…                                                                                 | Owned by |
-| ---------------- | ---- | -------------------------------------------------------------------------------------------- | -------- |
-| `vite`           | 5173 | `frontend/src/**` change → in-browser HMR (no full reload)                                   | `dev.sh` |
-| `eunomia` (axum) | 3001 | `backend/src/**` or `backend/Cargo.toml` change → cargo-watch kills + relaunches the process | `dev.sh` |
+Restarting the backend leaves Vite running — the browser sees a brief 502 until axum is back.
 
-Restarting `eunomia` (the most common dev event) leaves Vite running — the browser sees a brief 502 until axum is back up and the HMR socket recovers on its own.
+### State directory
 
-## State
+- `~/.eunomia/eunomia.db` — SQLite (orgs, users, org_memberships, auth_sessions, auth_events; tenant tables carry `org_id` and authorship `user_id`)
+- `~/.eunomia/last_username` — last logged-in username (login form default)
+- `~/.eunomia/users/<userId>/credentials` — per-user BYOK Cursor API key (mode `0600`)
+- `~/.eunomia/users/<userId>/settings.json` — per-user partition settings
+- `~/.eunomia/repos/<slug>/` — managed bare clones for network-remote sessions
+- `~/.eunomia/worktrees/<sessionId>/<partitionId>/worktree/` — one detached worktree per pending partition
+- `~/.eunomia/bin/cloudflared` — auto-downloaded on first tunnel use if not on `$PATH`
 
-- `~/.eunomia/eunomia.db` — SQLite, shared across all sessions.
-- `~/.eunomia/repos/<slug>/` — managed bare clones for network-remote sessions.
-- `~/.eunomia/worktrees/<sessionId>/<partitionId>/worktree/` — detached git worktrees, one per pending Partition.
-- `~/.eunomia/bin/cloudflared` — auto-downloaded when the user first starts the in-app tunnel (skipped if `cloudflared` is on `$PATH`).
-- Each session carries its own repository identity (local path or remote URL); the server can start from any directory.
+### Run modes
 
-## Auth
+- **Dev** (`npm run dev`) — Vite on :5173 with `/api` proxy; open `http://localhost:5173`, not :3001
+- **Single-binary** (`target/release/eunomia`) — UI embedded via `rust-embed`; one port, one process; use `--enable-tunnel` for sharing
 
-Eunomia binds `127.0.0.1` only and has no application-level auth for the local user — the OS is the trust boundary.
+Hosted deployment design is documented separately in [`HOSTED_DEPLOYMENT.md`](HOSTED_DEPLOYMENT.md).
 
-For remote viewing, the home page's "Continue on mobile" card opens a Cloudflare quick tunnel from inside the binary and produces a QR/link containing a per-session share token. Tunnel sharing requires `--enable-tunnel` (or `--dev-tunnel` in dev). The tunnel terminates on a second loopback listener that checks the token via middleware, sets an `HttpOnly` cookie on first hit, then proxies the request through the normal router. See [`docs/adr/0003-public-url-token-tunnel.md`](docs/adr/0003-public-url-token-tunnel.md) for the rationale and the rejected alternatives (Caddy basic auth, Cloudflare Access).
+---
 
-The in-app tunnel is most useful in single-binary mode (below), where the same axum process serves the embedded frontend on the same port. In dev mode the tunnel exposes only `/api/*` (Vite is a separate process), so for sharing-while-iterating, run the single-binary build instead.
+## Security and trust
 
-## Two run modes (recap)
+Eunomia runs on the user's workstation against their own repositories.
 
-- **Dev** (`./dev.sh`) — Vite serves the UI on :5173 with HMR; cargo-watch keeps eunomia auto-restarting on Rust changes; Vite's proxy bridges `/api` into the running backend. **Open `http://localhost:5173`**, not :3001.
-- **Single-binary** (`eunomia`) — frontend assets are baked in via `rust-embed` at `cargo build --release` time. One port, one process. Use this for prod, smoke tests, or sharing via the in-app tunnel (`--enable-tunnel`). No HMR.
+### Auth (local mode)
+
+Local mode uses an org/user model with a singleton org (`id = 'local'`). Multiple user profiles can share one data directory; sessions are visible org-wide.
+
+- **Session cookie** — `eunomia_local_session` (opaque server-side ID in `auth_sessions`; 30-day absolute + 7-day idle expiry; refreshed on each authenticated request)
+- **Principal** — `CurrentPrincipal { user_id, org_id, role, username }` injected by `require_principal` middleware on every protected handler via a custom `FromRequestParts` extractor
+- **BYOK credentials** — per-user Cursor API key at `users/<userId>/credentials`; optional one-time `CURSOR_API_KEY` env hint offered on first login (never sent to the browser)
+- **Per-user settings** — partition settings at `users/<userId>/settings.json`
+- **CSRF** — mutating requests require `X-Eunomia-Request: 1` (same contract as hosted)
+- **Audit** — `auth_events` rows written in-transaction with login, logout, credentials changes, and session rotation
+- **Helper transport** — Cursor API key passed to the helper subprocess via stdin JSON, not environment (closes `/proc/<pid>/environ` leak channel)
+- **API tokens / bearer headless auth** — not implemented (deferred)
+
+Public routes: `GET /api/auth/setup`, `POST /api/auth/login`, `GET /api/me`. All other `/api/*` routes require a valid session cookie.
+
+Future hosted/OAuth shape: [`HOSTED_DEPLOYMENT.md`](HOSTED_DEPLOYMENT.md).
+
+```mermaid
+sequenceDiagram
+  participant Browser
+  participant HostGuard
+  participant CSRF
+  participant AuthMW as require_principal
+  participant Handler
+
+  Browser->>HostGuard: request
+  HostGuard->>CSRF: loopback Host/Origin OK
+  alt mutating verb
+    CSRF->>CSRF: X-Eunomia-Request present
+  end
+  alt protected route
+    CSRF->>AuthMW: valid session cookie
+    AuthMW->>Handler: CurrentPrincipal in extensions
+  else public auth route
+    CSRF->>Handler: no principal required
+  end
+```
+
+### Local trust model
+
+The HTTP listener binds `127.0.0.1` only. The local OS user remains the outer trust boundary — any process as that user can read SQLite, credentials files, and worktrees. Application auth separates user profiles within the data directory and prepares hosted deployment.
+
+A host guard middleware rejects requests whose `Host` or `Origin` header is not `127.0.0.1`, `localhost`, or `[::1]`. This closes CSRF from arbitrary sites and DNS-rebinding reads. The guard applies to every method, including SSE.
+
+### Tunnel
+
+Tunnel sharing is disabled by default. Pass `--enable-tunnel` (release binary) or `--dev-tunnel` (dev only) to enable.
+
+When enabled, `POST /api/tunnel` opens a second listener with token-checking middleware and exposes it via `cloudflared`. **The share token grants full admin access** — view diffs, accept/abandon partitions, change settings, trigger billed runs. User session cookie and `X-Eunomia-Request` CSRF header are still required for all API access via the tunnel listener (share token is an additional gate on the tunnel only).
+
+- Rotate: `DELETE /api/tunnel` then `POST /api/tunnel`; old tokens stop immediately
+- Tokens may appear in Cloudflare edge logs at first hit
+- Full token is only returned on the host-gated local listener; SSE subscribers get a redacted DTO
+- `--dev-tunnel` enables sharing against Vite :5173, skips the share-token gate, auto-starts at boot — see [`docs/adr/0003-public-url-token-tunnel.md`](docs/adr/0003-public-url-token-tunnel.md)
+
+The in-app tunnel is most useful in single-binary mode. In dev, the tunnel exposes only `/api/*` (Vite is separate).
+
+### Subagents are unsandboxed
+
+Subagents run via the embedded `cursor-helper` Node binary with eunomia's filesystem and network access. Prompt-injected agents can read secrets, write outside partition worktrees, or exfiltrate data.
+
+Future direction: cloud-hosted Cursor agents would sandbox execution; not implemented today (`helper/src/run.mjs` uses `local: { cwd }`).
+
+### Cloudflared binary
+
+When `cloudflared` is not on `$PATH`, eunomia downloads a pinned release, SHA-256 verifies against embedded hashes, and extracts before execution. Mismatch deletes the download and returns `cloudflared_sha_mismatch`. See [`backend/src/tunnel.rs`](backend/src/tunnel.rs) for pin/upgrade procedure.
+
+### Reporting
+
+Open a GitHub issue with reproduction details. No coordinated disclosure process yet.
+
+---
+
+## Domain model (implementation)
+
+High-level mental model for maintainers. User-facing explanations are in the docs site.
+
+### Virtual node graph
+
+A **Session** owns a linear chain of **Nodes** from `base` to `final`. **Edges** are derived diffs between a node and its parent. **Partitions** are the only graph-mutating primitive — each inserts one **Slice** node and reparents the target.
+
+Seed nodes use fresh `git commit-tree` objects decoupled from the user's branch history. Position labels (`base`, `1`, `2`, …, `final`) recompute at render; **Titles** are commit subjects on branch creation.
+
+Pending partitions expose a **candidate view** (2-node during survey/plan, 3-node at construct review). Accepting one partition on a target auto-abandons sibling partitions on that target. No leaf-alternative preservation — see [`docs/adr/0002-partition-mutation-no-leaf-alternative.md`](docs/adr/0002-partition-mutation-no-leaf-alternative.md).
+
+### Partition lifecycle
+
+Three subagents under a **Coordinator**: Surveyor (read-only survey) → Planner (strategy + two edge descriptions) → Constructor (writes partition worktree; returns `OK` or `BLOCKED: reason`).
+
+HITL gates: `afterSurvey`, `afterPlanning`, `afterConstruct` — all default on. Forward-only except re-plan from construct review or `BLOCKED`.
+
+Partition row fields include `phase`, `phase_state`, accepted survey/plan JSON, candidate slice tree+commit SHA, and `worktree_path`. Row deleted on accept or abandon.
+
+### Git mechanics
+
+- Intermediate commits are loose objects; `nodes.commit_sha` and partition candidate SHAs keep them reachable
+- Per-partition worktree: `<DATA_DIR>/worktrees/<sessionId>/<partitionId>/worktree/`, added detached at parent commit, removed on terminal action
+- Constructor OK: capture worktree via `write-tree` + `commit-tree`, reset worktree to parent for re-runs
+- Acceptance: insert slice node, rewrite target parent+title, abandon siblings, remove worktree
+- Abandon: SIGTERM in-flight helper, remove worktree, delete partition + runs rows
+- Branch creation: walk node → base, rebuild commits with `commit-tree` using node titles; never mutates graph
+
+### Subagents
+
+Prompts in `subagents/<role>.md`, embedded via `rust-embed`. Backend modules per role; Coordinator dispatches by `RunKind` without inspecting output shapes.
+
+| Agent | Writes | Output |
+| --- | --- | --- |
+| Surveyor | nothing | `ChangeSurvey` JSON |
+| Planner | nothing | `Plan` JSON (strategy + exactly two edges) |
+| Constructor | partition worktree | `OK` or `BLOCKED: reason` |
+
+Diffs use `git diff --histogram`. Strategy rules constrain Constructor scope (Synthetic vs Vertical vs Horizontal).
+
+### Persistent state
+
+SQLite tables: `sessions`, `nodes`, `partitions`, `runs`. Pre-release schema is malleable — update `CREATE TABLE` in [`backend/src/db.rs`](backend/src/db.rs) and wipe with `eunomia --new`. No migration shims.
+
+Partition settings live in `~/.eunomia/settings.json` (global per user), not on the session row.
+
+### HTTP surface (summary)
+
+Axum app scoped per session and partition. Key routes:
+
+- Session CRUD, `GET /api/repo` hints
+- Graph + edge diffs, generic tree diff for candidate view
+- Partition begin/accept/abandon, runs, survey/plan/construct accept
+- `POST .../nodes/:nodeId/branch` — branch from graph node
+- `GET .../events` SSE for run lifecycle
+
+Many partitions may be pending on the same target; at most one run in flight per `partition_id`.
+
+### UI shape
+
+React + Vite. Graph pane (`@xyflow/react`) with canonical chain + candidate dropdown. Left pane tabs: Diff, Info (editable title), Branch (local sessions only), Partition (lifecycle stepper + review components per subagent).
+
+---
+
+## Cursor SDK bridge
+
+The Rust binary invokes `@cursor/sdk` via an embedded Node SEA helper subprocess. See [`docs/adr/0001-cursor-sdk-bridge.md`](docs/adr/0001-cursor-sdk-bridge.md).

@@ -11,13 +11,13 @@ export type SessionEvent =
       type: "started";
       sessionId: string;
       targetNodeId: string;
-      partitionId: number;
+      partitionId: string;
     }
   | {
       type: "phase";
       sessionId: string;
       targetNodeId: string;
-      partitionId: number;
+      partitionId: string;
       name: PhaseName;
       state: PhaseState;
       payload?: unknown;
@@ -26,27 +26,27 @@ export type SessionEvent =
       type: "transcriptDelta";
       sessionId: string;
       targetNodeId: string;
-      partitionId: number;
-      runId: number;
+      partitionId: string;
+      runId: string;
       text: string;
     }
   | {
       type: "finished";
       sessionId: string;
       targetNodeId: string;
-      partitionId: number;
+      partitionId: string;
     }
   | {
       type: "cancelled";
       sessionId: string;
       targetNodeId: string;
-      partitionId: number;
+      partitionId: string;
     }
   | {
       type: "error";
       sessionId: string;
       targetNodeId: string;
-      partitionId: number;
+      partitionId: string;
       code: string;
       message: string;
     };

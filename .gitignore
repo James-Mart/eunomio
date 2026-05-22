@@ -8,3 +8,6 @@ plans/
 *.log
 .DS_Store
 .cursor/tuning-log.json
+docs/node_modules/
+docs/.next/
+docs/.source/

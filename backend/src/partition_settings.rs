@@ -1,48 +1,46 @@
-use crate::{error::AppError, types::*};
+use crate::{error::AppError, state::AppState, types::*};
 use anyhow::{Context, Result};
-use std::path::PathBuf;
-use std::sync::Arc;
-use tokio::sync::RwLock;
+use std::path::{Path, PathBuf};
 
-#[derive(Clone)]
-pub struct PartitionSettingsStore {
-    path: Arc<PathBuf>,
-    inner: Arc<RwLock<PartitionSettings>>,
+pub fn user_settings_path(data_dir: &Path, user_id: &str) -> PathBuf {
+    data_dir.join("users").join(user_id).join("settings.json")
 }
 
-impl PartitionSettingsStore {
-    pub async fn load(path: PathBuf) -> Result<Self> {
-        let value = read_or_init(&path).await?;
-        Ok(Self {
-            path: Arc::new(path),
-            inner: Arc::new(RwLock::new(value)),
-        })
-    }
+/// Load partition settings for a user from their settings file.
+pub async fn load_for_user(data_dir: &Path, user_id: &str) -> Result<PartitionSettings, AppError> {
+    let user_path = user_settings_path(data_dir, user_id);
+    read_or_init(&user_path)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("{e}")))
+}
 
-    pub async fn snapshot(&self) -> PartitionSettings {
-        self.inner.read().await.clone()
-    }
-
-    pub async fn apply_patch(
-        &self,
-        patch: PartitionSettingsPatch,
-    ) -> Result<PartitionSettings, AppError> {
-        let mut guard = self.inner.write().await;
-        let mut merged = guard.clone();
-        merged.apply_patch(patch);
-        let serialized = serde_json::to_string_pretty(&merged)
-            .map_err(|e| AppError::Internal(anyhow::anyhow!("serializing settings: {e}")))?;
-        if let Some(parent) = self.path.parent() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_err(|e| AppError::Internal(anyhow::anyhow!("creating settings dir: {e}")))?;
-        }
-        tokio::fs::write(&*self.path, serialized.as_bytes())
+pub async fn save_for_user(
+    data_dir: &Path,
+    user_id: &str,
+    settings: &PartitionSettings,
+) -> Result<(), AppError> {
+    let path = user_settings_path(data_dir, user_id);
+    let serialized = serde_json::to_string_pretty(settings)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("serializing settings: {e}")))?;
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
             .await
-            .map_err(|e| AppError::Internal(anyhow::anyhow!("writing settings: {e}")))?;
-        *guard = merged.clone();
-        Ok(merged)
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("creating settings dir: {e}")))?;
     }
+    tokio::fs::write(&path, serialized.as_bytes())
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("writing settings: {e}")))?;
+    Ok(())
+}
+
+/// Resolve settings for a partition via partition → session → user_id.
+pub async fn load_for_partition(
+    state: &AppState,
+    org_id: &str,
+    session_id: &str,
+) -> Result<PartitionSettings, AppError> {
+    let user_id = crate::repo::session::user_id(state, org_id, session_id).await?;
+    load_for_user(&state.data_dir, &user_id).await
 }
 
 async fn read_or_init(path: &PathBuf) -> Result<PartitionSettings> {

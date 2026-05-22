@@ -15,6 +15,8 @@ pub enum CreateOutcome {
 
 pub async fn create(
     state: &AppState,
+    org_id: &str,
+    user_id: &str,
     dto: CreateSessionRequest,
 ) -> Result<(Session, CreateOutcome), AppError> {
     let CreateSessionRequest {
@@ -27,13 +29,14 @@ pub async fn create(
 
     if let Some(existing) = repo::session::find_by_refs(
         state,
+        org_id,
         &parsed.normalized_remote,
         &base_ref,
         &source_ref,
     )
     .await?
     {
-        let session = repo::session::get(state, &existing.id)
+        let session = repo::session::get(state, org_id, &existing.id)
             .await?
             .ok_or(AppError::NotFound)?;
         return Ok((session, CreateOutcome::Existed));
@@ -49,6 +52,8 @@ pub async fn create(
 
     repo::session::insert_seed_nodes(
         state,
+        org_id.to_string(),
+        user_id.to_string(),
         session_id.clone(),
         parsed.normalized_remote.clone(),
         parsed.literal_remote.clone(),
@@ -65,26 +70,28 @@ pub async fn create(
     )
     .await?;
 
-    let session = repo::session::get(state, &session_id)
+    let session = repo::session::get(state, org_id, &session_id)
         .await?
         .ok_or(AppError::Internal(anyhow::anyhow!("session missing after insert")))?;
 
     Ok((session, CreateOutcome::Created))
 }
 
-pub async fn delete(state: &AppState, session_id: &str) -> Result<(), AppError> {
-    let fields = repo::session::repo_fields(state, session_id).await?;
-    let git_root = repo::session::git_root(state, session_id).await?;
+pub async fn delete(state: &AppState, org_id: &str, session_id: &str) -> Result<(), AppError> {
+    let fields = repo::session::repo_fields(state, org_id, session_id).await?;
+    let git_root = repo::session::git_root(state, org_id, session_id).await?;
 
-    let partition_worktrees = repo::session::list_partition_worktrees(state, session_id).await?;
+    let partition_worktrees =
+        repo::session::list_partition_worktrees(state, org_id, session_id).await?;
     for wt_path in &partition_worktrees {
         let path = std::path::PathBuf::from(wt_path);
         crate::worktree::teardown(&git_root, &path).await;
     }
 
-    repo::session::delete_cascade(state, session_id).await?;
+    repo::session::delete_cascade(state, org_id, session_id).await?;
 
-    let remaining = repo::session::count_for_normalized(state, &fields.normalized_remote).await?;
+    let remaining =
+        repo::session::count_for_normalized(state, org_id, &fields.normalized_remote).await?;
     repo_store::maybe_remove_clone(
         &state.data_dir,
         &fields.normalized_remote,

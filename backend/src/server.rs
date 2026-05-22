@@ -1,7 +1,9 @@
 use crate::{
+    auth::{auth_routes, public_auth_routes, require_csrf_header, require_principal, CurrentPrincipal},
     branching, edges, embed,
     error::AppError,
     middleware::host_guard,
+    partition_settings,
     repo, sessions, sse,
     state::AppState,
     types::*,
@@ -10,7 +12,7 @@ use anyhow::Result;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    middleware::from_fn_with_state,
+    middleware::{from_fn, from_fn_with_state},
     response::{sse::Event, IntoResponse, Sse},
     routing::{delete, get, patch, post},
     Json, Router,
@@ -21,7 +23,7 @@ use tower_http::trace::TraceLayer;
 
 pub use crate::state::{build_state, build_state_with_runner};
 
-pub fn router(state: AppState) -> Router {
+fn protected_routes() -> Router<AppState> {
     Router::new()
         .route("/api/sessions", post(create_session).get(list_sessions))
         .route(
@@ -84,13 +86,24 @@ pub fn router(state: AppState) -> Router {
             get(get_tunnel).post(start_tunnel).delete(stop_tunnel),
         )
         .route("/api/tunnel/events", get(tunnel_events))
+        .merge(auth_routes())
+}
+
+pub fn router(state: AppState) -> Router {
+    let protected = protected_routes().layer(from_fn_with_state(state.clone(), require_principal));
+
+    Router::new()
+        .merge(public_auth_routes())
+        .merge(protected)
         .fallback(embed::fallback)
         .layer(TraceLayer::new_for_http())
+        .layer(from_fn(require_csrf_header))
+        .layer(from_fn_with_state(state.clone(), host_guard))
         .with_state(state)
 }
 
 pub async fn serve(state: AppState, port: u16) -> Result<()> {
-    let app = router(state.clone()).layer(from_fn_with_state(state, host_guard));
+    let app = router(state.clone());
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     tracing::info!("eunomia listening on http://{}", addr);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
@@ -100,9 +113,11 @@ pub async fn serve(state: AppState, port: u16) -> Result<()> {
 
 async fn create_session(
     State(state): State<AppState>,
+    principal: CurrentPrincipal,
     Json(req): Json<CreateSessionRequest>,
 ) -> Result<(StatusCode, Json<Session>), AppError> {
-    let (session, outcome) = sessions::create(&state, req).await?;
+    let (session, outcome) =
+        sessions::create(&state, &principal.org_id, &principal.user_id, req).await?;
     let status = match outcome {
         sessions::CreateOutcome::Created => StatusCode::CREATED,
         sessions::CreateOutcome::Existed => StatusCode::OK,
@@ -112,23 +127,29 @@ async fn create_session(
 
 async fn list_sessions(
     State(state): State<AppState>,
+    principal: CurrentPrincipal,
 ) -> Result<Json<Vec<Session>>, AppError> {
-    Ok(Json(repo::session::list(&state).await?))
+    Ok(Json(repo::session::list(&state, &principal.org_id).await?))
 }
 
 async fn get_session(
     State(state): State<AppState>,
+    principal: CurrentPrincipal,
     Path(id): Path<String>,
 ) -> Result<Json<Session>, AppError> {
-    repo::session::get(&state, &id).await?.map(Json).ok_or(AppError::NotFound)
+    repo::session::get(&state, &principal.org_id, &id)
+        .await?
+        .map(Json)
+        .ok_or(AppError::NotFound)
 }
 
 async fn get_graph(
     State(state): State<AppState>,
+    principal: CurrentPrincipal,
     Path(id): Path<String>,
 ) -> Result<Json<Graph>, AppError> {
-    repo::session::ensure(&state, &id).await?;
-    let nodes = repo::node::list_for_session(&state, &id).await?;
+    repo::session::ensure(&state, &principal.org_id, &id).await?;
+    let nodes = repo::node::list_for_session(&state, &principal.org_id, &id).await?;
     if nodes.is_empty() {
         return Err(AppError::NotFound);
     }
@@ -146,19 +167,29 @@ async fn get_graph(
 
 async fn get_edge(
     State(state): State<AppState>,
+    principal: CurrentPrincipal,
     Path((session_id, target_node_id)): Path<(String, String)>,
 ) -> Result<Json<Edge>, AppError> {
     Ok(Json(
-        edges::load_edge_for_target(&state, &session_id, target_node_id).await?,
+        edges::load_edge_for_target(
+            &state,
+            &principal.org_id,
+            &session_id,
+            target_node_id,
+        )
+        .await?,
     ))
 }
 
 async fn get_diff(
     State(state): State<AppState>,
+    principal: CurrentPrincipal,
     Path(session_id): Path<String>,
     axum::extract::Query(q): axum::extract::Query<DiffQuery>,
 ) -> Result<Json<Diff>, AppError> {
-    let Some((base_tree, final_tree)) = repo::session::seed_trees(&state, &session_id).await? else {
+    let Some((base_tree, final_tree)) =
+        repo::session::seed_trees(&state, &principal.org_id, &session_id).await?
+    else {
         return Err(AppError::NotFound);
     };
     let mut trees_to_check: Vec<&str> = vec![&q.from_tree, &q.to_tree];
@@ -168,12 +199,18 @@ async fn get_diff(
     if let Some(ref r) = q.after_ref {
         trees_to_check.push(r);
     }
-    if !repo::tree::trees_known_in_session(&state, &session_id, &trees_to_check).await? {
+    if !repo::tree::trees_known_in_session(
+        &state,
+        &principal.org_id,
+        &session_id,
+        &trees_to_check,
+    )
+    .await? {
         return Err(AppError::NotFound);
     }
     let before_ref = q.before_ref.as_deref().unwrap_or(&base_tree);
     let after_ref = q.after_ref.as_deref().unwrap_or(&final_tree);
-    let git_root = repo::session::git_root(&state, &session_id).await?;
+    let git_root = repo::session::git_root(&state, &principal.org_id, &session_id).await?;
     let (diff, files, synthesized) = edges::render_edge_diff(
         &git_root,
         &q.from_tree,
@@ -193,27 +230,40 @@ async fn get_diff(
 
 async fn rename_node(
     State(state): State<AppState>,
+    principal: CurrentPrincipal,
     Path((session_id, node_id)): Path<(String, String)>,
     Json(req): Json<RenameNodeRequest>,
 ) -> Result<Json<GraphNode>, AppError> {
     if req.title.trim().is_empty() {
         return Err(AppError::BadRequest("title must be non-empty".into()));
     }
-    repo::session::ensure(&state, &session_id).await?;
-    repo::node::update_title(&state, &session_id, &node_id, &req.title)
-        .await?
-        .map(Json)
-        .ok_or(AppError::NotFound)
+    repo::session::ensure(&state, &principal.org_id, &session_id).await?;
+    repo::node::update_title(
+        &state,
+        &principal.org_id,
+        &session_id,
+        &node_id,
+        &req.title,
+    )
+    .await
+    .map(Json)
 }
 
 async fn branch_node(
     State(state): State<AppState>,
+    principal: CurrentPrincipal,
     Path((session_id, node_id)): Path<(String, String)>,
     Json(req): Json<BranchFromNodeRequest>,
 ) -> Result<Json<BranchFromNodeResponse>, AppError> {
-    let tip =
-        branching::branch_from_node(&state, &session_id, &node_id, &req.branch_name, req.force)
-            .await?;
+    let tip = branching::branch_from_node(
+        &state,
+        &principal.org_id,
+        &session_id,
+        &node_id,
+        &req.branch_name,
+        req.force,
+    )
+    .await?;
     Ok(Json(BranchFromNodeResponse {
         branch_name: req.branch_name,
         commit_sha: tip,
@@ -222,35 +272,44 @@ async fn branch_node(
 
 async fn get_partition_settings(
     State(state): State<AppState>,
+    principal: CurrentPrincipal,
 ) -> Result<Json<PartitionSettings>, AppError> {
-    Ok(Json(state.partition_settings.snapshot().await))
+    Ok(Json(
+        partition_settings::load_for_user(&state.data_dir, &principal.user_id).await?,
+    ))
 }
 
 async fn patch_partition_settings(
     State(state): State<AppState>,
+    principal: CurrentPrincipal,
     Json(patch): Json<PartitionSettingsPatch>,
 ) -> Result<Json<PartitionSettings>, AppError> {
-    let merged = state.partition_settings.apply_patch(patch).await?;
-    Ok(Json(merged))
+    let mut settings =
+        partition_settings::load_for_user(&state.data_dir, &principal.user_id).await?;
+    settings.apply_patch(patch);
+    partition_settings::save_for_user(&state.data_dir, &principal.user_id, &settings).await?;
+    Ok(Json(settings))
 }
 
 async fn get_cursor_models(
     State(state): State<AppState>,
+    principal: CurrentPrincipal,
 ) -> Result<Json<CursorModels>, AppError> {
-    if state.cursor_api_key.is_none() {
+    let has_key = state
+        .keystore
+        .get(&principal.user_id)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("reading cursor api key: {e}")))?
+        .is_some();
+    if !has_key {
         return Err(AppError::Unrecoverable {
             status: StatusCode::SERVICE_UNAVAILABLE,
             code: "cursor_sdk_unavailable".into(),
-            message: "CURSOR_API_KEY not configured".into(),
+            message: "Cursor API key not configured".into(),
         });
     }
-    let models = state
-        .cursor_models
-        .get_or_try_init(|| crate::cursor_bridge::list_models(&state))
-        .await?;
-    Ok(Json(CursorModels {
-        models: models.clone(),
-    }))
+    let models = crate::cursor_bridge::list_models(&state, &principal.user_id).await?;
+    Ok(Json(CursorModels { models }))
 }
 
 async fn get_subagent_prompts(State(state): State<AppState>) -> Json<SubagentDefaultPrompts> {
@@ -259,9 +318,11 @@ async fn get_subagent_prompts(State(state): State<AppState>) -> Json<SubagentDef
 
 async fn get_node_session(
     State(state): State<AppState>,
+    principal: CurrentPrincipal,
     Path(node_id): Path<String>,
 ) -> Result<Json<NodeSessionLookup>, AppError> {
-    let session_id = repo::node::session_for_node_id(&state, &node_id).await?;
+    let session_id =
+        repo::node::session_for_node_id(&state, &principal.org_id, &node_id).await?;
     Ok(Json(NodeSessionLookup { session_id }))
 }
 
@@ -311,113 +372,155 @@ async fn session_events(
 
 async fn delete_session(
     State(state): State<AppState>,
+    principal: CurrentPrincipal,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
-    sessions::delete(&state, &id).await?;
+    sessions::delete(&state, &principal.org_id, &id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
 async fn begin_partition(
     State(state): State<AppState>,
+    principal: CurrentPrincipal,
     Path((session_id, target_node_id)): Path<(String, String)>,
 ) -> Result<(StatusCode, Json<Partition>), AppError> {
     let partition = state
         .coordinator
-        .begin_partition(&state, &session_id, &target_node_id)
+        .begin_partition(&state, &principal.org_id, &session_id, &target_node_id)
         .await?;
     Ok((StatusCode::CREATED, Json(partition)))
 }
 
 async fn list_partitions(
     State(state): State<AppState>,
+    principal: CurrentPrincipal,
     Path(session_id): Path<String>,
     axum::extract::Query(q): axum::extract::Query<ListPartitionsQuery>,
 ) -> Result<Json<Vec<Partition>>, AppError> {
     let partitions = state
         .coordinator
-        .list_partitions(&state, &session_id, q.target_node_id.as_deref())
+        .list_partitions(
+            &state,
+            &principal.org_id,
+            &session_id,
+            q.target_node_id.as_deref(),
+        )
         .await?;
     Ok(Json(partitions))
 }
 
 async fn get_partition(
     State(state): State<AppState>,
-    Path(partition_id): Path<i64>,
+    principal: CurrentPrincipal,
+    Path(partition_id): Path<String>,
 ) -> Result<Json<Partition>, AppError> {
-    Ok(Json(state.coordinator.get_partition(&state, partition_id).await?))
+    Ok(Json(
+        state
+            .coordinator
+            .get_partition(&state, &principal.org_id, &partition_id)
+            .await?,
+    ))
 }
 
 async fn start_run(
     State(state): State<AppState>,
-    Path(partition_id): Path<i64>,
+    principal: CurrentPrincipal,
+    Path(partition_id): Path<String>,
     Json(req): Json<StartRunRequest>,
 ) -> Result<(StatusCode, Json<Run>), AppError> {
-    let run = state.coordinator.start_run(&state, partition_id, req).await?;
+    let run = state
+        .coordinator
+        .start_run(&state, &principal.org_id, &partition_id, req)
+        .await?;
     Ok((StatusCode::CREATED, Json(run)))
 }
 
 async fn list_runs(
     State(state): State<AppState>,
-    Path(partition_id): Path<i64>,
+    principal: CurrentPrincipal,
+    Path(partition_id): Path<String>,
 ) -> Result<Json<Vec<Run>>, AppError> {
-    Ok(Json(state.coordinator.list_runs(&state, partition_id).await?))
+    Ok(Json(
+        state
+            .coordinator
+            .list_runs(&state, &principal.org_id, &partition_id)
+            .await?,
+    ))
 }
 
 async fn cancel_run(
     State(state): State<AppState>,
-    Path((partition_id, run_id)): Path<(i64, i64)>,
+    principal: CurrentPrincipal,
+    Path((partition_id, run_id)): Path<(String, String)>,
 ) -> Result<StatusCode, AppError> {
     state
         .coordinator
-        .cancel_run(&state, partition_id, run_id)
+        .cancel_run(&state, &principal.org_id, &partition_id, &run_id)
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
 async fn get_run_transcript(
     State(state): State<AppState>,
-    Path((partition_id, run_id)): Path<(i64, i64)>,
+    principal: CurrentPrincipal,
+    Path((partition_id, run_id)): Path<(String, String)>,
 ) -> Result<Json<Transcript>, AppError> {
     Ok(Json(
         state
             .coordinator
-            .get_transcript(&state, partition_id, run_id)
+            .get_transcript(&state, &principal.org_id, &partition_id, &run_id)
             .await?,
     ))
 }
 
 async fn accept_survey(
     State(state): State<AppState>,
-    Path(partition_id): Path<i64>,
+    principal: CurrentPrincipal,
+    Path(partition_id): Path<String>,
     Json(req): Json<AcceptSurveyRequest>,
 ) -> Result<Json<Partition>, AppError> {
     Ok(Json(
-        state.coordinator.accept_survey(&state, partition_id, req).await?,
+        state
+            .coordinator
+            .accept_survey(&state, &principal.org_id, &partition_id, req)
+            .await?,
     ))
 }
 
 async fn accept_plan(
     State(state): State<AppState>,
-    Path(partition_id): Path<i64>,
+    principal: CurrentPrincipal,
+    Path(partition_id): Path<String>,
     Json(req): Json<AcceptPlanRequest>,
 ) -> Result<Json<Partition>, AppError> {
     Ok(Json(
-        state.coordinator.accept_plan(&state, partition_id, req).await?,
+        state
+            .coordinator
+            .accept_plan(&state, &principal.org_id, &partition_id, req)
+            .await?,
     ))
 }
 
 async fn accept_construct(
     State(state): State<AppState>,
-    Path(partition_id): Path<i64>,
+    principal: CurrentPrincipal,
+    Path(partition_id): Path<String>,
 ) -> Result<StatusCode, AppError> {
-    state.coordinator.accept_construct(&state, partition_id).await?;
+    state
+        .coordinator
+        .accept_construct(&state, &principal.org_id, &partition_id)
+        .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
 async fn abandon_partition(
     State(state): State<AppState>,
-    Path(partition_id): Path<i64>,
+    principal: CurrentPrincipal,
+    Path(partition_id): Path<String>,
 ) -> Result<StatusCode, AppError> {
-    state.coordinator.abandon_partition(&state, partition_id).await?;
+    state
+        .coordinator
+        .abandon_partition(&state, &principal.org_id, &partition_id)
+        .await?;
     Ok(StatusCode::NO_CONTENT)
 }

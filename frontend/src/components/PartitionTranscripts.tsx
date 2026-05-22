@@ -8,7 +8,7 @@ import { api, type Run, type Transcript } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type Props = {
-  partitionId: number;
+  partitionId: string;
   runs: Run[];
 };
 
@@ -85,7 +85,7 @@ function RunTranscriptSection({
   run,
   transcriptsEnabled,
 }: {
-  partitionId: number;
+  partitionId: string;
   run: Run;
   transcriptsEnabled: boolean;
 }) {

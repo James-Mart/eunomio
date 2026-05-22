@@ -10,13 +10,17 @@ pub struct SubagentRunArgs {
     pub base_url: String,
 
     #[arg(long)]
-    pub partition_id: i64,
+    pub partition_id: String,
 
     #[arg(long, value_parser = parse_run_kind)]
     pub kind: RunKind,
 
     #[arg(long)]
     pub prompt_file: Option<PathBuf>,
+
+    /// Session cookie value (`eunomia_local_session=…`) for authenticated API calls.
+    #[arg(long, env = "EUNOMIA_SESSION_COOKIE")]
+    pub session_cookie: Option<String>,
 }
 
 fn parse_run_kind(s: &str) -> Result<RunKind, String> {
@@ -44,8 +48,15 @@ pub async fn run(args: SubagentRunArgs) -> Result<()> {
         body["promptOverride"] = serde_json::Value::String(text);
     }
 
+    let cookie = args
+        .session_cookie
+        .as_deref()
+        .context("session cookie required; pass --session-cookie or set EUNOMIA_SESSION_COOKIE")?;
+
     let run_resp: serde_json::Value = client
         .post(format!("{base}/api/partitions/{}/runs", args.partition_id))
+        .header("X-Eunomia-Request", "1")
+        .header("Cookie", cookie)
         .json(&body)
         .send()
         .await
@@ -57,13 +68,15 @@ pub async fn run(args: SubagentRunArgs) -> Result<()> {
         .context("decoding start run response")?;
 
     let run_id = run_resp["id"]
-        .as_i64()
-        .context("start run response missing id")?;
+        .as_str()
+        .context("start run response missing id")?
+        .to_string();
 
     loop {
         tokio::time::sleep(Duration::from_millis(250)).await;
         let runs: Vec<serde_json::Value> = client
             .get(format!("{base}/api/partitions/{}/runs", args.partition_id))
+            .header("Cookie", cookie)
             .send()
             .await
             .context("listing runs")?
@@ -73,7 +86,7 @@ pub async fn run(args: SubagentRunArgs) -> Result<()> {
             .await
             .context("decoding runs list")?;
 
-        let Some(run) = runs.iter().find(|r| r["id"].as_i64() == Some(run_id)) else {
+        let Some(run) = runs.iter().find(|r| r["id"].as_str() == Some(run_id.as_str())) else {
             bail!("run {run_id} disappeared from partition {}", args.partition_id);
         };
         let status = run["status"]
@@ -91,6 +104,7 @@ pub async fn run(args: SubagentRunArgs) -> Result<()> {
             "{base}/api/partitions/{}/runs/{run_id}/transcript",
             args.partition_id
         ))
+        .header("Cookie", cookie)
         .send()
         .await
         .context("fetching transcript")?

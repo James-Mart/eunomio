@@ -1,19 +1,38 @@
-use super::{helper_assets::ensure_helper_extracted, unavailable};
-use crate::{error::AppError, state::AppState, types::CursorModel};
-use serde::Deserialize;
+use super::{helper_assets::ensure_helper_extracted, helper_stdio::launch_helper_stdio, unavailable};
+use crate::{credentials::KeyStore, error::AppError, state::AppState, types::CursorModel};
+use serde::{Deserialize, Serialize};
+use std::path::Path;
 
-pub async fn list_models(state: &AppState) -> Result<Vec<CursorModel>, AppError> {
-    let api_key = state
-        .cursor_api_key
-        .as_deref()
-        .ok_or_else(|| unavailable("CURSOR_API_KEY not configured"))?;
-    let binary = ensure_helper_extracted(&state.data_dir).await?;
-    let output = tokio::process::Command::new(&binary)
-        .arg("list-models")
-        .env("CURSOR_API_KEY", api_key)
-        .output()
+pub async fn list_models(state: &AppState, user_id: &str) -> Result<Vec<CursorModel>, AppError> {
+    list_models_with_keystore(&state.keystore, &state.data_dir, user_id).await
+}
+
+#[derive(Serialize)]
+struct ListModelsRequest {
+    #[serde(rename = "cursorApiKey")]
+    cursor_api_key: String,
+}
+
+pub async fn list_models_with_keystore(
+    keystore: &KeyStore,
+    data_dir: &Path,
+    user_id: &str,
+) -> Result<Vec<CursorModel>, AppError> {
+    let api_key = keystore
+        .get(user_id)
         .await
-        .map_err(|e| unavailable(&format!("spawning cursor-helper: {e}")))?;
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("reading cursor api key: {e}")))?
+        .ok_or_else(|| unavailable("Cursor API key not configured"))?;
+    let binary = ensure_helper_extracted(data_dir).await?;
+    let payload = serde_json::to_vec(&ListModelsRequest {
+        cursor_api_key: api_key,
+    })
+    .map_err(|e| unavailable(&format!("serializing list-models request: {e}")))?;
+    let mut child = launch_helper_stdio(&binary, "list-models", &payload).await?;
+    let output = child
+        .wait_with_output()
+        .await
+        .map_err(|e| unavailable(&format!("waiting on cursor-helper: {e}")))?;
     if !output.status.success() {
         if let Some(msg) = parse_helper_error(&output.stdout) {
             return Err(unavailable(&msg));
@@ -29,9 +48,6 @@ pub async fn list_models(state: &AppState) -> Result<Vec<CursorModel>, AppError>
     Ok(parsed.models)
 }
 
-/// Best-effort extraction of the helper's structured `{ "error": "..." }`
-/// failure from its stdout. Falls back to the raw stderr in the caller when
-/// the bytes are not JSON (or aren't shaped like an error object).
 fn parse_helper_error(stdout: &[u8]) -> Option<String> {
     let parsed = serde_json::from_slice::<serde_json::Value>(stdout).ok()?;
     parsed.get("error")?.as_str().map(|s| s.to_string())

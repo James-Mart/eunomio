@@ -1,8 +1,12 @@
+// Run lifecycle: spawn helper, stream transcript, finalize. Partition and run
+// rows carry `org_id` from the database; pass it through to repo calls that
+// scope by tenant. Settings and Cursor keys resolve via partition → session →
+// user_id.
 use crate::{
     cursor_bridge::{HelperEvent, RunRequest},
     db,
     error::AppError,
-    partition_settings::resolve_model,
+    partition_settings::{load_for_partition, resolve_model},
     repo,
     state::AppState,
     subagents::{self, constructor::ConstructOutput},
@@ -21,7 +25,8 @@ impl Coordinator {
     pub async fn start_run(
         &self,
         state: &AppState,
-        partition_id: i64,
+        org_id: &str,
+        partition_id: &str,
         req: StartRunRequest,
     ) -> Result<Run, AppError> {
         if self.inner.runs.has_in_flight(partition_id).await {
@@ -30,7 +35,7 @@ impl Coordinator {
                 message: "this partition already has a run in flight".into(),
             });
         }
-        let row = repo::partition::get(state, partition_id).await?;
+        let row = repo::partition::get(state, org_id, partition_id).await?;
         if !matches!(row.phase_state, PhaseState::AwaitingReview | PhaseState::Error) {
             return Err(AppError::Conflict {
                 code: "not_at_gate".into(),
@@ -40,7 +45,7 @@ impl Coordinator {
         validate_run_kind_transition(row.phase, req.kind)?;
         let kind = req.kind;
         if kind == RunKind::Plan && row.phase == PhaseName::Construct {
-            self.reset_for_construct_to_plan_back_edge(state, partition_id, &row)
+            self.reset_for_construct_to_plan_back_edge(state, org_id, partition_id, &row)
                 .await?;
         }
         if let Some(ref override_text) = req.prompt_override {
@@ -48,7 +53,8 @@ impl Coordinator {
         }
         self.spawn_run_boxed(
             state.clone(),
-            partition_id,
+            org_id.to_string(),
+            partition_id.to_string(),
             kind,
             req.parent_run_id,
             req.user_feedback,
@@ -69,26 +75,33 @@ impl Coordinator {
     async fn reset_for_construct_to_plan_back_edge(
         &self,
         state: &AppState,
-        partition_id: i64,
+        org_id: &str,
+        partition_id: &str,
         row: &PartitionRow,
     ) -> Result<(), AppError> {
-        let (_, parent_node) =
-            repo::node::target_and_parent(state, &row.session_id, &row.target_node_id).await?;
+        let (_, parent_node) = repo::node::target_and_parent(
+            state,
+            org_id,
+            &row.session_id,
+            &row.target_node_id,
+        )
+        .await?;
         let parent =
             parent_node.ok_or_else(|| AppError::BadRequest("no parent node".into()))?;
         let worktree_path = PathBuf::from(&row.worktree_path);
         worktree::reset_to_parent(&worktree_path, &parent.commit_sha, false).await?;
-        repo::partition::clear_plan_and_slice(state, partition_id).await?;
+        repo::partition::clear_plan_and_slice(state, org_id, partition_id).await?;
         Ok(())
     }
 
     pub async fn cancel_run(
         &self,
         state: &AppState,
-        partition_id: i64,
-        run_id: i64,
+        org_id: &str,
+        partition_id: &str,
+        run_id: &str,
     ) -> Result<(), AppError> {
-        let run = repo::run::get(state, run_id).await?;
+        let run = repo::run::get(state, org_id, run_id).await?;
         if run.partition_id != partition_id {
             return Err(AppError::NotFound);
         }
@@ -98,15 +111,15 @@ impl Coordinator {
                 message: "run is not in running state".into(),
             });
         }
-        let row = repo::partition::get(state, partition_id).await?;
+        let row = repo::partition::get(state, org_id, partition_id).await?;
         self.inner.runs.take_and_cancel(partition_id).await;
-        repo::partition::cancel_run(state, partition_id, run_id).await?;
+        repo::partition::cancel_run(state, org_id, partition_id, run_id).await?;
         self.emit(
             &row.session_id,
             SseEvent::Cancelled {
                 session_id: row.session_id.clone(),
                 target_node_id: row.target_node_id.clone(),
-                partition_id,
+                partition_id: partition_id.to_string(),
             },
         );
         Ok(())
@@ -115,15 +128,17 @@ impl Coordinator {
     pub(super) fn spawn_run_boxed(
         &self,
         state: AppState,
-        partition_id: i64,
+        org_id: String,
+        partition_id: String,
         kind: RunKind,
-        parent_run_id: Option<i64>,
+        parent_run_id: Option<String>,
         user_feedback: Option<String>,
         strategy_override: Option<PartitionStrategy>,
         prompt_override: Option<String>,
     ) -> Pin<Box<dyn std::future::Future<Output = Result<Run, AppError>> + Send + '_>> {
         Box::pin(self.spawn_run(
             state,
+            org_id,
             partition_id,
             kind,
             parent_run_id,
@@ -136,17 +151,19 @@ impl Coordinator {
     async fn spawn_run(
         &self,
         state: AppState,
-        partition_id: i64,
+        org_id: String,
+        partition_id: String,
         kind: RunKind,
-        parent_run_id: Option<i64>,
+        parent_run_id: Option<String>,
         user_feedback: Option<String>,
         strategy_override: Option<PartitionStrategy>,
         prompt_override: Option<String>,
     ) -> Result<Run, AppError> {
-        let partition = repo::partition::get(&state, partition_id).await?;
+        let partition = repo::partition::get(&state, &org_id, &partition_id).await?;
         if kind == RunKind::Construct {
             let (_, parent_node) = repo::node::target_and_parent(
                 &state,
+                &org_id,
                 &partition.session_id,
                 &partition.target_node_id,
             )
@@ -166,15 +183,31 @@ impl Coordinator {
                 prompt_override.as_deref(),
             )
             .await?;
-        let settings = state.partition_settings.snapshot().await;
+        let settings =
+            load_for_partition(&state, &partition.org_id, &partition.session_id).await?;
         let model = resolve_model(&settings, kind.phase());
         let transcripts_enabled = settings.general.transcripts_enabled;
         let prompt_for_helper = prompt.clone();
 
+        let cursor_api_key = state
+            .keystore
+            .get(&partition.user_id)
+            .await
+            .map_err(|e| AppError::Internal(anyhow!("reading cursor api key: {e}")))?
+            .ok_or_else(|| {
+                AppError::Unrecoverable {
+                    status: axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                    code: "cursor_sdk_unavailable".into(),
+                    message: "Cursor API key not configured".into(),
+                }
+            })?;
+
         let now = db::unix_seconds();
         let run_id = repo::run::start(
             &state,
-            partition_id,
+            org_id.clone(),
+            partition.user_id.clone(),
+            partition_id.clone(),
             partition.session_id.clone(),
             partition.target_node_id.clone(),
             kind,
@@ -186,13 +219,13 @@ impl Coordinator {
 
         let session_id = partition.session_id.clone();
         let target_node_id = partition.target_node_id.clone();
-        repo::partition::set_phase_running(&state, partition_id, kind.phase()).await?;
+        repo::partition::set_phase_running(&state, &org_id, &partition_id, kind.phase()).await?;
         self.emit(
             &session_id,
             SseEvent::Phase {
                 session_id: session_id.clone(),
                 target_node_id: target_node_id.clone(),
-                partition_id,
+                partition_id: partition_id.clone(),
                 name: kind.phase(),
                 state: PhaseState::Running,
                 payload: None,
@@ -200,23 +233,28 @@ impl Coordinator {
         );
 
         let (tx_helper, rx_helper) = mpsc::channel::<HelperEvent>(64);
+        let run_id_return = run_id.clone();
         let request = RunRequest {
             model,
             cwd: PathBuf::from(&partition.worktree_path),
             prompt: prompt_for_helper,
-            run_id,
+            run_id: run_id.clone(),
+            cursor_api_key: Some(cursor_api_key),
         };
 
         let handle = self.inner.runner.run(request, tx_helper).await?;
-        self.inner.runs.insert(partition_id, handle).await;
+        self.inner.runs.insert(&partition_id, handle).await;
 
         let coord = self.clone();
         let state_for_task = state.clone();
+        let partition_id_for_task = partition_id.clone();
+        let org_id_for_task = org_id.clone();
         tokio::spawn(async move {
             coord
                 .drive_run(
                     state_for_task,
-                    partition_id,
+                    org_id_for_task,
+                    partition_id_for_task,
                     run_id,
                     kind,
                     transcripts_enabled,
@@ -226,7 +264,7 @@ impl Coordinator {
         });
 
         Ok(Run {
-            id: run_id,
+            id: run_id_return,
             partition_id,
             kind,
             status: RunStatus::Running,
@@ -240,13 +278,14 @@ impl Coordinator {
     async fn drive_run(
         &self,
         state: AppState,
-        partition_id: i64,
-        run_id: i64,
+        org_id: String,
+        partition_id: String,
+        run_id: String,
         kind: RunKind,
         transcripts_enabled: bool,
         mut rx: mpsc::Receiver<HelperEvent>,
     ) {
-        let Ok(partition_row) = repo::partition::get(&state, partition_id).await else {
+        let Ok(partition_row) = repo::partition::get(&state, &org_id, &partition_id).await else {
             return;
         };
         let session_id = partition_row.session_id.clone();
@@ -261,12 +300,20 @@ impl Coordinator {
         let coord = self.clone();
         let session_id_writer = session_id.clone();
         let target_node_id_writer = target_node_id.clone();
+        let run_id_writer = run_id.clone();
+        let partition_id_writer = partition_id.clone();
+        let org_id_writer = org_id.clone();
         let transcript_writer = tokio::spawn(async move {
             while let Some(chunk) = chunk_rx.recv().await {
-                if let Err(e) =
-                    repo::run::append_transcript_text(&state_for_writer, run_id, &chunk).await
+                if let Err(e) = repo::run::append_transcript_text(
+                    &state_for_writer,
+                    &org_id_writer,
+                    &run_id_writer,
+                    &chunk,
+                )
+                .await
                 {
-                    tracing::warn!(error = %e, run_id, "persisting transcript_text failed");
+                    tracing::warn!(error = %e, run_id = %run_id_writer, "persisting transcript_text failed");
                 }
                 if transcripts_enabled {
                     coord.emit(
@@ -274,8 +321,8 @@ impl Coordinator {
                         SseEvent::TranscriptDelta {
                             session_id: session_id_writer.clone(),
                             target_node_id: target_node_id_writer.clone(),
-                            partition_id,
-                            run_id,
+                            partition_id: partition_id_writer.clone(),
+                            run_id: run_id_writer.clone(),
                             text: chunk,
                         },
                     );
@@ -284,7 +331,7 @@ impl Coordinator {
         });
 
         while let Some(ev) = rx.recv().await {
-            if self.inner.runs.is_abandoning(partition_id) {
+            if self.inner.runs.is_abandoning(&partition_id) {
                 continue;
             }
             match ev {
@@ -303,17 +350,18 @@ impl Coordinator {
         drop(chunk_tx);
         let _ = transcript_writer.await;
 
-        self.inner.runs.forget(partition_id).await;
+        self.inner.runs.forget(&partition_id).await;
 
-        if self.inner.runs.is_abandoning(partition_id) || cancelled {
+        if self.inner.runs.is_abandoning(&partition_id) || cancelled {
             return;
         }
 
         if let Some((code, message)) = error {
             self.finalize_error(
                 &state,
-                partition_id,
-                run_id,
+                &org_id,
+                &partition_id,
+                &run_id,
                 &session_id,
                 &target_node_id,
                 &code,
@@ -326,8 +374,9 @@ impl Coordinator {
         let Some(raw) = final_result else {
             self.finalize_error(
                 &state,
-                partition_id,
-                run_id,
+                &org_id,
+                &partition_id,
+                &run_id,
                 &session_id,
                 &target_node_id,
                 "helper_exited",
@@ -340,8 +389,9 @@ impl Coordinator {
         if let Err(e) = self
             .finalize_run_result(
                 &state,
-                partition_id,
-                run_id,
+                &org_id,
+                &partition_id,
+                &run_id,
                 kind,
                 &session_id,
                 &target_node_id,
@@ -352,8 +402,9 @@ impl Coordinator {
             tracing::error!(error = %e, "finalizing run failed");
             self.finalize_error(
                 &state,
-                partition_id,
-                run_id,
+                &org_id,
+                &partition_id,
+                &run_id,
                 &session_id,
                 &target_node_id,
                 "internal",
@@ -366,23 +417,32 @@ impl Coordinator {
     async fn finalize_error(
         &self,
         state: &AppState,
-        partition_id: i64,
-        run_id: i64,
+        org_id: &str,
+        partition_id: &str,
+        run_id: &str,
         session_id: &str,
         target_node_id: &str,
         code: &str,
         message: &str,
     ) {
-        let _ =
-            repo::partition::fail_run(state, partition_id, run_id, message.to_string(), None).await;
+        let _ = repo::partition::fail_run(
+            state,
+            org_id,
+            partition_id,
+            run_id,
+            message.to_string(),
+            None,
+        )
+        .await;
         self.emit_run_error(session_id, target_node_id, partition_id, code, message);
     }
 
     async fn finalize_parse_error(
         &self,
         state: &AppState,
-        partition_id: i64,
-        run_id: i64,
+        org_id: &str,
+        partition_id: &str,
+        run_id: &str,
         session_id: &str,
         target_node_id: &str,
         raw: &str,
@@ -390,6 +450,7 @@ impl Coordinator {
     ) {
         let _ = repo::partition::fail_run(
             state,
+            org_id,
             partition_id,
             run_id,
             msg.to_string(),
@@ -403,7 +464,7 @@ impl Coordinator {
         &self,
         session_id: &str,
         target_node_id: &str,
-        partition_id: i64,
+        partition_id: &str,
         code: &str,
         message: &str,
     ) {
@@ -412,7 +473,7 @@ impl Coordinator {
             SseEvent::Error {
                 session_id: session_id.to_string(),
                 target_node_id: target_node_id.to_string(),
-                partition_id,
+                partition_id: partition_id.to_string(),
                 code: code.to_string(),
                 message: message.to_string(),
             },
@@ -422,8 +483,9 @@ impl Coordinator {
     async fn finalize_run_result(
         &self,
         state: &AppState,
-        partition_id: i64,
-        run_id: i64,
+        org_id: &str,
+        partition_id: &str,
+        run_id: &str,
         kind: RunKind,
         session_id: &str,
         target_node_id: &str,
@@ -433,6 +495,7 @@ impl Coordinator {
             RunKind::Survey => {
                 self.finalize_parsed_json_run(
                     state,
+                    org_id,
                     partition_id,
                     run_id,
                     kind,
@@ -450,6 +513,7 @@ impl Coordinator {
             RunKind::Plan => {
                 self.finalize_parsed_json_run(
                     state,
+                    org_id,
                     partition_id,
                     run_id,
                     kind,
@@ -469,6 +533,7 @@ impl Coordinator {
                     Ok(ConstructOutput::Ok) => {
                         self.constructor_capture_ok(
                             state,
+                            org_id,
                             partition_id,
                             run_id,
                             &raw,
@@ -480,6 +545,7 @@ impl Coordinator {
                     Ok(ConstructOutput::Blocked { reason }) => {
                         self.constructor_capture_blocked(
                             state,
+                            org_id,
                             partition_id,
                             run_id,
                             &raw,
@@ -492,6 +558,7 @@ impl Coordinator {
                     Err(e) => {
                         self.finalize_parse_error(
                             state,
+                            org_id,
                             partition_id,
                             run_id,
                             session_id,
@@ -513,8 +580,9 @@ impl Coordinator {
     async fn finalize_parsed_json_run<T: Serialize>(
         &self,
         state: &AppState,
-        partition_id: i64,
-        run_id: i64,
+        org_id: &str,
+        partition_id: &str,
+        run_id: &str,
         kind: RunKind,
         session_id: &str,
         target_node_id: &str,
@@ -526,10 +594,11 @@ impl Coordinator {
             Ok(out) => {
                 let json = serde_json::to_string(&out)
                     .map_err(|e| AppError::Internal(anyhow!("{json_label}: {e}")))?;
-                repo::run::finish_success(state, run_id, json.clone(), Some(raw.to_string()))
+                repo::run::finish_success(state, org_id, run_id, json.clone(), Some(raw.to_string()))
                     .await?;
                 self.handle_phase_terminal(
                     state,
+                    org_id,
                     partition_id,
                     kind,
                     run_id,
@@ -543,6 +612,7 @@ impl Coordinator {
             Err(e) => {
                 self.finalize_parse_error(
                     state,
+                    org_id,
                     partition_id,
                     run_id,
                     session_id,

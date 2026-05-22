@@ -59,7 +59,7 @@ export function useSessionSelection(
   }, [layout, selectedNodeId]);
 
   const prevStageRef = useRef<"pending" | "proposed" | null>(null);
-  const prevPartitionIdRef = useRef<number | null>(null);
+  const prevPartitionIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (view.kind !== "candidate" || !candidatePartition || layout?.kind !== "candidate") {

@@ -20,9 +20,9 @@ import CollapsibleItem from "@/components/review/CollapsibleItem";
 import { STRATEGY_OPTIONS } from "@/components/review/strategyOptions";
 
 type Props = {
-  partitionId: number;
+  partitionId: string;
   plan: Plan;
-  planRunId: number;
+  planRunId: string;
   onAbandon: () => void;
 };
 

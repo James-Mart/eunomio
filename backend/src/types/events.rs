@@ -8,13 +8,13 @@ pub enum SseEvent {
     Started {
         session_id: String,
         target_node_id: String,
-        partition_id: i64,
+        partition_id: String,
     },
     #[serde(rename_all = "camelCase")]
     Phase {
         session_id: String,
         target_node_id: String,
-        partition_id: i64,
+        partition_id: String,
         name: PhaseName,
         state: PhaseState,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -24,27 +24,27 @@ pub enum SseEvent {
     TranscriptDelta {
         session_id: String,
         target_node_id: String,
-        partition_id: i64,
-        run_id: i64,
+        partition_id: String,
+        run_id: String,
         text: String,
     },
     #[serde(rename_all = "camelCase")]
     Finished {
         session_id: String,
         target_node_id: String,
-        partition_id: i64,
+        partition_id: String,
     },
     #[serde(rename_all = "camelCase")]
     Cancelled {
         session_id: String,
         target_node_id: String,
-        partition_id: i64,
+        partition_id: String,
     },
     #[serde(rename_all = "camelCase")]
     Error {
         session_id: String,
         target_node_id: String,
-        partition_id: i64,
+        partition_id: String,
         code: String,
         message: String,
     },

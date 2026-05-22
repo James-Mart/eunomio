@@ -1,0 +1,62 @@
+---
+title: Local build
+description: Build eunomia from source and run the CLI.
+---
+
+Prebuilt binaries and curl install are coming later. For now, build from source.
+
+## Prerequisites
+
+| Tool | Notes |
+| --- | --- |
+| **Node.js** | 20+ (for helper + frontend build) |
+| **npm** | Bundled with Node |
+| **Rust** | Stable toolchain with **cargo** |
+| **git** | On your `PATH` — eunomia shells out to it for all repo operations |
+
+## Build
+
+Clone the repository, then from the repo root:
+
+```bash
+npm install
+npm run build
+```
+
+This produces `target/release/eunomia` — a single binary that serves the UI and API on one port.
+
+## Run
+
+Start from any directory:
+
+```bash
+/path/to/eunomia/target/release/eunomia --port 3001
+```
+
+Open `http://127.0.0.1:3001` in your browser.
+
+### Put it on your PATH
+
+```bash
+ln -sf /path/to/eunomia/target/release/eunomia ~/.local/bin/eunomia
+```
+
+## State directory
+
+Runtime state lives in `~/.eunomia/` by default:
+
+- SQLite database (sessions, partitions, settings)
+- Managed bare clones for network-remote sessions
+- Per-partition git worktrees
+
+This directory is shared across every repository you use eunomia with.
+
+## Stale databases
+
+Eunomia is pre-release; the schema changes without migration shims. If the binary fails to start on an old database, wipe state and retry:
+
+```bash
+eunomia --new
+```
+
+Also remove leftover worktrees under `~/.eunomia/worktrees/` if needed.

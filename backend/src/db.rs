@@ -4,8 +4,54 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio_rusqlite::Connection;
 
 const MIGRATION: &str = r#"
+CREATE TABLE IF NOT EXISTS orgs (
+  id TEXT PRIMARY KEY,
+  display_name TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS org_memberships (
+  org_id TEXT NOT NULL REFERENCES orgs(id),
+  user_id TEXT NOT NULL REFERENCES users(id),
+  role TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (org_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS auth_sessions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  org_id TEXT NOT NULL REFERENCES orgs(id),
+  created_at INTEGER NOT NULL,
+  last_seen_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  ip TEXT NOT NULL,
+  user_agent TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS auth_sessions_by_user ON auth_sessions (user_id);
+
+CREATE TABLE IF NOT EXISTS auth_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  org_id TEXT,
+  user_id TEXT,
+  event_type TEXT NOT NULL,
+  ip TEXT NOT NULL,
+  user_agent TEXT NOT NULL,
+  details_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS auth_events_by_org ON auth_events (org_id, created_at);
+
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL REFERENCES orgs(id),
+  user_id TEXT NOT NULL REFERENCES users(id),
   normalized_remote TEXT NOT NULL,
   literal_remote TEXT NOT NULL,
   is_local INTEGER NOT NULL,
@@ -17,12 +63,15 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS sessions_by_remote ON sessions (normalized_remote);
+CREATE INDEX IF NOT EXISTS sessions_by_org ON sessions (org_id);
+CREATE INDEX IF NOT EXISTS sessions_by_user ON sessions (user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS sessions_unique_pair
   ON sessions (normalized_remote, base_ref, source_ref);
 
 CREATE TABLE IF NOT EXISTS nodes (
   session_id TEXT NOT NULL,
   node_id TEXT NOT NULL,
+  org_id TEXT NOT NULL REFERENCES orgs(id),
   parent_node_id TEXT,
   tree_sha TEXT NOT NULL,
   commit_sha TEXT NOT NULL,
@@ -32,9 +81,13 @@ CREATE TABLE IF NOT EXISTS nodes (
   created_at INTEGER NOT NULL,
   PRIMARY KEY (session_id, node_id)
 );
+CREATE INDEX IF NOT EXISTS nodes_by_node_id ON nodes (node_id);
+CREATE INDEX IF NOT EXISTS nodes_by_org ON nodes (org_id);
 
 CREATE TABLE IF NOT EXISTS partitions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL REFERENCES orgs(id),
+  user_id TEXT NOT NULL REFERENCES users(id),
   session_id TEXT NOT NULL,
   target_node_id TEXT NOT NULL,
   strategy TEXT,
@@ -49,14 +102,17 @@ CREATE TABLE IF NOT EXISTS partitions (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS partitions_by_edge ON partitions (session_id, target_node_id);
+CREATE INDEX IF NOT EXISTS partitions_by_org ON partitions (org_id);
 
 CREATE TABLE IF NOT EXISTS runs (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  partition_id INTEGER NOT NULL,
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL REFERENCES orgs(id),
+  user_id TEXT NOT NULL REFERENCES users(id),
+  partition_id TEXT NOT NULL,
   session_id TEXT NOT NULL,
   target_node_id TEXT NOT NULL,
   kind TEXT NOT NULL,
-  parent_run_id INTEGER,
+  parent_run_id TEXT,
   status TEXT NOT NULL,
   result_json TEXT,
   result_text TEXT,
@@ -68,7 +124,7 @@ CREATE TABLE IF NOT EXISTS runs (
 );
 CREATE INDEX IF NOT EXISTS runs_by_edge ON runs (session_id, target_node_id);
 CREATE INDEX IF NOT EXISTS runs_by_partition ON runs (partition_id);
-CREATE INDEX IF NOT EXISTS nodes_by_node_id ON nodes (node_id);
+CREATE INDEX IF NOT EXISTS runs_by_org ON runs (org_id);
 "#;
 
 pub async fn open(db_path: &Path) -> Result<Connection> {
@@ -90,3 +146,5 @@ pub fn unix_seconds() -> i64 {
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
 }
+
+pub const LOCAL_ORG_ID: &str = "local";

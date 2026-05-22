@@ -23,7 +23,7 @@ export type ConstructPayload =
   | { outcome: "blocked"; reason: string };
 
 export type Lifecycle = {
-  partitionId: number;
+  partitionId: string;
   targetNodeId: string;
   survey: PhaseState | "pending";
   plan: PhaseState | "pending";
@@ -38,15 +38,15 @@ export type Lifecycle = {
 type ConstructListener = () => void;
 
 export type TranscriptDeltaEvent = {
-  partitionId: number;
-  runId: number;
+  partitionId: string;
+  runId: string;
   text: string;
 };
 
 type TranscriptDeltaListener = (event: TranscriptDeltaEvent) => void;
 
 type Store = {
-  lifecycles: Map<number, Lifecycle>;
+  lifecycles: Map<string, Lifecycle>;
   connection: ConnectionStatus;
 };
 
@@ -178,7 +178,7 @@ class SessionStore {
     for (const l of this.constructListeners) l();
   }
 
-  resetLifecycle(partitionId: number) {
+  resetLifecycle(partitionId: string) {
     if (!this.state.lifecycles.has(partitionId)) return;
     const next = new Map(this.state.lifecycles);
     next.delete(partitionId);
@@ -205,7 +205,7 @@ class SessionStore {
   }
 }
 
-function blankLifecycle(partitionId: number, targetNodeId: string): Lifecycle {
+function blankLifecycle(partitionId: string, targetNodeId: string): Lifecycle {
   return {
     partitionId,
     targetNodeId,
@@ -334,7 +334,7 @@ function useStore(): SessionStore {
 }
 
 export function usePartitionLifecycle(
-  partitionId: number | null | undefined,
+  partitionId: string | null | undefined,
 ): Lifecycle | undefined {
   const store = useStore();
   const subscribe = store.subscribe;
@@ -360,7 +360,7 @@ export function usePartitionLifecyclesByTarget(
   const subscribe = store.subscribe;
   const getSnapshot = store.getSnapshot;
   const cacheRef = useRef<{
-    map: Map<number, Lifecycle> | null;
+    map: Map<string, Lifecycle> | null;
     targetNodeId: string;
     value: Lifecycle[];
   }>({ map: null, targetNodeId: "", value: EMPTY_LIFECYCLES });
@@ -376,7 +376,7 @@ export function usePartitionLifecyclesByTarget(
         for (const l of map.values()) {
           if (l.targetNodeId === targetNodeId) filtered.push(l);
         }
-        filtered.sort((a, b) => a.partitionId - b.partitionId);
+        filtered.sort((a, b) => a.partitionId.localeCompare(b.partitionId));
         cacheRef.current = {
           map,
           targetNodeId,
@@ -388,9 +388,9 @@ export function usePartitionLifecyclesByTarget(
   );
 }
 
-export function useResetLifecycle(): (partitionId: number) => void {
+export function useResetLifecycle(): (partitionId: string) => void {
   const store = useStore();
-  return useCallback((id: number) => store.resetLifecycle(id), [store]);
+  return useCallback((id: string) => store.resetLifecycle(id), [store]);
 }
 
 export function useHydratePartition(): (p: Partition) => void {

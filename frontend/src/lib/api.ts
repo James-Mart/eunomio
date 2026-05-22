@@ -145,8 +145,20 @@ export type Plan =
       rationale: string;
     };
 
+export type Principal = {
+  userId: string;
+  orgId: string;
+  role: string;
+  username: string;
+};
+
+export type AuthSetup = {
+  suggestedUsername: string;
+  hasEnvKey: boolean;
+};
+
 export type Partition = {
-  id: number;
+  id: string;
   sessionId: string;
   targetNodeId: string;
   strategy: PartitionStrategy | null;
@@ -161,8 +173,8 @@ export type Partition = {
 };
 
 export type Run = {
-  id: number;
-  partitionId: number;
+  id: string;
+  partitionId: string;
   kind: RunKind;
   status: RunStatus;
   result: unknown;
@@ -172,7 +184,7 @@ export type Run = {
 };
 
 export type Transcript = {
-  runId: number;
+  runId: string;
   kind: RunKind;
   prompt: string | null;
   transcriptText: string | null;
@@ -183,7 +195,7 @@ export type Transcript = {
 
 export type StartRunRequest = {
   kind: RunKind;
-  parentRunId?: number;
+  parentRunId?: string;
   userFeedback?: string;
   strategyOverride?: PartitionStrategy;
 };
@@ -222,9 +234,12 @@ export class ApiError extends Error {
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> = { "X-Eunomia-Request": "1" };
+  if (body !== undefined) headers["content-type"] = "application/json";
   const init: RequestInit = {
     method,
-    headers: body !== undefined ? { "content-type": "application/json" } : undefined,
+    credentials: "include",
+    headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   };
   const resp = await fetch(`/api${path}`, init);
@@ -247,7 +262,23 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return json as T;
 }
 
+export type LoginRequest = {
+  username: string;
+  cursorApiKey?: string;
+  useEnvKey?: boolean;
+};
+
+export type PatchCredentialsRequest = {
+  cursorApiKey: string;
+};
+
 export const api = {
+  getMe: () => request<Principal>("GET", "/me"),
+  getAuthSetup: () => request<AuthSetup>("GET", "/auth/setup"),
+  login: (body: LoginRequest) => request<{ ok: true }>("POST", "/auth/login", body),
+  logout: () => request<{ ok: true }>("POST", "/auth/logout"),
+  patchCredentials: (body: PatchCredentialsRequest) =>
+    request<{ ok: true }>("PATCH", "/auth/credentials", body),
   createSession: (remoteUrl: string, baseRef: string, sourceRef: string) =>
     request<Session>("POST", "/sessions", { remoteUrl, baseRef, sourceRef }),
   getSession: (id: string) => request<Session>("GET", `/sessions/${id}`),
@@ -295,26 +326,26 @@ export const api = {
         ? `/sessions/${sessionId}/partitions?targetNodeId=${encodeURIComponent(targetNodeId)}`
         : `/sessions/${sessionId}/partitions`,
     ),
-  getPartition: (partitionId: number) =>
+  getPartition: (partitionId: string) =>
     request<Partition>("GET", `/partitions/${partitionId}`),
-  listRuns: (partitionId: number) =>
+  listRuns: (partitionId: string) =>
     request<Run[]>("GET", `/partitions/${partitionId}/runs`),
-  startRun: (partitionId: number, body: StartRunRequest) =>
+  startRun: (partitionId: string, body: StartRunRequest) =>
     request<Run>("POST", `/partitions/${partitionId}/runs`, body),
-  cancelRun: (partitionId: number, runId: number) =>
+  cancelRun: (partitionId: string, runId: string) =>
     request<void>("DELETE", `/partitions/${partitionId}/runs/${runId}`),
-  getRunTranscript: (partitionId: number, runId: number) =>
+  getRunTranscript: (partitionId: string, runId: string) =>
     request<Transcript>(
       "GET",
       `/partitions/${partitionId}/runs/${runId}/transcript`,
     ),
-  acceptSurvey: (partitionId: number, runId: number) =>
+  acceptSurvey: (partitionId: string, runId: string) =>
     request<Partition>("POST", `/partitions/${partitionId}/survey/accept`, { runId }),
-  acceptPlan: (partitionId: number, runId: number) =>
+  acceptPlan: (partitionId: string, runId: string) =>
     request<Partition>("POST", `/partitions/${partitionId}/plan/accept`, { runId }),
-  acceptConstruct: (partitionId: number) =>
+  acceptConstruct: (partitionId: string) =>
     request<void>("POST", `/partitions/${partitionId}/construct/accept`),
-  abandonPartition: (partitionId: number) =>
+  abandonPartition: (partitionId: string) =>
     request<void>("POST", `/partitions/${partitionId}/abandon`),
   getTunnel: () => request<TunnelStatus>("GET", "/tunnel"),
   startTunnel: () => request<TunnelStatus>("POST", "/tunnel"),

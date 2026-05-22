@@ -39,6 +39,7 @@ impl Coordinator {
     ) -> Result<String, AppError> {
         let (target_node, parent_node) = repo::node::target_and_parent(
             state,
+            &partition.org_id,
             &partition.session_id,
             &partition.target_node_id,
         )
@@ -127,7 +128,9 @@ impl Coordinator {
         let strategy_override_str = strategy_override
             .map(|s| s.as_str().to_string())
             .unwrap_or_else(|| "auto".to_string());
-        let prior_attempt = self.lookup_prior_attempt(state, partition.id).await?;
+        let prior_attempt = self
+            .lookup_prior_attempt(state, &partition.org_id, partition.id.as_str())
+            .await?;
         let ctx = subagents::planner::PlanContext {
             before_tree,
             target_tree,
@@ -174,9 +177,10 @@ impl Coordinator {
     async fn lookup_prior_attempt(
         &self,
         state: &AppState,
-        partition_id: i64,
+        org_id: &str,
+        partition_id: &str,
     ) -> Result<Option<PriorAttempt>, AppError> {
-        let runs = repo::run::list_for_partition(state, partition_id).await?;
+        let runs = repo::run::list_for_partition(state, org_id, partition_id).await?;
         let last_construct = runs.iter().find(|r| {
             r.kind == RunKind::Construct
                 && matches!(r.status, RunStatus::Finished | RunStatus::Error)

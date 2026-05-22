@@ -164,8 +164,7 @@ function SessionInner({ sessionId }: { sessionId: string }) {
       setSelectedNodeId(final?.nodeId ?? null);
       return;
     }
-    const pid = Number(next);
-    const p = partitions.find((x) => x.id === pid);
+    const p = partitions.find((x) => x.id === next);
     if (!p) return;
     selectPartition(p);
   };

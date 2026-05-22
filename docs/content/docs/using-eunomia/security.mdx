@@ -1,0 +1,36 @@
+---
+title: Security
+description: Trust boundaries when running eunomia locally.
+---
+
+Eunomia runs on your workstation against your own repositories. Understand these boundaries before sharing access or running against sensitive trees.
+
+## Local trust model
+
+The HTTP listener binds **127.0.0.1** only. The local OS user that ran `eunomia` is the trust boundary — any process running as that user can already read your source tree, SQLite state under `~/.eunomia/`, and partition worktrees. The API does not add authentication on top.
+
+A host guard rejects requests whose `Host` or `Origin` header is not `127.0.0.1`, `localhost`, or `[::1]`. This closes CSRF from arbitrary websites and DNS-rebinding reads against your local API.
+
+## Tunnel sharing
+
+Tunnel sharing is **disabled by default**. Pass `--enable-tunnel` to enable it on the release binary.
+
+When enabled, the share link grants **full admin access** to your eunomia instance — not view-only. Anyone with the URL can view diffs, accept or abandon partitions, change settings, and trigger API-billing runs.
+
+Operational notes:
+
+- Rotate the token by stopping and restarting the tunnel; old tokens stop working immediately.
+- Treat share tokens as bearer secrets — they may appear in Cloudflare edge logs at first hit.
+- The full token is only returned on the host-gated local listener, not over tunnel SSE events.
+
+For remote viewing in production-like mode, prefer the single-binary build with `--enable-tunnel` rather than the Vite dev setup.
+
+## Subagents run locally
+
+Subagents (Surveyor, Planner, Constructor) run via an embedded Node helper with the same filesystem and network access as the eunomia process. A malicious or prompt-injected agent could read secrets, write outside the partition worktree, or make outbound network calls.
+
+Only run eunomia against repositories and with Cursor credentials you trust.
+
+## Reporting issues
+
+If you find a vulnerability, open a GitHub issue with enough detail to reproduce.

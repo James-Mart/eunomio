@@ -7,6 +7,8 @@
     "dev:backend": "cd backend && cargo watch -w src -w Cargo.toml -w ../subagents -x 'run -- --port 3001 --dev-tunnel'",
     "dev:frontend": "cd frontend && npm run dev",
     "dev:new": "rm -f ~/.eunomia/eunomia.db ~/.eunomia/eunomia.db-wal ~/.eunomia/eunomia.db-shm && npm run dev",
+    "dev:docs": "npm --prefix docs run dev",
+    "build:docs": "npm --prefix docs run build",
     "build": "npm --prefix helper install && npm --prefix helper run build && npm --prefix frontend run build && cargo build --release --manifest-path backend/Cargo.toml",
     "install:bin": "npm --prefix helper install && npm --prefix helper run build && npm --prefix frontend run build && cargo install --path backend --force && npm run clean:helper-cache",
     "clean:helper-cache": "node -e \"const fs=require('fs'),path=require('path'),os=require('os');const d=os.tmpdir();for(const e of fs.readdirSync(d)){if(e.startsWith('eunomia-helper-')){const p=path.join(d,e);fs.rmSync(p,{recursive:true,force:true});console.log('removed',p);}}\""

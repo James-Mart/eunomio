@@ -72,7 +72,7 @@ impl RunStatus {
 pub struct StartRunRequest {
     pub kind: RunKind,
     #[serde(default)]
-    pub parent_run_id: Option<i64>,
+    pub parent_run_id: Option<String>,
     #[serde(default)]
     pub user_feedback: Option<String>,
     #[serde(default)]
@@ -84,20 +84,20 @@ pub struct StartRunRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AcceptSurveyRequest {
-    pub run_id: i64,
+    pub run_id: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AcceptPlanRequest {
-    pub run_id: i64,
+    pub run_id: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Run {
-    pub id: i64,
-    pub partition_id: i64,
+    pub id: String,
+    pub partition_id: String,
     pub kind: RunKind,
     pub status: RunStatus,
     pub result: Option<serde_json::Value>,
@@ -108,12 +108,12 @@ pub struct Run {
 
 #[derive(Debug, Clone)]
 pub struct RunRow {
-    pub id: i64,
-    pub partition_id: i64,
+    pub id: String,
+    pub partition_id: String,
     pub session_id: String,
     pub target_node_id: String,
     pub kind: RunKind,
-    pub parent_run_id: Option<i64>,
+    pub parent_run_id: Option<String>,
     pub status: RunStatus,
     pub result_json: Option<String>,
     pub result_text: Option<String>,
@@ -145,7 +145,7 @@ impl From<RunRow> for Run {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Transcript {
-    pub run_id: i64,
+    pub run_id: String,
     pub kind: RunKind,
     pub prompt: Option<String>,
     pub transcript_text: Option<String>,

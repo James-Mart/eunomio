@@ -4,6 +4,7 @@ import {
   ChevronRightIcon,
   CodeIcon,
   FileIcon,
+  KeyIcon,
   ProjectRoadmapIcon,
   SearchIcon,
   TasklistIcon,
@@ -15,7 +16,9 @@ import {
   useSettingsDrill,
   type SettingsCategory,
 } from "@/components/SettingsDrillContext";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -45,6 +48,7 @@ type IconComponent = React.ComponentType<IconProps>;
 type CategoryMeta = { label: string; icon: IconComponent };
 
 const CATEGORIES: Record<SettingsCategory, CategoryMeta> = {
+  account: { label: "Account", icon: KeyIcon },
   general: { label: "General", icon: FileIcon },
   coordinator: { label: "Coordinator", icon: ProjectRoadmapIcon },
   surveyor: { label: "Surveyor", icon: SearchIcon },
@@ -52,7 +56,7 @@ const CATEGORIES: Record<SettingsCategory, CategoryMeta> = {
   constructor: { label: "Constructor", icon: CodeIcon },
 };
 
-const TOP_ORDER: SettingsCategory[] = ["general", "coordinator"];
+const TOP_ORDER: SettingsCategory[] = ["general", "coordinator", "account"];
 const SUBAGENT_ORDER: SubagentCategory[] = [
   "surveyor",
   "planner",
@@ -147,6 +151,9 @@ export default function PartitionSettingsPanel() {
     );
 
   const renderPanel = (category: SettingsCategory) => {
+    if (category === "account") {
+      return <AccountPanel models={models} />;
+    }
     if (category === "general") {
       return (
         <GeneralPanel
@@ -361,6 +368,63 @@ function MobileCategoryDetail({
         <span className="text-sm font-medium text-foreground">{meta.label}</span>
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-4 py-6">{children}</div>
+    </div>
+  );
+}
+
+function AccountPanel({ models }: { models: ModelsState }) {
+  const [apiKey, setApiKey] = useState("");
+  const [saving, setSaving] = useState(false);
+  const keyConfigured = models.kind === "success";
+
+  const save = async () => {
+    const trimmed = apiKey.trim();
+    if (!trimmed) {
+      toast.error("Cursor API key is required");
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.patchCredentials({ cursorApiKey: trimmed });
+      setApiKey("");
+      toast.success("Cursor API key updated");
+    } catch (e) {
+      toast.error(formatError(e, "Failed to update API key"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <section className="space-y-1.5">
+        <h4 className="text-sm font-medium">Cursor API key</h4>
+        <p className="text-xs text-muted-foreground">
+          {keyConfigured
+            ? "A Cursor API key is configured for your account."
+            : "No Cursor API key is configured yet. Add one to enable model selection and agent runs."}
+        </p>
+      </section>
+
+      <section className="space-y-1.5">
+        <Label htmlFor="account-cursor-api-key">Update API key</Label>
+        <Input
+          id="account-cursor-api-key"
+          type="password"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          autoComplete="new-password"
+          placeholder="Enter a new Cursor API key"
+        />
+        <Button
+          type="button"
+          variant="outline"
+          disabled={saving || !apiKey.trim()}
+          onClick={() => void save()}
+        >
+          {saving ? "Saving…" : "Save API key"}
+        </Button>
+      </section>
     </div>
   );
 }

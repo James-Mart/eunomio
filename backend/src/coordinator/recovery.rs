@@ -1,4 +1,4 @@
-use crate::{error::AppError, repo, state::AppState, worktree};
+use crate::{db, error::AppError, repo, state::AppState, worktree};
 use std::path::Path;
 
 use super::Coordinator;
@@ -19,30 +19,30 @@ impl Coordinator {
 }
 
 async fn repair_stuck_runs(state: &AppState) -> Result<(), AppError> {
-    let stuck = repo::run::list_running_ids(state).await?;
-    repo::run::mark_errored(state, stuck, "process_restart").await?;
+    let stuck = repo::run::list_running_ids(state, db::LOCAL_ORG_ID).await?;
+    repo::run::mark_errored(state, db::LOCAL_ORG_ID, stuck, "process_restart").await?;
     Ok(())
 }
 
-async fn prune_dead_partition_rows(state: &AppState) -> Result<Vec<i64>, AppError> {
-    let rows = repo::partition::list_id_session_worktree(state).await?;
+async fn prune_dead_partition_rows(state: &AppState) -> Result<Vec<String>, AppError> {
+    let rows = repo::partition::list_id_session_worktree(state, db::LOCAL_ORG_ID).await?;
     let mut alive = Vec::with_capacity(rows.len());
     for (id, _session_id, worktree_path) in rows {
         if Path::new(&worktree_path).exists() {
             alive.push(id);
         } else {
             tracing::warn!(
-                partition_id = id,
+                partition_id = %id,
                 worktree = %worktree_path,
                 "partition worktree missing on disk; deleting row"
             );
-            repo::partition::delete_with_runs(state, id).await?;
+            repo::partition::delete_with_runs(state, db::LOCAL_ORG_ID, &id).await?;
         }
     }
     Ok(alive)
 }
 
-async fn sweep_orphan_worktree_dirs(state: &AppState, alive: &[i64]) {
+async fn sweep_orphan_worktree_dirs(state: &AppState, alive: &[String]) {
     let worktrees_root = state.data_dir.join("worktrees");
     if !worktrees_root.exists() {
         return;
@@ -71,12 +71,16 @@ async fn sweep_orphan_worktree_dirs(state: &AppState, alive: &[i64]) {
             let pid_opt = part_path
                 .file_name()
                 .and_then(|n| n.to_str())
-                .and_then(|n| n.parse::<i64>().ok());
+                .map(str::to_string);
             let worktree_path = part_path.join("worktree");
             if !worktree_path.exists() {
                 continue;
             }
-            if pid_opt.map(|p| alive.contains(&p)).unwrap_or(false) {
+            if pid_opt
+                .as_ref()
+                .map(|p| alive.contains(p))
+                .unwrap_or(false)
+            {
                 continue;
             }
             tracing::info!(path = %worktree_path.display(), "removing orphan partition worktree");
@@ -84,7 +88,9 @@ async fn sweep_orphan_worktree_dirs(state: &AppState, alive: &[i64]) {
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
-            if let Ok(git_root) = repo::session::git_root(state, session_id).await {
+            if let Ok(git_root) =
+                repo::session::git_root(state, db::LOCAL_ORG_ID, session_id).await
+            {
                 worktree::teardown(&git_root, &worktree_path).await;
             } else {
                 let _ = tokio::fs::remove_dir_all(part_path).await;

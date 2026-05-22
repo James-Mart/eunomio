@@ -1,0 +1,74 @@
+---
+title: Terminology
+description: Core concepts you'll encounter in the eunomia UI.
+---
+
+## Session
+
+One working context, scoped to a `(repository, baseRef, sourceRef)` triple. Every session starts with two seed nodes: **base** (merge-base tree) and **final** (source ref tree).
+
+## Node and Edge
+
+A **Node** is a point in the session graph — a cumulative tree state plus a commit SHA and a **Title** (commit subject when you branch from it).
+
+An **Edge** is the diff between a node and its parent. Edges are derived, not stored; each non-base node has exactly one incoming edge.
+
+The canonical graph is always a single linear chain: `base → … → final`.
+
+## Position label vs Title
+
+The graph shows short **position labels** — `base`, then `1`, `2`, `3`, … for intermediate slices, then `final`. These recompute as the chain grows.
+
+A node's full **Title** appears in the inspector when you select it — not on the graph card.
+
+## Partition
+
+The primitive for splitting one edge into two commits. A partition inserts a new **Slice** node between a target node and its prior parent, then reparents the target onto the slice.
+
+While a partition is pending, the canonical chain is unchanged — you inspect the proposed shape via the graph-view dropdown.
+
+## Slice
+
+The new node a partition adds. Built by the **Constructor** subagent in an isolated worktree. Its title comes from the Planner's description of the slice edge.
+
+## Strategy
+
+How the Planner chooses to cut the diff:
+
+| Strategy | Intent |
+| --- | --- |
+| **Synthetic** | One theme that needs synthesized intermediate content |
+| **Vertical** | End-to-end tracer slice through every layer the diff touches |
+| **Horizontal** | One architectural layer; leftover owns the rest |
+
+The Planner picks on first run; you can override at the Plan review gate.
+
+## Subagents
+
+Three AI roles drive each partition:
+
+- **Surveyor** — read-only digest of the parent → target diff
+- **Planner** — picks strategy and describes the slice + leftover edges
+- **Constructor** — writes the slice in the partition worktree (only writable subagent)
+
+A **Coordinator** owns the phase machine and review gates; it is not a subagent.
+
+## Review gate
+
+A halt at a phase boundary where you accept output or re-run with feedback. Three gates exist — after survey, after planning, after construct — and all default to **on**.
+
+## Acceptance
+
+Terminal success for a partition: the slice is inserted, the target is reparented and renamed, sibling partitions on the same target are auto-abandoned, and the worktree is removed.
+
+## Abandon
+
+Cancel a pending partition at any non-terminal state. In-flight runs receive SIGTERM; the partition row and worktree are deleted.
+
+## Candidate view
+
+When one or more partitions are pending, switch the graph dropdown to inspect a partition's proposed shape before acceptance — a 2-node mini-graph during survey/plan, expanding to 3 nodes at construct review.
+
+## Branching
+
+At any time, pick a node and create a real git branch: eunomia walks back to base and rebuilds commits with `git commit-tree`, using each node's title as the subject. Branching never mutates the virtual graph.

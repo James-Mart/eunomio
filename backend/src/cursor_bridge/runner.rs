@@ -4,8 +4,8 @@ use anyhow::anyhow;
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, Command};
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::Child;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
@@ -15,31 +15,33 @@ pub struct RunRequest {
     pub model: String,
     pub cwd: PathBuf,
     pub prompt: String,
-    pub run_id: i64,
+    pub run_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor_api_key: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub enum HelperEvent {
     Started {
-        run_id: i64,
+        run_id: String,
         agent_id: String,
     },
     SdkMessage {
-        run_id: i64,
+        run_id: String,
         message: serde_json::Value,
     },
     Finished {
-        run_id: i64,
+        run_id: String,
         result: String,
         duration_ms: Option<u64>,
     },
     Error {
-        run_id: i64,
+        run_id: String,
         code: String,
         message: String,
     },
     Cancelled {
-        run_id: i64,
+        run_id: String,
     },
 }
 
@@ -57,13 +59,12 @@ pub trait SubagentRunner: Send + Sync {
 }
 
 pub struct CursorHelperRunner {
-    api_key: Option<String>,
     data_dir: PathBuf,
 }
 
 impl CursorHelperRunner {
-    pub fn new(api_key: Option<String>, data_dir: PathBuf) -> Self {
-        Self { api_key, data_dir }
+    pub fn new(data_dir: PathBuf) -> Self {
+        Self { data_dir }
     }
 }
 
@@ -74,18 +75,17 @@ impl SubagentRunner for CursorHelperRunner {
         request: RunRequest,
         tx: mpsc::Sender<HelperEvent>,
     ) -> Result<RunHandle, AppError> {
-        let api_key = self
-            .api_key
-            .clone()
-            .ok_or_else(|| unavailable("CURSOR_API_KEY not configured"))?;
+        if request.cursor_api_key.is_none() {
+            return Err(unavailable("Cursor API key not configured"));
+        }
         let binary = ensure_helper_extracted(&self.data_dir).await?;
-        let run_id = request.run_id;
+        let run_id = request.run_id.clone();
         let HelperChild {
             child,
             stdout,
             stderr,
             pid,
-        } = spawn_helper_child(&binary, &api_key, &request).await?;
+        } = spawn_helper_child(&binary, &request).await?;
 
         let ctx = HelperRunContext::new(run_id, tx.clone());
         let stdout_done = spawn_stdout_parser(stdout, ctx.clone());
@@ -107,44 +107,14 @@ struct HelperChild {
 
 async fn spawn_helper_child(
     binary: &std::path::Path,
-    api_key: &str,
     request: &RunRequest,
 ) -> Result<HelperChild, AppError> {
     let request_json = serde_json::to_vec(request)
         .map_err(|e| AppError::Internal(anyhow!("serializing helper run request: {e}")))?;
 
-    let helper_dir = binary.parent().ok_or_else(|| {
-        AppError::Internal(anyhow!("helper binary has no parent directory"))
-    })?;
-    let rg_path = helper_dir.join("rg");
-    let rg_path = rg_path
-        .canonicalize()
-        .unwrap_or(rg_path);
-
-    let mut child = Command::new(binary)
-        .arg("run")
-        .env_clear()
-        .env("CURSOR_API_KEY", api_key)
-        .env("CURSOR_RIPGREP_PATH", rg_path)
-        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(false)
-        .spawn()
-        .map_err(|e| unavailable(&format!("spawning cursor-helper run: {e}")))?;
+    let mut child = super::helper_stdio::launch_helper_stdio(binary, "run", &request_json).await?;
 
     let pid = child.id();
-    let mut stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| AppError::Internal(anyhow!("helper stdin not available")))?;
-    stdin
-        .write_all(&request_json)
-        .await
-        .map_err(|e| AppError::Internal(anyhow!("writing helper stdin: {e}")))?;
-    drop(stdin);
-
     let stdout = child
         .stdout
         .take()
@@ -163,7 +133,7 @@ async fn spawn_helper_child(
 
 #[derive(Clone)]
 struct HelperRunContext {
-    run_id: i64,
+    run_id: String,
     tx: mpsc::Sender<HelperEvent>,
     saw_terminal: Arc<Mutex<bool>>,
     stderr_lines: Arc<Mutex<Vec<String>>>,
@@ -171,7 +141,7 @@ struct HelperRunContext {
 }
 
 impl HelperRunContext {
-    fn new(run_id: i64, tx: mpsc::Sender<HelperEvent>) -> Self {
+    fn new(run_id: String, tx: mpsc::Sender<HelperEvent>) -> Self {
         Self {
             run_id,
             tx,
@@ -230,7 +200,7 @@ fn spawn_stdout_parser(
                     }
                     match serde_json::from_str::<HelperWireEvent>(trimmed) {
                         Ok(ev) => {
-                            let mapped = ev.into_helper_event(ctx.run_id);
+                            let mapped = ev.into_helper_event(ctx.run_id.clone());
                             if matches!(
                                 &mapped,
                                 HelperEvent::Finished { .. }
@@ -244,13 +214,13 @@ fn spawn_stdout_parser(
                             }
                         }
                         Err(e) => {
-                            tracing::warn!(target: "cursor-helper", run_id = ctx.run_id, error = %e, line = %trimmed, "malformed helper NDJSON line");
+                            tracing::warn!(target: "cursor-helper", run_id = %ctx.run_id, error = %e, line = %trimmed, "malformed helper NDJSON line");
                             ctx.capture_garbage(trimmed);
                         }
                     }
                 }
                 Err(e) => {
-                    tracing::warn!(target: "cursor-helper", run_id = ctx.run_id, error = %e, "reading helper stdout failed");
+                    tracing::warn!(target: "cursor-helper", run_id = %ctx.run_id, error = %e, "reading helper stdout failed");
                     break;
                 }
             }
@@ -272,7 +242,7 @@ fn spawn_stderr_collector(
                 Ok(_) => {
                     let trimmed = line.trim_end_matches(['\n', '\r']);
                     if !trimmed.is_empty() {
-                        tracing::info!(target: "cursor-helper", run_id = ctx.run_id, "stderr: {trimmed}");
+                        tracing::info!(target: "cursor-helper", run_id = %ctx.run_id, "stderr: {trimmed}");
                         ctx.capture_stderr(trimmed);
                     }
                 }
@@ -308,7 +278,7 @@ fn spawn_exit_watchdog(
         if !exited_cleanly || !saw_terminal_event {
             tracing::warn!(
                 target: "cursor-helper",
-                run_id = ctx.run_id,
+                run_id = %ctx.run_id,
                 status = %status_str,
                 saw_terminal_event,
                 stderr_lines = stderr_lines.len(),

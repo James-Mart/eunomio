@@ -26,9 +26,6 @@ struct ServeArgs {
     #[arg(long)]
     data_dir: Option<PathBuf>,
 
-    #[arg(long)]
-    cursor_api_key: Option<String>,
-
     /// Delete the existing sqlite db before starting. Use this when the on-disk
     /// shape no longer matches the current `CREATE TABLE` definitions in db.rs.
     /// Hidden from --help.
@@ -91,17 +88,14 @@ async fn serve(args: ServeArgs) -> Result<()> {
         }
     }
 
-    let cursor_api_key = args
-        .cursor_api_key
-        .clone()
-        .or_else(|| std::env::var("CURSOR_API_KEY").ok());
+    let launch_key_hint = std::env::var("CURSOR_API_KEY").ok();
     std::env::remove_var("CURSOR_API_KEY");
 
     let tunnel_enabled = args.enable_tunnel || args.dev_tunnel;
 
     let state = eunomia::state::build_state(
         data_dir,
-        cursor_api_key,
+        launch_key_hint,
         tunnel_enabled,
         args.dev_tunnel,
     )

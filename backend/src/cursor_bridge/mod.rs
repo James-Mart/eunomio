@@ -4,6 +4,7 @@ use axum::http::StatusCode;
 mod fake;
 mod fold;
 mod helper_assets;
+mod helper_stdio;
 mod list_models;
 mod runner;
 mod wire;

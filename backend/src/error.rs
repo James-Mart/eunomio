@@ -11,10 +11,14 @@ pub enum AppError {
     BadRequest(String),
     #[error("not found")]
     NotFound,
+    #[error("unauthenticated")]
+    Unauthorized,
+    #[error("csrf rejected")]
+    CsrfRejected,
     #[error("{message}")]
     Conflict { code: String, message: String },
     #[error("construct blocked: {reason}")]
-    Blocked { run_id: i64, reason: String },
+    Blocked { run_id: String, reason: String },
     #[error(transparent)]
     Internal(#[from] anyhow::Error),
     #[error("{message}")]
@@ -30,6 +34,8 @@ impl AppError {
         match self {
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
             AppError::NotFound => StatusCode::NOT_FOUND,
+            AppError::Unauthorized => StatusCode::UNAUTHORIZED,
+            AppError::CsrfRejected => StatusCode::FORBIDDEN,
             AppError::Conflict { .. } => StatusCode::CONFLICT,
             AppError::Blocked { .. } => StatusCode::CONFLICT,
             AppError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -46,6 +52,8 @@ impl IntoResponse for AppError {
             tracing::error!(error = %message, "request failed");
         }
         let body = match &self {
+            AppError::Unauthorized => json!({ "error": message, "code": "unauthenticated" }),
+            AppError::CsrfRejected => json!({ "error": message, "code": "csrf_rejected" }),
             AppError::Unrecoverable { code, .. } | AppError::Conflict { code, .. } => {
                 json!({ "error": message, "code": code })
             }

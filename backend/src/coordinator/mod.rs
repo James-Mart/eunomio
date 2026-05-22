@@ -75,8 +75,8 @@ impl CoordinatorEvents {
 /// `Mutex<HashMap<_, _>>` + `StdMutex<HashSet<_>>` so call sites
 /// don't open both locks individually.
 struct RunHandleRegistry {
-    handles: Mutex<HashMap<i64, RunHandle>>,
-    abandoning: StdMutex<HashSet<i64>>,
+    handles: Mutex<HashMap<String, RunHandle>>,
+    abandoning: StdMutex<HashSet<String>>,
 }
 
 impl RunHandleRegistry {
@@ -87,45 +87,45 @@ impl RunHandleRegistry {
         }
     }
 
-    async fn has_in_flight(&self, partition_id: i64) -> bool {
-        self.handles.lock().await.contains_key(&partition_id)
+    async fn has_in_flight(&self, partition_id: &str) -> bool {
+        self.handles.lock().await.contains_key(partition_id)
     }
 
-    async fn insert(&self, partition_id: i64, handle: RunHandle) {
-        self.handles.lock().await.insert(partition_id, handle);
+    async fn insert(&self, partition_id: &str, handle: RunHandle) {
+        self.handles.lock().await.insert(partition_id.to_string(), handle);
     }
 
-    async fn take_and_cancel(&self, partition_id: i64) {
-        let h = self.handles.lock().await.remove(&partition_id);
+    async fn take_and_cancel(&self, partition_id: &str) {
+        let h = self.handles.lock().await.remove(partition_id);
         if let Some(handle) = h {
             (handle.cancel)();
         }
     }
 
-    async fn forget(&self, partition_id: i64) {
-        self.handles.lock().await.remove(&partition_id);
+    async fn forget(&self, partition_id: &str) {
+        self.handles.lock().await.remove(partition_id);
     }
 
-    fn mark_abandoning(&self, partition_id: i64) {
-        self.abandoning.lock().unwrap().insert(partition_id);
+    fn mark_abandoning(&self, partition_id: &str) {
+        self.abandoning.lock().unwrap().insert(partition_id.to_string());
     }
 
-    fn unmark_abandoning(&self, partition_id: i64) {
-        self.abandoning.lock().unwrap().remove(&partition_id);
+    fn unmark_abandoning(&self, partition_id: &str) {
+        self.abandoning.lock().unwrap().remove(partition_id);
     }
 
-    fn is_abandoning(&self, partition_id: i64) -> bool {
-        self.abandoning.lock().unwrap().contains(&partition_id)
+    fn is_abandoning(&self, partition_id: &str) -> bool {
+        self.abandoning.lock().unwrap().contains(partition_id)
     }
 
-    fn mark_abandoning_many(&self, ids: &[i64]) {
+    fn mark_abandoning_many(&self, ids: &[String]) {
         let mut a = self.abandoning.lock().unwrap();
         for id in ids {
-            a.insert(*id);
+            a.insert(id.clone());
         }
     }
 
-    fn unmark_abandoning_many(&self, ids: &[i64]) {
+    fn unmark_abandoning_many(&self, ids: &[String]) {
         let mut a = self.abandoning.lock().unwrap();
         for id in ids {
             a.remove(id);
@@ -156,43 +156,47 @@ impl Coordinator {
     pub async fn list_runs(
         &self,
         state: &AppState,
-        partition_id: i64,
+        org_id: &str,
+        partition_id: &str,
     ) -> Result<Vec<Run>, AppError> {
-        let rows = repo::run::list_for_partition(state, partition_id).await?;
+        let rows = repo::run::list_for_partition(state, org_id, partition_id).await?;
         Ok(rows.into_iter().map(|r| r.into()).collect())
     }
 
     pub async fn list_partitions(
         &self,
         state: &AppState,
+        org_id: &str,
         session_id: &str,
         target_node_id: Option<&str>,
     ) -> Result<Vec<Partition>, AppError> {
-        let rows = repo::partition::list(state, session_id, target_node_id).await?;
+        let rows = repo::partition::list(state, org_id, session_id, target_node_id).await?;
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
     pub async fn get_partition(
         &self,
         state: &AppState,
-        partition_id: i64,
+        org_id: &str,
+        partition_id: &str,
     ) -> Result<Partition, AppError> {
-        let row = repo::partition::get(state, partition_id).await?;
+        let row = repo::partition::get(state, org_id, partition_id).await?;
         Ok(row.into())
     }
 
     pub async fn get_transcript(
         &self,
         state: &AppState,
-        partition_id: i64,
-        run_id: i64,
+        org_id: &str,
+        partition_id: &str,
+        run_id: &str,
     ) -> Result<Transcript, AppError> {
-        repo::partition::get(state, partition_id).await?;
-        let run = repo::run::get(state, run_id).await?;
+        repo::partition::get(state, org_id, partition_id).await?;
+        let run = repo::run::get(state, org_id, run_id).await?;
         if run.partition_id != partition_id {
             return Err(AppError::NotFound);
         }
-        let prompt = repo::run::get_prompt(state, run_id).await?;
+        let prompt = repo::run::get_prompt(state, org_id, run_id).await?;
         let parsed_result = run
             .result_json
             .as_deref()

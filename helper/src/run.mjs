@@ -26,16 +26,27 @@ export async function run() {
   } catch (err) {
     await emit({
       type: "error",
-      runId: 0,
+      runId: "",
       code: "bad_request",
       message: err instanceof Error ? err.message : String(err),
     });
     process.exit(1);
   }
 
-  const { model, cwd, prompt, runId } = request;
-  if (typeof runId !== "number") {
-    await emit({ type: "error", runId: 0, code: "bad_request", message: "runId required" });
+  const { model, cwd, prompt, runId, cursorApiKey } = request;
+  delete process.env.CURSOR_API_KEY;
+
+  if (typeof runId !== "string" || runId.length === 0) {
+    await emit({ type: "error", runId: "", code: "bad_request", message: "runId required" });
+    process.exit(1);
+  }
+  if (typeof cursorApiKey !== "string" || cursorApiKey.length === 0) {
+    await emit({
+      type: "error",
+      runId,
+      code: "bad_request",
+      message: "cursorApiKey required",
+    });
     process.exit(1);
   }
 
@@ -80,7 +91,7 @@ export async function run() {
 
   try {
     agent = await Agent.create({
-      apiKey: process.env.CURSOR_API_KEY,
+      apiKey: cursorApiKey,
       model: { id: model },
       local: { cwd },
     });

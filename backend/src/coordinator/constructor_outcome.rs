@@ -26,15 +26,21 @@ impl Coordinator {
     pub(super) async fn constructor_capture_ok(
         &self,
         state: &AppState,
-        partition_id: i64,
-        run_id: i64,
+        org_id: &str,
+        partition_id: &str,
+        run_id: &str,
         raw: &str,
         session_id: &str,
         target_node_id: &str,
     ) -> Result<(), AppError> {
-        let row = repo::partition::get(state, partition_id).await?;
-        let (_t, parent) =
-            repo::node::target_and_parent(state, &row.session_id, &row.target_node_id).await?;
+        let row = repo::partition::get(state, org_id, partition_id).await?;
+        let (_t, parent) = repo::node::target_and_parent(
+            state,
+            org_id,
+            &row.session_id,
+            &row.target_node_id,
+        )
+        .await?;
         let parent =
             parent.ok_or_else(|| AppError::BadRequest("no parent".into()))?;
         let plan_json = row
@@ -49,7 +55,7 @@ impl Coordinator {
         })?;
         let slice_title = split.edges[0].title.clone();
 
-        let git_root = repo::session::git_root(state, &row.session_id).await?;
+        let git_root = repo::session::git_root(state, org_id, &row.session_id).await?;
         let worktree_path = PathBuf::from(&row.worktree_path);
         let (tree_sha, commit_sha) = worktree::capture_slice_commit(
             &git_root,
@@ -65,6 +71,7 @@ impl Coordinator {
             .map_err(|e| AppError::Internal(anyhow::anyhow!("construct-ok json: {e}")))?;
         repo::partition::accept_constructor_ok(
             state,
+            org_id,
             partition_id,
             payload.candidate_tree_sha.clone(),
             payload.candidate_commit_sha.clone(),
@@ -76,6 +83,7 @@ impl Coordinator {
 
         self.handle_phase_terminal(
             state,
+            org_id,
             partition_id,
             RunKind::Construct,
             run_id,
@@ -90,16 +98,22 @@ impl Coordinator {
     pub(super) async fn constructor_capture_blocked(
         &self,
         state: &AppState,
-        partition_id: i64,
-        run_id: i64,
+        org_id: &str,
+        partition_id: &str,
+        run_id: &str,
         raw: &str,
         reason: &str,
         session_id: &str,
         target_node_id: &str,
     ) -> Result<(), AppError> {
-        let row = repo::partition::get(state, partition_id).await?;
-        let (_t, parent) =
-            repo::node::target_and_parent(state, &row.session_id, &row.target_node_id).await?;
+        let row = repo::partition::get(state, org_id, partition_id).await?;
+        let (_t, parent) = repo::node::target_and_parent(
+            state,
+            org_id,
+            &row.session_id,
+            &row.target_node_id,
+        )
+        .await?;
         let parent =
             parent.ok_or_else(|| AppError::BadRequest("no parent".into()))?;
         let worktree_path = PathBuf::from(&row.worktree_path);
@@ -110,6 +124,7 @@ impl Coordinator {
         });
         repo::partition::accept_constructor_blocked(
             state,
+            org_id,
             partition_id,
             run_id,
             result_json.to_string(),
@@ -121,7 +136,7 @@ impl Coordinator {
             SseEvent::Phase {
                 session_id: session_id.to_string(),
                 target_node_id: target_node_id.to_string(),
-                partition_id,
+                partition_id: partition_id.to_string(),
                 name: PhaseName::Construct,
                 state: PhaseState::AwaitingReview,
                 payload: Some(serde_json::json!({"outcome": "blocked", "reason": reason})),

@@ -333,7 +333,7 @@ function ErrorView({
   );
 }
 
-function pickRunId(runs: Run[], kind: Run["kind"]): number | null {
+function pickRunId(runs: Run[], kind: Run["kind"]): string | null {
   const r = runs.find((r) => r.kind === kind && r.status === "finished");
   return r?.id ?? null;
 }

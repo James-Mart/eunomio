@@ -84,7 +84,7 @@ impl PhaseState {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Partition {
-    pub id: i64,
+    pub id: String,
     pub session_id: String,
     pub target_node_id: String,
     pub strategy: Option<PartitionStrategy>,
@@ -100,7 +100,9 @@ pub struct Partition {
 
 #[derive(Debug, Clone)]
 pub struct PartitionRow {
-    pub id: i64,
+    pub id: String,
+    pub org_id: String,
+    pub user_id: String,
     pub session_id: String,
     pub target_node_id: String,
     pub strategy: Option<PartitionStrategy>,

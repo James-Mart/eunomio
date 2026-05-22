@@ -2,6 +2,7 @@ use crate::{error::AppError, git, repo, state::AppState};
 
 pub async fn branch_from_node(
     state: &AppState,
+    org_id: &str,
     session_id: &str,
     node_id: &str,
     branch_name: &str,
@@ -11,16 +12,16 @@ pub async fn branch_from_node(
         return Err(AppError::BadRequest("branchName is required".into()));
     }
 
-    repo::session::ensure(state, session_id).await?;
-    let fields = repo::session::repo_fields(state, session_id).await?;
+    repo::session::ensure(state, org_id, session_id).await?;
+    let fields = repo::session::repo_fields(state, org_id, session_id).await?;
     if !fields.is_local {
         return Err(AppError::BadRequest(
             "branch creation is only supported for local repository sessions".into(),
         ));
     }
-    let git_root = repo::session::git_root(state, session_id).await?;
+    let git_root = repo::session::git_root(state, org_id, session_id).await?;
 
-    let walk = repo::node::walk_to_base(state, session_id, node_id).await?;
+    let walk = repo::node::walk_to_base(state, org_id, session_id, node_id).await?;
     if walk.is_empty() {
         return Err(AppError::NotFound);
     }

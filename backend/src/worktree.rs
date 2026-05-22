@@ -15,13 +15,13 @@ pub async fn provision(
     repo_root: &Path,
     data_dir: &Path,
     session_id: &str,
-    partition_id: i64,
+    partition_id: &str,
     parent_commit: &str,
 ) -> Result<PathBuf, AppError> {
     let worktree_path = data_dir
         .join("worktrees")
         .join(session_id)
-        .join(partition_id.to_string())
+        .join(partition_id)
         .join("worktree");
     if let Some(parent_dir) = worktree_path.parent() {
         tokio::fs::create_dir_all(parent_dir)

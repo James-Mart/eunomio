@@ -1,0 +1,34 @@
+---
+title: Git access
+description: Local paths, network remotes, and credentials.
+---
+
+Eunomia shells out to `git` on your `PATH` for every repository operation. It does not implement its own credential layer — auth behaves exactly like running `git` in your shell.
+
+## Session repository modes
+
+Each session specifies a **repository** (local path or remote URL) at create time.
+
+| Mode | Git root | Branch create |
+| --- | --- | --- |
+| **Local path** | Your working tree in-place | Supported |
+| **Network remote** | Managed bare clone under `~/.eunomia/repos/` | Not supported (no push) |
+
+## Public vs private remotes
+
+| Situation | Works? |
+| --- | --- |
+| Public remote, refs fetchable | Yes |
+| Private remote, host can `git fetch` non-interactively | Yes |
+| Private remote, no credentials on the host | No |
+| Local path with unpushed branch as `sourceRef` | Yes (local sessions only) |
+
+Private repositories work when your machine can already fetch them. Configure auth the usual way — SSH agent, `git credential`, host-specific tokens via a credential helper — before creating a network-remote session.
+
+## Branching out
+
+Creating a branch from a node walks back to base and rebuilds commits with `git commit-tree`. Branching never pushes, never fetches, and never touches your working copy. It is read-only with respect to the virtual graph.
+
+## Repo hints
+
+When you open the create-session form, eunomia may prefill suggested remote URL and refs from your current working directory via `GET /api/repo`. These are hints only — not server state.

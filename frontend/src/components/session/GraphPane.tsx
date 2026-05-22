@@ -100,7 +100,7 @@ export function GraphPane({
   onNodeClick,
 }: Props) {
   const viewSelectValue =
-    view.kind === "candidate" ? String(view.partitionId) : view.kind;
+    view.kind === "candidate" ? view.partitionId : view.kind;
   const siblingNumbers = useMemo(
     () => partitionSiblingNumbers(partitions),
     [partitions],

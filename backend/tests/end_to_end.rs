@@ -3,26 +3,27 @@ use pretty_assertions::assert_eq;
 use serde_json::json;
 
 mod common;
-use common::{empty_request, git, json_request, local_session_body, TestApp};
+use common::{git, local_session_body, TestApp};
 
 #[tokio::test]
 async fn happy_path_create_rename_branch() {
-    let app = TestApp::spawn().await;
+    let app = TestApp::spawn_authenticated().await;
     let repo = app.repo_path();
 
-    let (status, body) = json_request(
-        &app.router,
-        "POST",
-        "/api/sessions",
-        local_session_body(&repo, "main", "feature"),
-    )
-    .await;
+    let (status, body) = app
+        .auth_json(
+            "POST",
+            "/api/sessions",
+            local_session_body(&repo, "main", "feature"),
+        )
+        .await;
     assert_eq!(status, StatusCode::CREATED, "create body: {body}");
     let session_id = body["id"].as_str().unwrap().to_string();
     let base_node_id = body["baseNodeId"].as_str().unwrap().to_string();
 
-    let (status, body) =
-        empty_request(&app.router, "GET", &format!("/api/sessions/{session_id}/graph")).await;
+    let (status, body) = app
+        .auth_empty("GET", &format!("/api/sessions/{session_id}/graph"))
+        .await;
     assert_eq!(status, StatusCode::OK);
     let nodes = body["nodes"].as_array().unwrap();
     let edges = body["edges"].as_array().unwrap();
@@ -40,23 +41,23 @@ async fn happy_path_create_rename_branch() {
     let edge_to = edges[0]["to"].as_str().unwrap();
     assert_eq!(edge_to, final_node_id);
 
-    let (status, body) = json_request(
-        &app.router,
-        "PATCH",
-        &format!("/api/sessions/{session_id}/nodes/{final_node_id}"),
-        json!({ "title": "final renamed" }),
-    )
-    .await;
+    let (status, body) = app
+        .auth_json(
+            "PATCH",
+            &format!("/api/sessions/{session_id}/nodes/{final_node_id}"),
+            json!({ "title": "final renamed" }),
+        )
+        .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["title"].as_str().unwrap(), "final renamed");
 
-    let (status, body) = json_request(
-        &app.router,
-        "POST",
-        &format!("/api/sessions/{session_id}/nodes/{final_node_id}/branch"),
-        json!({ "branchName": "eunomia-test" }),
-    )
-    .await;
+    let (status, body) = app
+        .auth_json(
+            "POST",
+            &format!("/api/sessions/{session_id}/nodes/{final_node_id}/branch"),
+            json!({ "branchName": "eunomia-test" }),
+        )
+        .await;
     assert_eq!(status, StatusCode::OK, "branch body: {body}");
 
     let log = git(
@@ -75,38 +76,36 @@ async fn happy_path_create_rename_branch() {
     let root_subject = lines[1].splitn(3, ' ').nth(2).unwrap();
     assert_eq!(root_subject, "base");
 
-    let (status, body) = json_request(
-        &app.router,
-        "POST",
-        &format!("/api/sessions/{session_id}/nodes/{final_node_id}/branch"),
-        json!({ "branchName": "eunomia-test" }),
-    )
-    .await;
+    let (status, body) = app
+        .auth_json(
+            "POST",
+            &format!("/api/sessions/{session_id}/nodes/{final_node_id}/branch"),
+            json!({ "branchName": "eunomia-test" }),
+        )
+        .await;
     assert_eq!(status, StatusCode::CONFLICT, "expected conflict body: {body}");
 
-    let (status, _body) = json_request(
-        &app.router,
-        "POST",
-        &format!("/api/sessions/{session_id}/nodes/{final_node_id}/branch"),
-        json!({ "branchName": "eunomia-test", "force": true }),
-    )
-    .await;
+    let (status, _body) = app
+        .auth_json(
+            "POST",
+            &format!("/api/sessions/{session_id}/nodes/{final_node_id}/branch"),
+            json!({ "branchName": "eunomia-test", "force": true }),
+        )
+        .await;
     assert_eq!(status, StatusCode::OK);
 
-    let (status, body) = empty_request(&app.router, "GET", "/api/sessions").await;
+    let (status, body) = app.auth_empty("GET", "/api/sessions").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body.as_array().unwrap().len(), 1);
 
-    let (status, _) = empty_request(
-        &app.router,
-        "DELETE",
-        &format!("/api/sessions/{session_id}"),
-    )
-    .await;
+    let (status, _) = app
+        .auth_empty("DELETE", &format!("/api/sessions/{session_id}"))
+        .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
 
-    let (status, _) =
-        empty_request(&app.router, "GET", &format!("/api/sessions/{session_id}/graph")).await;
+    let (status, _) = app
+        .auth_empty("GET", &format!("/api/sessions/{session_id}/graph"))
+        .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 
     let branch_log = git(&repo, &["log", "--format=%H", "eunomia-test"]);

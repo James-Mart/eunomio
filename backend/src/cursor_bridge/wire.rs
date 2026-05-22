@@ -21,7 +21,7 @@ pub(super) enum HelperWireEvent {
 }
 
 impl HelperWireEvent {
-    pub(super) fn into_helper_event(self, run_id: i64) -> HelperEvent {
+    pub(super) fn into_helper_event(self, run_id: String) -> HelperEvent {
         match self {
             HelperWireEvent::Started { agent_id } => HelperEvent::Started { run_id, agent_id },
             HelperWireEvent::SdkMessage { message } => HelperEvent::SdkMessage { run_id, message },
@@ -47,7 +47,7 @@ impl HelperEvent {
     /// Re-stamp a previously-built `HelperEvent` with a new `run_id`. Used by
     /// the fake runner's scripted events (which carry placeholder ids) to
     /// match the live run, and indirectly by the real runner's wire mapping.
-    pub fn with_run_id(self, run_id: i64) -> Self {
+    pub fn with_run_id(self, run_id: String) -> Self {
         match self {
             HelperEvent::Started { agent_id, .. } => HelperEvent::Started { run_id, agent_id },
             HelperEvent::SdkMessage { message, .. } => HelperEvent::SdkMessage { run_id, message },

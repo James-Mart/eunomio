@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { Route, Routes } from "react-router-dom";
 
 import AppHeader from "@/components/AppHeader";
+import { AuthProvider } from "@/components/AuthProvider";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { SettingsDrillProvider } from "@/components/SettingsDrillContext";
 import SessionNotFoundBanner from "@/components/SessionNotFoundBanner";
@@ -16,6 +17,14 @@ const PartitionSettingsPage = lazy(
 );
 
 export default function App() {
+  return (
+    <AuthProvider>
+      <AuthenticatedShell />
+    </AuthProvider>
+  );
+}
+
+function AuthenticatedShell() {
   return (
     <SettingsDrillProvider>
       <div className="flex h-dvh min-h-0 flex-col overflow-hidden">

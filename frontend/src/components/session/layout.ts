@@ -77,7 +77,7 @@ export type SessionLayout =
 export type View =
   | { kind: "canonical" }
   | { kind: "original" }
-  | { kind: "candidate"; partitionId: number };
+  | { kind: "candidate"; partitionId: string };
 
 export function originalLayout(chain: Chain): OriginalLayout | null {
   const baseNode = chain.ordered[0];
@@ -317,16 +317,18 @@ export function candidateLayoutFingerprint(layout: CandidateLayout): string {
 
 export function partitionSiblingNumbers(
   partitions: Partition[],
-): Map<number, number> {
+): Map<string, number> {
   const byTarget = new Map<string, Partition[]>();
   for (const p of partitions) {
     const group = byTarget.get(p.targetNodeId);
     if (group) group.push(p);
     else byTarget.set(p.targetNodeId, [p]);
   }
-  const out = new Map<number, number>();
+  const out = new Map<string, number>();
   for (const siblings of byTarget.values()) {
-    siblings.sort((a, b) => a.createdAt - b.createdAt || a.id - b.id);
+    siblings.sort(
+      (a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id),
+    );
     siblings.forEach((p, i) => out.set(p.id, i + 1));
   }
   return out;
@@ -336,7 +338,7 @@ export function comparePartitionsForView(
   a: Partition,
   b: Partition,
   chain: Chain,
-  siblingNumbers: Map<number, number>,
+  siblingNumbers: Map<string, number>,
 ): number {
   const idxA = chain.ordered.findIndex((n) => n.nodeId === a.targetNodeId);
   const idxB = chain.ordered.findIndex((n) => n.nodeId === b.targetNodeId);

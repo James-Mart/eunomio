@@ -36,10 +36,11 @@ impl SubagentRunner for FakeSubagentRunner {
         request: RunRequest,
         tx: mpsc::Sender<HelperEvent>,
     ) -> Result<RunHandle, AppError> {
+        let run_id = request.run_id.clone();
         let mut scripts = self.scripts.lock().await;
         let events = if scripts.is_empty() {
             vec![HelperEvent::Finished {
-                run_id: request.run_id,
+                run_id: run_id.clone(),
                 result: String::new(),
                 duration_ms: None,
             }]
@@ -48,16 +49,20 @@ impl SubagentRunner for FakeSubagentRunner {
         };
         drop(scripts);
         self.spawned.fetch_add(1, Ordering::SeqCst);
-        let run_id = request.run_id;
+        let hang_after_events = events.len() == 1
+            && matches!(events.first(), Some(HelperEvent::SdkMessage { .. }));
         let events: Vec<HelperEvent> = events
             .into_iter()
-            .map(|e| e.with_run_id(run_id))
+            .map(|e| e.with_run_id(run_id.clone()))
             .collect();
         tokio::spawn(async move {
             for ev in events {
                 if tx.send(ev).await.is_err() {
-                    break;
+                    return;
                 }
+            }
+            if hang_after_events {
+                std::future::pending::<()>().await;
             }
         });
         Ok(RunHandle {

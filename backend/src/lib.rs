@@ -1,6 +1,8 @@
+pub mod auth;
 pub mod branching;
 pub mod cli;
 pub mod coordinator;
+pub mod credentials;
 pub mod cursor_bridge;
 pub mod db;
 pub mod edges;

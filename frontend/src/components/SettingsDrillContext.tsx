@@ -7,6 +7,7 @@ import {
 } from "react";
 
 export type SettingsCategory =
+  | "account"
   | "general"
   | "coordinator"
   | "surveyor"

@@ -32,11 +32,11 @@ import type { ConstructPayload } from "@/components/SessionEventsProvider";
 import { STRATEGY_OPTIONS } from "@/components/review/strategyOptions";
 
 type Props = {
-  partitionId: number;
+  partitionId: string;
   sessionId: string;
   targetNodeId: string;
   payload: ConstructPayload;
-  constructRunId?: number;
+  constructRunId?: string;
   slicePlanEdge?: PlanEdge | null;
   showSlicePlan?: boolean;
   onAbandon: () => void;

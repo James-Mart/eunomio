@@ -1,0 +1,99 @@
+---
+title: Partitioning
+description: How a partition moves from survey through acceptance.
+---
+
+A **Partition** carves one edge of the graph into two consecutive commits. Three subagents run in sequence — Surveyor → Planner → Constructor — supervised by a Coordinator that owns the phase machine and human-in-the-loop (HITL) review gates.
+
+Many partitions can be pending in a session at once, including siblings on the same target.
+
+## Subagent progression
+
+Each partition walks through the three subagents in order:
+
+```mermaid
+flowchart BT
+    Begin([Begin partition]) --> Surveyor
+    Surveyor[Surveyor] --> Planner[Planner]
+    Planner --> Constructor[Constructor]
+    Constructor --> Accepted([Accepted])
+```
+
+## Per-subagent lifecycle
+
+Each subagent follows the same phase pattern. The diagram below shows one cycle; it repeats for Surveyor, Planner, and Constructor, each with its own HITL gate (`afterSurvey`, `afterPlanning`, `afterConstruct`).
+
+```mermaid
+flowchart BT
+    Run[/Subagent runs/] --> Gate{HITL gate? default ON}
+    Gate -- on --> Review([Review output])
+    Gate -- off --> Next([Proceed])
+    Review -- accept --> Next
+    Review -- re-run with feedback --> Run
+    Run -. abandon .-> Abandon([Abandon])
+    Review -. abandon .-> Abandon
+```
+
+**Constructor extras.** After a run, the Constructor returns `OK` or `BLOCKED: reason`. From construct review or a blocked state you can re-run the Constructor, or re-run the Planner with feedback and an optional strategy override (the accepted survey is preserved).
+
+## HITL defaults
+
+All three gates default to **on**. Turn any off in partition settings for a more automated run — the SDK call still happens; the gate just does not park.
+
+## Re-run paths
+
+From any review gate you can accept or re-run with feedback. Re-plan from construct review or `BLOCKED` is the only back-edge that crosses subagents. Everywhere else is forward-only.
+
+## Abandon
+
+Available from every non-terminal state, including while a run is in flight. Sends SIGTERM to the helper subprocess, deletes the partition row, and removes its worktree.
+
+## Parallel partitions
+
+Each partition owns its own worktree and phase machine. Surveys, plans, and constructors run in parallel across partitions. Only one run may be in flight per partition at a time.
+
+## Graph mutation on acceptance
+
+An accepted partition inserts a **slice** commit between the target and its prior parent, then reparents the target onto the slice:
+
+<div className="graph-mutation-grid">
+<div className="graph-mutation-panel">
+
+### Before
+
+```mermaid
+---
+config:
+  gitGraph:
+    mainBranchName: partition
+---
+gitGraph BT:
+    commit id: "parent"
+    commit id: "target"
+```
+
+</div>
+<div className="graph-mutation-panel">
+
+### After
+
+```mermaid
+---
+config:
+  gitGraph:
+    mainBranchName: partition
+---
+gitGraph BT:
+    commit id: "parent"
+    commit id: "slice"
+    commit id: "target"
+```
+
+</div>
+</div>
+
+The target node keeps its tree unchanged; its title is rewritten to describe the leftover edge. The graph after acceptance is a strictly linear extension of the chain — no leaf alternatives.
+
+## Inspecting candidates
+
+While a partition waits at construct review, it does not yet appear in the canonical chain. Use the graph-view dropdown to switch into a candidate mini-graph and inspect diffs before accepting.

@@ -12,9 +12,9 @@ import { Textarea } from "@/components/ui/textarea";
 import CollapsibleItem from "@/components/review/CollapsibleItem";
 
 type Props = {
-  partitionId: number;
+  partitionId: string;
   survey: ChangeSurvey;
-  surveyRunId: number;
+  surveyRunId: string;
   onAbandon: () => void;
 };
 
