@@ -153,7 +153,7 @@ See [`SPEC.md` § Repository access](SPEC.md#repository-access) for how this fit
 
 ### Trust model
 
-Eunomia binds `127.0.0.1` and treats the local OS user as the trust boundary; a Host-header guard on the local listener closes CSRF and DNS-rebinding paths. The optional Cloudflare tunnel grants any URL holder **full admin** of this instance — the share link is not view-only. Subagents run as ordinary local processes (no sandbox), so prompt-injected agent runs can do anything the eunomia process can do. See [`SECURITY.md`](SECURITY.md) for the full trust model, the tunnel rotation procedure, the cloudflared pin/verify story, and known deferred items.
+Eunomia binds `127.0.0.1` and treats the local OS user as the trust boundary; a Host-header guard on the local listener closes CSRF and DNS-rebinding paths. The optional Cloudflare tunnel (requires `--enable-tunnel`) grants any URL holder **full admin** of this instance — the share link is not view-only. Subagents run as ordinary local processes (no sandbox), so prompt-injected agent runs can do anything the eunomia process can do. See [`SECURITY.md`](SECURITY.md) for the full trust model, the tunnel rotation procedure, the cloudflared pin/verify story, and known deferred items.
 
 ### Pre-release note: stale dev DBs
 

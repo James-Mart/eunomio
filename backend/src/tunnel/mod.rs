@@ -41,6 +41,7 @@ pub(crate) struct Inner {
     events: broadcast::Sender<TunnelStatus>,
     data_dir: PathBuf,
     start_gate: tokio::sync::Mutex<()>,
+    enabled: bool,
     dev_mode: bool,
 }
 
@@ -58,7 +59,7 @@ pub(crate) struct Running {
 }
 
 impl TunnelRegistry {
-    pub fn new(data_dir: PathBuf, dev_mode: bool) -> Self {
+    pub fn new(data_dir: PathBuf, enabled: bool, dev_mode: bool) -> Self {
         let (events, _) = broadcast::channel(BROADCAST_CAPACITY);
         Self {
             inner: Arc::new(Inner {
@@ -66,6 +67,7 @@ impl TunnelRegistry {
                 events,
                 data_dir,
                 start_gate: tokio::sync::Mutex::new(()),
+                enabled,
                 dev_mode,
             }),
         }
@@ -73,7 +75,7 @@ impl TunnelRegistry {
 
     pub fn status(&self) -> TunnelStatus {
         let state = self.inner.state.lock().unwrap();
-        snapshot(&state, self.inner.dev_mode)
+        snapshot(&state, &self.inner)
     }
 
     /// True when the backend was launched with `--dev-tunnel`. Callers use
@@ -87,7 +89,7 @@ impl TunnelRegistry {
     /// anything that might be observed via the tunnel itself.
     pub fn status_redacted(&self) -> TunnelStatus {
         let state = self.inner.state.lock().unwrap();
-        snapshot_redacted(&state, self.inner.dev_mode)
+        snapshot_redacted(&state, &self.inner)
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<TunnelStatus> {
@@ -95,6 +97,15 @@ impl TunnelRegistry {
     }
 
     pub async fn start(&self, router: Router) -> Result<TunnelStatus, AppError> {
+        ensure_enabled(&self.inner)?;
+        match self.start_inner(router).await {
+            Ok(dto) => Ok(dto),
+            Err(e @ AppError::Conflict { .. }) => Err(e),
+            Err(e) => Err(record_start_failure(&self.inner, e)),
+        }
+    }
+
+    async fn start_inner(&self, router: Router) -> Result<TunnelStatus, AppError> {
         let _gate = self.inner.start_gate.lock().await;
         {
             let state = self.inner.state.lock().unwrap();
@@ -136,7 +147,8 @@ impl TunnelRegistry {
         });
 
         match ready_rx.await {
-            Ok(result) => result,
+            Ok(Ok(dto)) => Ok(dto),
+            Ok(Err(e)) => Err(e),
             Err(_) => {
                 self.set_error("cloudflared supervisor crashed".into());
                 Err(AppError::Internal(anyhow!(
@@ -147,6 +159,7 @@ impl TunnelRegistry {
     }
 
     pub fn stop(&self) -> Result<(), AppError> {
+        ensure_enabled(&self.inner)?;
         let prev = {
             let mut state = self.inner.state.lock().unwrap();
             match std::mem::replace(&mut *state, TunnelState::Idle) {
@@ -177,6 +190,42 @@ impl TunnelRegistry {
             },
         );
     }
+}
+
+fn ensure_enabled(inner: &Inner) -> Result<(), AppError> {
+    if inner.enabled {
+        Ok(())
+    } else {
+        Err(tunnel_disabled())
+    }
+}
+
+fn tunnel_disabled() -> AppError {
+    AppError::Unrecoverable {
+        status: StatusCode::FORBIDDEN,
+        code: "tunnel_disabled".into(),
+        message: "tunnel sharing is not enabled".into(),
+    }
+}
+
+fn record_start_failure(inner: &Arc<Inner>, err: AppError) -> AppError {
+    match &err {
+        AppError::Conflict { .. } => return err,
+        AppError::Unrecoverable { code, .. } if code == "tunnel_disabled" => return err,
+        _ => {}
+    }
+    let state = inner.state.lock().unwrap();
+    if !matches!(*state, TunnelState::Error { .. }) {
+        drop(state);
+        transition_to(
+            inner,
+            TunnelState::Error {
+                message: err.to_string(),
+                at: db::unix_seconds(),
+            },
+        );
+    }
+    err
 }
 
 async fn spawn_local_auth_listener(
@@ -210,13 +259,15 @@ async fn spawn_local_auth_listener(
 pub(crate) fn transition_to(inner: &Arc<Inner>, next: TunnelState) {
     let mut state = inner.state.lock().unwrap();
     *state = next;
-    let _ = inner.events.send(snapshot_redacted(&state, inner.dev_mode));
+    let _ = inner.events.send(snapshot_redacted(&state, inner));
 }
 
-pub(crate) fn snapshot(state: &TunnelState, dev_mode: bool) -> TunnelStatus {
-    let token_required = !dev_mode;
+pub(crate) fn snapshot(state: &TunnelState, inner: &Inner) -> TunnelStatus {
+    let token_required = inner.enabled && !inner.dev_mode;
+    let enabled = inner.enabled;
     match state {
         TunnelState::Idle => TunnelStatus {
+            enabled,
             state: TunnelStateName::Idle,
             token_required,
             url: None,
@@ -225,6 +276,7 @@ pub(crate) fn snapshot(state: &TunnelState, dev_mode: bool) -> TunnelStatus {
             error_message: None,
         },
         TunnelState::Running(r) => TunnelStatus {
+            enabled,
             state: TunnelStateName::Running,
             token_required,
             url: Some(r.url.clone()),
@@ -233,6 +285,7 @@ pub(crate) fn snapshot(state: &TunnelState, dev_mode: bool) -> TunnelStatus {
             error_message: None,
         },
         TunnelState::Error { message, at } => TunnelStatus {
+            enabled,
             state: TunnelStateName::Error,
             token_required,
             url: None,
@@ -246,8 +299,8 @@ pub(crate) fn snapshot(state: &TunnelState, dev_mode: bool) -> TunnelStatus {
 /// Like `snapshot` but never includes the share token. Used for any
 /// broadcast that may be observed via the tunnel itself (so a holder of the
 /// token cannot use the SSE stream to see future tokens after rotation).
-pub(crate) fn snapshot_redacted(state: &TunnelState, dev_mode: bool) -> TunnelStatus {
-    let mut dto = snapshot(state, dev_mode);
+pub(crate) fn snapshot_redacted(state: &TunnelState, inner: &Inner) -> TunnelStatus {
+    let mut dto = snapshot(state, inner);
     dto.token = None;
     dto
 }

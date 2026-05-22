@@ -40,7 +40,6 @@ pub(super) async fn supervise(
             }
         };
 
-    let dev_mode = inner.dev_mode;
     let started_at = db::unix_seconds();
     let (dto_full, dto_redacted) = {
         let mut state = inner.state.lock().unwrap();
@@ -51,8 +50,8 @@ pub(super) async fn supervise(
             stop_tx,
         });
         (
-            snapshot(&state, dev_mode),
-            super::snapshot_redacted(&state, dev_mode),
+            snapshot(&state, &inner),
+            super::snapshot_redacted(&state, &inner),
         )
     };
     let _ = inner.events.send(dto_redacted);

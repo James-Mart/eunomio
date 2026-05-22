@@ -35,19 +35,17 @@ struct ServeArgs {
     #[arg(long, hide = true)]
     new: bool,
 
+    /// Enable Cloudflare quick-tunnel sharing. Auto-starts cloudflared at boot
+    /// and prints the trycloudflare URL to stdout.
+    #[arg(long)]
+    enable_tunnel: bool,
+
     /// Point `POST /api/tunnel` at the Vite dev server on `127.0.0.1:5173`
     /// and skip the share-token gate, so HMR works over the public URL.
     /// Set by `npm run dev`'s backend invocation; never set on release builds.
     /// Hidden from --help.
     #[arg(long, hide = true)]
     dev_tunnel: bool,
-
-    /// With `--dev-tunnel`: auto-start the cloudflared tunnel at boot and
-    /// print the trycloudflare URL to stdout. Lets `npm run dev` re-share
-    /// automatically on every backend rebuild without UI access.
-    /// Hidden from --help.
-    #[arg(long, hide = true, requires = "dev_tunnel")]
-    start_tunnel: bool,
 }
 
 #[tokio::main]
@@ -99,19 +97,34 @@ async fn serve(args: ServeArgs) -> Result<()> {
         .or_else(|| std::env::var("CURSOR_API_KEY").ok());
     std::env::remove_var("CURSOR_API_KEY");
 
-    let state =
-        eunomia::state::build_state(data_dir, cursor_api_key, args.dev_tunnel).await?;
+    let tunnel_enabled = args.enable_tunnel || args.dev_tunnel;
 
-    if args.start_tunnel {
-        let dto = state
+    let state = eunomia::state::build_state(
+        data_dir,
+        cursor_api_key,
+        tunnel_enabled,
+        args.dev_tunnel,
+    )
+    .await?;
+
+    if tunnel_enabled {
+        match state
             .tunnel
             .start(eunomia::server::router(state.clone()))
             .await
-            .map_err(|e| anyhow::anyhow!("--start-tunnel: {e:?}"))?;
-        let url = dto
-            .url
-            .context("--start-tunnel: tunnel reported running but no URL")?;
-        println!("{url}");
+        {
+            Ok(dto) => {
+                if let Some(url) = dto.url {
+                    println!("{url}");
+                }
+            }
+            Err(e) if args.dev_tunnel => {
+                return Err(anyhow::anyhow!("tunnel auto-start: {e:?}"));
+            }
+            Err(e) => {
+                tracing::warn!(error = ?e, "tunnel auto-start failed; continuing without public URL");
+            }
+        }
     }
 
     eunomia::server::serve(state, args.port).await

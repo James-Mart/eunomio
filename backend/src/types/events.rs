@@ -61,6 +61,7 @@ pub enum TunnelStateName {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TunnelStatus {
+    pub enabled: bool,
     pub state: TunnelStateName,
     pub token_required: bool,
     #[serde(skip_serializing_if = "Option::is_none")]

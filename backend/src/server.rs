@@ -288,10 +288,17 @@ async fn stop_tunnel(State(state): State<AppState>) -> Result<StatusCode, AppErr
 
 async fn tunnel_events(
     State(state): State<AppState>,
-) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, AppError> {
+    if !state.tunnel.status().enabled {
+        return Err(AppError::Unrecoverable {
+            status: StatusCode::FORBIDDEN,
+            code: "tunnel_disabled".into(),
+            message: "tunnel sharing is not enabled".into(),
+        });
+    }
     let rx = state.tunnel.subscribe();
     let initial = Some(state.tunnel.status_redacted());
-    sse::json_broadcast_stream(rx, initial)
+    Ok(sse::json_broadcast_stream(rx, initial))
 }
 
 async fn session_events(

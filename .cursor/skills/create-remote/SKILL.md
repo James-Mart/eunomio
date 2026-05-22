@@ -55,7 +55,7 @@ git repo, and surface the public Cloudflare tunnel URL.
    ```
 
    Why this works: `npm run dev` already invokes the backend with
-   `--dev-tunnel --start-tunnel`, which auto-starts cloudflared and prints the
+   `--dev-tunnel`, which enables sharing, auto-starts cloudflared, and prints the
    trycloudflare URL to stdout on a single line.
 
    Do *not* try to bake the wipe into this command by appending `--new` to
@@ -97,7 +97,7 @@ without switching to a named tunnel tied to a Cloudflare account.
 Practical consequence: any Rust edit invalidates the URL the user is
 currently sharing. If they need a stable URL, tell them to either (a) stop
 editing backend sources, or (b) run eunomia without `cargo watch` (e.g.
-`cargo run -- --port 3001 --dev-tunnel --start-tunnel` directly).
+`cargo run -- --port 3001 --dev-tunnel` directly).
 
 When you detect that a new URL has been issued (e.g. the user asks again, or
 you re-tail after a rebuild), print the new URL in the chat reply the same
@@ -115,7 +115,5 @@ way — do not assume the previously-printed URL is still valid.
 
 Both are hidden from `--help` and set by `npm run dev`'s backend invocation:
 
-- `--dev-tunnel`: route `/api/tunnel` traffic to the Vite dev server and skip
-  the share-token gate so HMR works over the public URL.
-- `--start-tunnel` (requires `--dev-tunnel`): auto-start cloudflared at boot
-  and print the trycloudflare URL to stdout.
+- `--dev-tunnel`: enable sharing, route traffic to the Vite dev server, skip
+  the share-token gate, and auto-start cloudflared at boot (printing the URL).

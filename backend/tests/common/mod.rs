@@ -35,7 +35,7 @@ impl TestApp {
         let data = tempfile::tempdir().expect("tempdir for data");
         setup(repo.path());
         let data_root = data.path().canonicalize().expect("canonicalise data path");
-        let state = build_state(data_root, None, false)
+        let state = build_state(data_root, None, false, false)
             .await
             .expect("build_state");
         let router = router(state.clone());
@@ -61,7 +61,7 @@ impl TestApp {
         let data = tempfile::tempdir().expect("tempdir for data");
         setup(repo.path());
         let data_root = data.path().canonicalize().expect("canonicalise data path");
-        let state = build_state_with_runner(data_root, None, false, runner)
+        let state = build_state_with_runner(data_root, None, false, false, runner)
             .await
             .expect("build_state_with_runner");
         let router = router(state.clone());

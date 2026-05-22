@@ -29,11 +29,9 @@ subscriptions are protected too.
 
 ## Tunnel
 
-When a user enables the Cloudflare quick tunnel (`POST /api/tunnel`), a second
-HTTP listener is wrapped in a token-checking middleware and exposed via
-`cloudflared`. **The share token grants full admin access to Eunomia** — anyone
-holding the URL can view diffs, accept or abandon partitions, change settings,
-and trigger API-billing runs. The UI describes the link as such.
+Tunnel sharing is **disabled by default**. Pass `--enable-tunnel` (single-binary) or `--dev-tunnel` (dev only) to enable it.
+
+When enabled, `POST /api/tunnel` opens a second HTTP listener wrapped in token-checking middleware and exposed via `cloudflared`. **The share token grants full admin access to Eunomia** — anyone holding the URL can view diffs, accept or abandon partitions, change settings, and trigger API-billing runs. The UI describes the link as such.
 
 Operational notes:
 
@@ -46,12 +44,8 @@ Operational notes:
   subscribers see a redacted DTO; the full token is only returned by
   `GET /api/tunnel`, which is reachable only on the host-gated local listener.
 - The hidden `--dev-tunnel` flag, set only by `npm run dev`'s backend
-  invocation, points cloudflared at the Vite dev server on `:5173` and skips
-  the share-token gate entirely. The companion `--start-tunnel` flag (also
-  hidden, `requires = "dev_tunnel"`) auto-runs that same path at boot and
-  prints the URL on stdout, so a backend rebuild re-shares without UI
-  access. Same dev path, same `:5173` target, same lack of share token; no
-  new trust boundaries. See the "Dev escape hatch" section of
+  invocation, enables sharing, points cloudflared at the Vite dev server on
+  `:5173`, skips the share-token gate, and auto-starts at boot. See
   [`docs/adr/0003-public-url-token-tunnel.md`](docs/adr/0003-public-url-token-tunnel.md).
 
 ## Subagents are unsandboxed local processes

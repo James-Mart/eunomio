@@ -200,6 +200,7 @@ export type RepoHints = {
 export type TunnelState = "idle" | "running" | "error";
 
 export type TunnelStatus = {
+  enabled: boolean;
   state: TunnelState;
   tokenRequired: boolean;
   url?: string;

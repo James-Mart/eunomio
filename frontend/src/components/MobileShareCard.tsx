@@ -19,19 +19,28 @@ import { useAbortableEffect } from "@/lib/useAbortableEffect";
 
 export default function MobileShareCard() {
   const [status, setStatus] = useState<TunnelStatus | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
 
   useAbortableEffect(async (signal) => {
     try {
       const s = await api.getTunnel();
-      if (!signal.aborted) setStatus(s);
-    } catch {
-      if (!signal.aborted) setStatus({ state: "idle", tokenRequired: true });
+      if (!signal.aborted) {
+        setStatus(s);
+        setFetchError(null);
+      }
+    } catch (e) {
+      if (!signal.aborted) {
+        setFetchError(formatError(e, "Could not load tunnel status"));
+      }
     }
   }, []);
 
+  const tunnelEnabled = status?.enabled === true;
+
   useEffect(() => {
+    if (!tunnelEnabled) return;
     let stopped = false;
     const unsub = subscribeEventSource({
       url: "/api/tunnel/events",
@@ -43,13 +52,6 @@ export default function MobileShareCard() {
           console.error("malformed tunnel SSE payload", err, ev.data);
           return;
         }
-        // SSE payloads are token-redacted; preserve any token already
-        // loaded via the initial REST fetch (or a prior fetch in this
-        // tab). If we're "running" with no token cached anywhere, do
-        // a one-off refetch from the local listener so a freshly
-        // opened tab can recover the token. Skipped when the backend
-        // is in dev-tunnel mode (tokenRequired = false), where the
-        // refetch would never return a token.
         setStatus((prev) => {
           const merged: TunnelStatus = { ...(prev ?? {}), ...payload };
           if (
@@ -70,7 +72,7 @@ export default function MobileShareCard() {
       stopped = true;
       unsub();
     };
-  }, []);
+  }, [tunnelEnabled]);
 
   useEffect(() => {
     if (!modalOpen) return;
@@ -85,6 +87,7 @@ export default function MobileShareCard() {
     try {
       const next = await api.startTunnel();
       setStatus(next);
+      setFetchError(null);
     } catch (e) {
       toast.error(formatError(e, "Failed to start tunnel"));
     } finally {
@@ -97,6 +100,7 @@ export default function MobileShareCard() {
     try {
       await api.stopTunnel();
       setStatus((prev) => ({
+        enabled: prev?.enabled ?? true,
         state: "idle",
         tokenRequired: prev?.tokenRequired ?? true,
       }));
@@ -111,6 +115,10 @@ export default function MobileShareCard() {
     setModalOpen(true);
     if (status?.state !== "running") void onStart();
   };
+
+  if (status !== null && status.enabled === false) {
+    return null;
+  }
 
   return (
     <>
@@ -136,6 +144,7 @@ export default function MobileShareCard() {
         <CardContent className="p-4 pt-2">
           <Controls
             status={status}
+            fetchError={fetchError}
             pending={pending}
             onGetQr={onGetQr}
             onStop={onStop}
@@ -162,15 +171,20 @@ export default function MobileShareCard() {
 
 function Controls({
   status,
+  fetchError,
   pending,
   onGetQr,
   onStop,
 }: {
   status: TunnelStatus | null;
+  fetchError: string | null;
   pending: boolean;
   onGetQr: () => void;
   onStop: () => void;
 }) {
+  if (fetchError) {
+    return <p className="text-sm text-destructive">{fetchError}</p>;
+  }
   if (status === null) {
     return <p className="text-xs text-muted-foreground">Loading&hellip;</p>;
   }

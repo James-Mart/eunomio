@@ -37,11 +37,11 @@ Restarting `eunomia` (the most common dev event) leaves Vite running — the bro
 
 Eunomia binds `127.0.0.1` only and has no application-level auth for the local user — the OS is the trust boundary.
 
-For remote viewing, the home page's "Continue on mobile" card opens a Cloudflare quick tunnel from inside the binary and produces a QR/link containing a per-session share token. The tunnel terminates on a second loopback listener that checks the token via middleware, sets an `HttpOnly` cookie on first hit, then proxies the request through the normal router. See [`docs/adr/0003-public-url-token-tunnel.md`](docs/adr/0003-public-url-token-tunnel.md) for the rationale and the rejected alternatives (Caddy basic auth, Cloudflare Access).
+For remote viewing, the home page's "Continue on mobile" card opens a Cloudflare quick tunnel from inside the binary and produces a QR/link containing a per-session share token. Tunnel sharing requires `--enable-tunnel` (or `--dev-tunnel` in dev). The tunnel terminates on a second loopback listener that checks the token via middleware, sets an `HttpOnly` cookie on first hit, then proxies the request through the normal router. See [`docs/adr/0003-public-url-token-tunnel.md`](docs/adr/0003-public-url-token-tunnel.md) for the rationale and the rejected alternatives (Caddy basic auth, Cloudflare Access).
 
 The in-app tunnel is most useful in single-binary mode (below), where the same axum process serves the embedded frontend on the same port. In dev mode the tunnel exposes only `/api/*` (Vite is a separate process), so for sharing-while-iterating, run the single-binary build instead.
 
 ## Two run modes (recap)
 
 - **Dev** (`./dev.sh`) — Vite serves the UI on :5173 with HMR; cargo-watch keeps eunomia auto-restarting on Rust changes; Vite's proxy bridges `/api` into the running backend. **Open `http://localhost:5173`**, not :3001.
-- **Single-binary** (`eunomia`) — frontend assets are baked in via `rust-embed` at `cargo build --release` time. One port, one process. Use this for prod, smoke tests, or sharing via the in-app tunnel. No HMR.
+- **Single-binary** (`eunomia`) — frontend assets are baked in via `rust-embed` at `cargo build --release` time. One port, one process. Use this for prod, smoke tests, or sharing via the in-app tunnel (`--enable-tunnel`). No HMR.
