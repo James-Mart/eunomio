@@ -8,16 +8,15 @@ pub struct SiblingInfo {
 }
 
 pub async fn get(state: &AppState, partition_id: i64) -> Result<PartitionRow, AppError> {
-    let repo_root = state.repo_root.to_string_lossy().to_string();
     let row: Option<PartitionRow> = state
         .db
         .call(move |conn| {
             let mut stmt = conn.prepare(
                 "SELECT p.id, p.session_id, p.target_node_id, p.strategy, p.change_survey_json, p.plan_json, p.candidate_slice_tree_sha, p.candidate_slice_commit_sha, p.phase, p.phase_state, p.worktree_path, p.remaining_depth, p.created_at \
-                 FROM partitions p JOIN sessions s ON s.id = p.session_id \
-                 WHERE p.id = ?1 AND s.repo_root = ?2",
+                 FROM partitions p \
+                 WHERE p.id = ?1",
             )?;
-            let mut rows = stmt.query(tokio_rusqlite::params![partition_id, repo_root])?;
+            let mut rows = stmt.query(tokio_rusqlite::params![partition_id])?;
             if let Some(r) = rows.next()? {
                 Ok(Some(partition_row_mapper(r)?))
             } else {

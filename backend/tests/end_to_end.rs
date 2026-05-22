@@ -3,7 +3,7 @@ use pretty_assertions::assert_eq;
 use serde_json::json;
 
 mod common;
-use common::{empty_request, git, json_request, TestApp};
+use common::{empty_request, git, json_request, local_session_body, TestApp};
 
 #[tokio::test]
 async fn happy_path_create_rename_branch() {
@@ -14,7 +14,7 @@ async fn happy_path_create_rename_branch() {
         &app.router,
         "POST",
         "/api/sessions",
-        json!({ "baseRef": "main", "sourceRef": "feature" }),
+        local_session_body(&repo, "main", "feature"),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "create body: {body}");

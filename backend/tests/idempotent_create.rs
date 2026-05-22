@@ -1,6 +1,5 @@
 use axum::http::StatusCode;
 use pretty_assertions::assert_eq;
-use serde_json::json;
 use std::path::Path;
 
 mod common;
@@ -36,7 +35,7 @@ async fn repeated_create_returns_existing_session() {
         &app.router,
         "POST",
         "/api/sessions",
-        json!({ "baseRef": "main", "sourceRef": "feature" }),
+        common::local_session_body(&app.repo_path(), "main", "feature"),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "first create body: {body}");
@@ -47,7 +46,7 @@ async fn repeated_create_returns_existing_session() {
         &app.router,
         "POST",
         "/api/sessions",
-        json!({ "baseRef": "main", "sourceRef": "feature" }),
+        common::local_session_body(&app.repo_path(), "main", "feature"),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "repeat create body: {body}");
@@ -58,7 +57,7 @@ async fn repeated_create_returns_existing_session() {
         &app.router,
         "POST",
         "/api/sessions",
-        json!({ "baseRef": "main", "sourceRef": "other" }),
+        common::local_session_body(&app.repo_path(), "main", "other"),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "other create body: {body}");

@@ -267,7 +267,8 @@ impl Coordinator {
         repo::run::cancel_running_for_partition(state, partition_id).await?;
         repo::partition::delete_with_runs(state, partition_id).await?;
         let worktree_path = PathBuf::from(&row.worktree_path);
-        worktree::teardown(&state.repo_root, &worktree_path).await;
+        let git_root = repo::session::git_root(state, &row.session_id).await?;
+        worktree::teardown(&git_root, &worktree_path).await;
         self.emit(
             &row.session_id,
             SseEvent::Cancelled {
@@ -286,10 +287,14 @@ async fn teardown_worktrees(
     row: &PartitionRow,
     siblings: &[repo::partition::SiblingInfo],
 ) {
+    let git_root = match repo::session::git_root(state, &row.session_id).await {
+        Ok(p) => p,
+        Err(_) => return,
+    };
     let worktree_path = PathBuf::from(&row.worktree_path);
-    worktree::teardown(&state.repo_root, &worktree_path).await;
+    worktree::teardown(&git_root, &worktree_path).await;
     for sib in siblings {
         let sib_path = PathBuf::from(&sib.worktree_path);
-        worktree::teardown(&state.repo_root, &sib_path).await;
+        worktree::teardown(&git_root, &sib_path).await;
     }
 }

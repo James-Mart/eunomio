@@ -34,9 +34,8 @@ impl TestApp {
         let repo = tempfile::tempdir().expect("tempdir for repo");
         let data = tempfile::tempdir().expect("tempdir for data");
         setup(repo.path());
-        let repo_root = repo.path().canonicalize().expect("canonicalise repo path");
         let data_root = data.path().canonicalize().expect("canonicalise data path");
-        let state = build_state(repo_root, data_root, None, false)
+        let state = build_state(data_root, None, false)
             .await
             .expect("build_state");
         let router = router(state.clone());
@@ -61,9 +60,8 @@ impl TestApp {
         let repo = tempfile::tempdir().expect("tempdir for repo");
         let data = tempfile::tempdir().expect("tempdir for data");
         setup(repo.path());
-        let repo_root = repo.path().canonicalize().expect("canonicalise repo path");
         let data_root = data.path().canonicalize().expect("canonicalise data path");
-        let state = build_state_with_runner(repo_root, data_root, None, false, runner)
+        let state = build_state_with_runner(data_root, None, false, runner)
             .await
             .expect("build_state_with_runner");
         let router = router(state.clone());
@@ -79,6 +77,14 @@ impl TestApp {
     pub fn repo_path(&self) -> PathBuf {
         self.repo.path().canonicalize().unwrap()
     }
+}
+
+pub fn local_session_body(repo: &Path, base_ref: &str, source_ref: &str) -> serde_json::Value {
+    serde_json::json!({
+        "remoteUrl": repo.canonicalize().unwrap().display().to_string(),
+        "baseRef": base_ref,
+        "sourceRef": source_ref,
+    })
 }
 
 pub fn default_repo(path: &Path) {

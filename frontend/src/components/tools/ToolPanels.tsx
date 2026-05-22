@@ -10,6 +10,7 @@ export type PendingPartitionOption = {
 
 export type ToolsContext = {
   sessionId: string;
+  isLocal: boolean;
   nodeId: string | null;
   nodeTitle: string | null;
   nodeDescription: string | null;

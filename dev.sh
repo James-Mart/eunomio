@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # Launch eunomia in dev mode: vite (HMR) on :5173, axum backend on :3001.
-# Usage: ./dev.sh [REPO_ROOT]
-#   REPO_ROOT defaults to $PWD; whatever git repo the script ends up running
-#   from is the one the backend captures as REPO_ROOT at startup.
+# Usage: ./dev.sh
 # Env:
 #   EUNOMIA_PORT   backend port (default 3001)
 
@@ -11,12 +9,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EUNOMIA_REPO="$SCRIPT_DIR"
 PORT="${EUNOMIA_PORT:-3001}"
-REPO_ROOT="${1:-$PWD}"
-REPO_ROOT="$(cd "$REPO_ROOT" && pwd)"
-
-if [[ ! -d "$REPO_ROOT/.git" && ! -f "$REPO_ROOT/.git" ]]; then
-  echo "[dev] warning: $REPO_ROOT does not look like a git repo; backend git ops will fail." >&2
-fi
 
 if [[ ! -d "$EUNOMIA_REPO/frontend/node_modules" ]]; then
   echo "[dev] installing frontend deps (one-time)…"
@@ -58,12 +50,11 @@ trap cleanup EXIT INT TERM
 
 cat <<EOF
 [dev] eunomia repo : $EUNOMIA_REPO
-[dev] REPO_ROOT    : $REPO_ROOT
 [dev] backend      : http://localhost:$PORT  (api only in dev mode)
 [dev] frontend     : http://localhost:5173   (open this one)
 EOF
 
-cd "$REPO_ROOT"
+cd "$EUNOMIA_REPO"
 ( "${backend_cmd[@]}" 2>&1 | sed -u 's/^/[backend]  /' ) &
 pids+=($!)
 

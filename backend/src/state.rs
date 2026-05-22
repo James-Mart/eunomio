@@ -16,7 +16,6 @@ use tokio_rusqlite::Connection;
 pub struct AppState(Arc<AppStateInner>);
 
 pub struct AppStateInner {
-    pub repo_root: PathBuf,
     pub data_dir: PathBuf,
     pub db: Connection,
     pub cursor_api_key: Option<String>,
@@ -34,7 +33,6 @@ impl std::ops::Deref for AppState {
 }
 
 pub async fn build_state(
-    repo_root: PathBuf,
     data_dir: PathBuf,
     cursor_api_key: Option<String>,
     dev_tunnel: bool,
@@ -43,11 +41,10 @@ pub async fn build_state(
         cursor_api_key.clone(),
         data_dir.clone(),
     ));
-    build_state_with_runner(repo_root, data_dir, cursor_api_key, dev_tunnel, runner).await
+    build_state_with_runner(data_dir, cursor_api_key, dev_tunnel, runner).await
 }
 
 pub async fn build_state_with_runner(
-    repo_root: PathBuf,
     data_dir: PathBuf,
     cursor_api_key: Option<String>,
     dev_tunnel: bool,
@@ -63,7 +60,6 @@ pub async fn build_state_with_runner(
     let subagents = load_subagents()?;
     let coordinator = Coordinator::new(subagents, runner);
     let state = AppState(Arc::new(AppStateInner {
-        repo_root,
         data_dir,
         db,
         cursor_api_key,

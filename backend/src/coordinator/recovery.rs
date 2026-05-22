@@ -80,7 +80,15 @@ async fn sweep_orphan_worktree_dirs(state: &AppState, alive: &[i64]) {
                 continue;
             }
             tracing::info!(path = %worktree_path.display(), "removing orphan partition worktree");
-            worktree::teardown(&state.repo_root, &worktree_path).await;
+            let session_id = session_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+            if let Ok(git_root) = repo::session::git_root(state, session_id).await {
+                worktree::teardown(&git_root, &worktree_path).await;
+            } else {
+                let _ = tokio::fs::remove_dir_all(part_path).await;
+            }
         }
     }
 }

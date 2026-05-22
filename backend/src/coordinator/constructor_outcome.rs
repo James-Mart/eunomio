@@ -49,9 +49,10 @@ impl Coordinator {
         })?;
         let slice_title = split.edges[0].title.clone();
 
+        let git_root = repo::session::git_root(state, &row.session_id).await?;
         let worktree_path = PathBuf::from(&row.worktree_path);
         let (tree_sha, commit_sha) = worktree::capture_slice_commit(
-            &state.repo_root,
+            &git_root,
             &worktree_path,
             &parent.commit_sha,
             &slice_title,

@@ -1,10 +1,12 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
 import { PlusIcon, TrashIcon } from "@primer/octicons-react";
+
+import { RepoKindIcon } from "@/components/RepoKindIcon";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -33,6 +35,7 @@ import { formatError } from "@/lib/errors";
 import { useAbortableEffect } from "@/lib/useAbortableEffect";
 
 const schema = z.object({
+  remoteUrl: z.string().min(1, "repository is required"),
   sourceRef: z.string().min(1, "source is required"),
   baseRef: z.string().min(1, "base is required"),
 });
@@ -107,6 +110,17 @@ function SessionsList({
   onContinue: (id: string) => void;
   onDeleted: (id: string) => void;
 }) {
+  const groups = useMemo(() => {
+    if (!sessions?.length) return [];
+    const map = new Map<string, Session[]>();
+    for (const s of sessions) {
+      const list = map.get(s.normalizedRemote) ?? [];
+      list.push(s);
+      map.set(s.normalizedRemote, list);
+    }
+    return Array.from(map.entries());
+  }, [sessions]);
+
   if (error) {
     return <p className="text-sm text-destructive">{error}</p>;
   }
@@ -128,20 +142,49 @@ function SessionsList({
   if (sessions.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        No sessions yet — click + New to create one.
+        No sessions yet — click + New and enter a repository URL or local path.
       </p>
     );
   }
+
   return (
-    <div className="divide-y">
-      {sessions.map((s) => (
-        <SessionRow
-          key={s.id}
-          session={s}
-          onContinue={() => onContinue(s.id)}
-          onDeleted={() => onDeleted(s.id)}
-        />
-      ))}
+    <div className="space-y-6">
+      {groups.map(([key, rows]) => {
+        const sample = rows[0];
+        const headerTitle = sample.isLocal ? sample.literalRemote : undefined;
+        return (
+          <div key={key} className="divide-y rounded-md border">
+            <div
+              className="flex items-center gap-2 px-3 py-2 text-sm"
+              aria-label={`Repository: ${sample.repoName}`}
+            >
+              <RepoKindIcon
+                isLocal={sample.isLocal}
+                remoteUrl={sample.literalRemote}
+                className="h-4 w-4 shrink-0 text-muted-foreground"
+              />
+              {sample.repoOwner && (
+                <>
+                  <span className="truncate text-link">{sample.repoOwner}</span>
+                  <span className="text-muted-foreground">/</span>
+                </>
+              )}
+              <span className="truncate font-medium" title={headerTitle}>
+                {sample.repoName}
+              </span>
+            </div>
+            {rows.map((s) => (
+              <div key={s.id} className="px-3">
+                <SessionRow
+                  session={s}
+                  onContinue={() => onContinue(s.id)}
+                  onDeleted={() => onDeleted(s.id)}
+                />
+              </div>
+            ))}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -226,17 +269,24 @@ function SessionRow({
 
 function CreateSessionDialogContent({ onCreated }: { onCreated: (sessionId: string) => void }) {
   const [submitting, setSubmitting] = useState(false);
+  const [phase, setPhase] = useState<"idle" | "fetching" | "creating">("idle");
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { sourceRef: "", baseRef: "origin/main" },
+    defaultValues: { remoteUrl: "", sourceRef: "", baseRef: "origin/main" },
   });
 
   useAbortableEffect(async (signal) => {
     try {
-      const info = await api.getRepoInfo();
+      const hints = await api.getRepoHints();
       if (signal.aborted) return;
-      if (info.currentBranch && !form.getValues("sourceRef")) {
-        form.setValue("sourceRef", info.currentBranch);
+      if (hints.suggestedRemoteUrl && !form.getValues("remoteUrl")) {
+        form.setValue("remoteUrl", hints.suggestedRemoteUrl);
+      }
+      if (hints.suggestedSourceRef && !form.getValues("sourceRef")) {
+        form.setValue("sourceRef", hints.suggestedSourceRef);
+      }
+      if (hints.suggestedBaseRef && form.getValues("baseRef") === "origin/main") {
+        form.setValue("baseRef", hints.suggestedBaseRef);
       }
     } catch {
       // Non-fatal; user can fill the field manually.
@@ -245,27 +295,50 @@ function CreateSessionDialogContent({ onCreated }: { onCreated: (sessionId: stri
 
   const onSubmit = async (values: FormValues) => {
     setSubmitting(true);
+    setPhase("fetching");
     try {
-      const session = await api.createSession(values.baseRef, values.sourceRef);
+      setPhase("creating");
+      const session = await api.createSession(
+        values.remoteUrl,
+        values.baseRef,
+        values.sourceRef,
+      );
       onCreated(session.id);
     } catch (e) {
       toast.error(formatError(e, "Failed to create session"));
     } finally {
       setSubmitting(false);
+      setPhase("idle");
     }
   };
+
+  const submitLabel =
+    phase === "fetching" ? "Fetching…" : phase === "creating" ? "Creating…" : "Create session";
 
   return (
     <DialogContent>
       <DialogHeader>
         <DialogTitle>Create session</DialogTitle>
         <DialogDescription>
-          Pick a source ref (the work to review) and a base ref (the merge target). Both must
-          exist in the repo this server was started in.
+          Local path or remote URL. Network remotes are fetched into a managed clone; refs must
+          exist on the remote. Local paths can use unpushed branches.
         </DialogDescription>
       </DialogHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <FormField
+            control={form.control}
+            name="remoteUrl"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>repository</FormLabel>
+                <FormControl>
+                  <Input placeholder="/path/to/repo or https://github.com/org/repo.git" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
           <FormField
             control={form.control}
             name="sourceRef"
@@ -273,7 +346,7 @@ function CreateSessionDialogContent({ onCreated }: { onCreated: (sessionId: stri
               <FormItem>
                 <FormLabel>source</FormLabel>
                 <FormControl>
-                  <Input placeholder="feature-branch" {...field} />
+                  <Input placeholder="feature-branch" className="font-mono" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -286,14 +359,14 @@ function CreateSessionDialogContent({ onCreated }: { onCreated: (sessionId: stri
               <FormItem>
                 <FormLabel>base</FormLabel>
                 <FormControl>
-                  <Input placeholder="origin/main" {...field} />
+                  <Input placeholder="origin/main" className="font-mono" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
             )}
           />
           <Button type="submit" disabled={submitting} className="w-full">
-            {submitting ? "Creating…" : "Create session"}
+            {submitLabel}
           </Button>
         </form>
       </Form>

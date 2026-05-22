@@ -1,4 +1,4 @@
-use crate::{db, error::AppError, git, repo, state::AppState, types::*};
+use crate::{db, error::AppError, git, repo, repo_store, state::AppState, types::*};
 use std::path::Path;
 use uuid::Uuid;
 
@@ -16,21 +16,31 @@ pub enum CreateOutcome {
 pub async fn create(
     state: &AppState,
     dto: CreateSessionRequest,
-) -> Result<(CreatedSession, CreateOutcome), AppError> {
-    let CreateSessionRequest { base_ref, source_ref } = dto;
+) -> Result<(Session, CreateOutcome), AppError> {
+    let CreateSessionRequest {
+        remote_url,
+        base_ref,
+        source_ref,
+    } = dto;
 
-    if let Some(existing) = repo::session::find_by_refs(state, &base_ref, &source_ref).await? {
-        return Ok((
-            CreatedSession {
-                id: existing.id,
-                base_node_id: existing.base_node_id,
-                created_at: existing.created_at,
-            },
-            CreateOutcome::Existed,
-        ));
+    let parsed = repo_store::parse_remote_url(&remote_url)?;
+
+    if let Some(existing) = repo::session::find_by_refs(
+        state,
+        &parsed.normalized_remote,
+        &base_ref,
+        &source_ref,
+    )
+    .await?
+    {
+        let session = repo::session::get(state, &existing.id)
+            .await?
+            .ok_or(AppError::NotFound)?;
+        return Ok((session, CreateOutcome::Existed));
     }
 
-    let seed = seed_session(&state.repo_root, &base_ref, &source_ref).await?;
+    let git_root = repo_store::materialize_git_root(&state.data_dir, &parsed).await?;
+    let seed = seed_session(&git_root, parsed.is_local, &base_ref, &source_ref).await?;
 
     let session_id = Uuid::new_v4().to_string();
     let base_node_id = Uuid::new_v4().to_string();
@@ -40,8 +50,11 @@ pub async fn create(
     repo::session::insert_seed_nodes(
         state,
         session_id.clone(),
-        base_ref,
-        source_ref,
+        parsed.normalized_remote.clone(),
+        parsed.literal_remote.clone(),
+        parsed.is_local,
+        base_ref.clone(),
+        source_ref.clone(),
         seed.base_tree,
         seed.final_tree,
         base_node_id.clone(),
@@ -52,26 +65,34 @@ pub async fn create(
     )
     .await?;
 
-    Ok((
-        CreatedSession {
-            id: session_id,
-            base_node_id,
-            created_at: now,
-        },
-        CreateOutcome::Created,
-    ))
+    let session = repo::session::get(state, &session_id)
+        .await?
+        .ok_or(AppError::Internal(anyhow::anyhow!("session missing after insert")))?;
+
+    Ok((session, CreateOutcome::Created))
 }
 
 pub async fn delete(state: &AppState, session_id: &str) -> Result<(), AppError> {
-    repo::session::ensure(state, session_id).await?;
+    let fields = repo::session::repo_fields(state, session_id).await?;
+    let git_root = repo::session::git_root(state, session_id).await?;
 
     let partition_worktrees = repo::session::list_partition_worktrees(state, session_id).await?;
     for wt_path in &partition_worktrees {
         let path = std::path::PathBuf::from(wt_path);
-        crate::worktree::teardown(&state.repo_root, &path).await;
+        crate::worktree::teardown(&git_root, &path).await;
     }
 
     repo::session::delete_cascade(state, session_id).await?;
+
+    let remaining = repo::session::count_for_normalized(state, &fields.normalized_remote).await?;
+    repo_store::maybe_remove_clone(
+        &state.data_dir,
+        &fields.normalized_remote,
+        fields.is_local,
+        remaining,
+    )
+    .await?;
+
     Ok(())
 }
 
@@ -83,15 +104,28 @@ struct SessionSeed {
 }
 
 async fn seed_session(
-    repo_root: &Path,
+    git_root: &Path,
+    is_local: bool,
     base_ref: &str,
     source_ref: &str,
 ) -> Result<SessionSeed, AppError> {
-    let mb = git::merge_base(repo_root, base_ref, source_ref)
+    let resolved_source = git::resolve_ref_name(git_root, source_ref)
+        .await
+        .map_err(|e| {
+            if is_local {
+                AppError::BadRequest(format!("rev-parse {source_ref} failed: {e}"))
+            } else {
+                AppError::BadRequest(format!(
+                    "rev-parse {source_ref} failed: {e} (network remotes require fetchable refs)"
+                ))
+            }
+        })?;
+
+    let mb = git::merge_base(git_root, base_ref, &resolved_source)
         .await
         .map_err(|e| AppError::BadRequest(format!("merge-base failed: {e}")))?;
 
-    let source_commit = git::rev_parse(repo_root, source_ref)
+    let source_commit = git::rev_parse(git_root, &resolved_source)
         .await
         .map_err(|e| AppError::BadRequest(format!("rev-parse {source_ref} failed: {e}")))?;
     if source_commit == mb {
@@ -100,17 +134,17 @@ async fn seed_session(
         ));
     }
 
-    let base_tree = git::rev_parse(repo_root, &format!("{mb}^{{tree}}"))
+    let base_tree = git::rev_parse(git_root, &format!("{mb}^{{tree}}"))
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("rev-parse base tree: {e}")))?;
-    let final_tree = git::rev_parse(repo_root, &format!("{source_ref}^{{tree}}"))
+    let final_tree = git::rev_parse(git_root, &format!("{resolved_source}^{{tree}}"))
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("rev-parse final tree: {e}")))?;
 
-    let base_commit = git::commit_tree(repo_root, &base_tree, &[], "base")
+    let base_commit = git::commit_tree(git_root, &base_tree, &[], "base")
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("commit-tree base: {e}")))?;
-    let final_commit = git::commit_tree(repo_root, &final_tree, &[&base_commit], "final")
+    let final_commit = git::commit_tree(git_root, &final_tree, &[&base_commit], "final")
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("commit-tree final: {e}")))?;
 

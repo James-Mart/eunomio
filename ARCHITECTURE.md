@@ -7,8 +7,8 @@ flowchart LR
   browser["browser<br/>(your laptop)"]
   vite["vite dev server<br/>:5173<br/>(HMR, /api proxy)"]
   rust["eunomia (axum)<br/>:3001<br/>cargo-watch restarts on .rs change"]
-  repo[("REPO_ROOT<br/>(git repo<br/>passed to dev.sh)")]
-  state[("~/.eunomia/<br/>sqlite + worktrees")]
+  repo[("per-session git root<br/>(local path or managed clone)")]
+  state[("~/.eunomia/<br/>sqlite + repos + worktrees")]
 
   browser -->|"http"| vite
   vite -->|"/api/* proxy"| rust
@@ -27,10 +27,11 @@ Restarting `eunomia` (the most common dev event) leaves Vite running — the bro
 
 ## State
 
-- `~/.eunomia/eunomia.db` — SQLite, shared across every git repo you've ever pointed eunomia at. Sessions are scoped by `repo_root`.
+- `~/.eunomia/eunomia.db` — SQLite, shared across all sessions.
+- `~/.eunomia/repos/<slug>/` — managed bare clones for network-remote sessions.
 - `~/.eunomia/worktrees/<sessionId>/<partitionId>/worktree/` — detached git worktrees, one per pending Partition.
 - `~/.eunomia/bin/cloudflared` — auto-downloaded when the user first starts the in-app tunnel (skipped if `cloudflared` is on `$PATH`).
-- `REPO_ROOT` (the git repo eunomia operates on) is **whatever directory the axum process was started from**. `dev.sh` sets that to its first positional arg, defaulting to `$PWD`.
+- Each session carries its own repository identity (local path or remote URL); the server can start from any directory.
 
 ## Auth
 
@@ -42,5 +43,5 @@ The in-app tunnel is most useful in single-binary mode (below), where the same a
 
 ## Two run modes (recap)
 
-- **Dev** (`./dev.sh [REPO_ROOT]`) — Vite serves the UI on :5173 with HMR; cargo-watch keeps eunomia auto-restarting on Rust changes; Vite's proxy bridges `/api` into the running backend. **Open `http://localhost:5173`**, not :3001.
+- **Dev** (`./dev.sh`) — Vite serves the UI on :5173 with HMR; cargo-watch keeps eunomia auto-restarting on Rust changes; Vite's proxy bridges `/api` into the running backend. **Open `http://localhost:5173`**, not :3001.
 - **Single-binary** (`eunomia`) — frontend assets are baked in via `rust-embed` at `cargo build --release` time. One port, one process. Use this for prod, smoke tests, or sharing via the in-app tunnel. No HMR.

@@ -103,13 +103,7 @@ npm install
 npm run dev
 ```
 
-Vite serves the UI on `:5173` (proxying `/api` to `:3001`); the backend runs on `:3001` and uses the `cargo watch` cwd as `REPO_ROOT`. To point the dev server at a different repo without leaving this directory, set `EUNOMIA_REPO_ROOT`:
-
-```bash
-EUNOMIA_REPO_ROOT=/path/to/some/git/repo npm run dev
-```
-
-(Equivalent to passing `--repo-root /path/to/some/git/repo` to a built binary.)
+Vite serves the UI on `:5173` (proxying `/api` to `:3001`); the backend runs on `:3001`. Create a session with a local path or remote URL — no need to start inside a git repo.
 
 ## Build
 
@@ -117,10 +111,9 @@ EUNOMIA_REPO_ROOT=/path/to/some/git/repo npm run dev
 npm run build
 ```
 
-Produces `target/release/eunomia` (workspace target dir, not `backend/target/`), a single binary that serves UI + API on one port. Run it from any git repo to use that repo as `REPO_ROOT`.
+Produces `target/release/eunomia` (workspace target dir, not `backend/target/`), a single binary that serves UI + API on one port. Start from any directory:
 
 ```bash
-cd /path/to/some/git/repo
 /path/to/eunomia/target/release/eunomia --port 3001
 ```
 
@@ -136,20 +129,25 @@ State (SQLite DB + per-Partition worktrees) lives in `~/.eunomia/`, shared acros
 
 Eunomia shells out to `git` on your `PATH` for every repository operation. It does not implement its own credential layer — auth behaves exactly like running `git` in your shell.
 
-### REPO_ROOT (today)
+### Local vs network sessions
 
-The server must start inside, or be pointed at with `--repo-root` / `EUNOMIA_REPO_ROOT`, an existing git working tree. Session `baseRef` and `sourceRef` are resolved with `git merge-base` and `git rev-parse` against that tree. Refs such as `origin/main` or a branch name must already exist in the local object database; run `git fetch` first if needed.
+Each session specifies a **repository** (local path or remote URL) at create time.
+
+| Mode | Git root | Branch create |
+| --- | --- | --- |
+| **Local path** | Your working tree in-place | Supported |
+| **Network remote** | Managed bare clone under `~/.eunomia/repos/` | Not supported (no push) |
 
 ### Public vs private remotes
 
 | Situation | Works? |
 | --- | --- |
-| Public remote, refs already fetched into `REPO_ROOT` | Yes |
-| Private remote, `REPO_ROOT` is a clone you can already fetch in a normal shell | Yes — same SSH keys / credential helper as your terminal |
-| Private remote, objects or refs not present locally | No — session create fails until you fetch |
-| HTTPS private URL with no credentials configured on the host | No — eunomia has no token UI |
+| **Public** remote, refs fetchable | Yes |
+| **Private** remote, host can `git fetch` non-interactively | Yes |
+| **Private** remote, no credentials on the host | No |
+| Local path with unpushed branch as `sourceRef` | Yes (local sessions only) |
 
-Private repositories work when your local clone already has access: if `git fetch origin` succeeds in `REPO_ROOT`, eunomia can use those refs. Configure auth the usual way (SSH agent, `git credential`, host-specific tokens via a credential helper, etc.) before starting a session.
+Private repositories work when your host can already fetch them. Configure auth the usual way (SSH agent, `git credential`, host-specific tokens via a credential helper, etc.) before creating a network-remote session.
 
 See [`SPEC.md` § Repository access](SPEC.md#repository-access) for how this fits the session model.
 

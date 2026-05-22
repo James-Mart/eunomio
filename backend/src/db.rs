@@ -6,7 +6,9 @@ use tokio_rusqlite::Connection;
 const MIGRATION: &str = r#"
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
-  repo_root TEXT NOT NULL,
+  normalized_remote TEXT NOT NULL,
+  literal_remote TEXT NOT NULL,
+  is_local INTEGER NOT NULL,
   base_ref TEXT NOT NULL,
   source_ref TEXT NOT NULL,
   base_tree TEXT NOT NULL,
@@ -14,9 +16,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   base_node_id TEXT NOT NULL,
   created_at INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS sessions_by_repo ON sessions (repo_root);
+CREATE INDEX IF NOT EXISTS sessions_by_remote ON sessions (normalized_remote);
 CREATE UNIQUE INDEX IF NOT EXISTS sessions_unique_pair
-  ON sessions (repo_root, base_ref, source_ref);
+  ON sessions (normalized_remote, base_ref, source_ref);
 
 CREATE TABLE IF NOT EXISTS nodes (
   session_id TEXT NOT NULL,

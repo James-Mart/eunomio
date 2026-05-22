@@ -1,4 +1,4 @@
-use crate::{db, error::AppError, repo, state::AppState, types::*, worktree};
+use crate::{db, error::AppError, repo, repo_store, state::AppState, types::*, worktree};
 
 use super::Coordinator;
 
@@ -43,6 +43,16 @@ impl Coordinator {
             AppError::BadRequest("base node has no incoming edge to partition".into())
         })?;
 
+        let fields = repo::session::repo_fields(state, session_id).await?;
+        repo_store::fetch_for_session(
+            &state.data_dir,
+            &fields.normalized_remote,
+            &fields.literal_remote,
+            fields.is_local,
+        )
+        .await?;
+        let git_root = repo::session::git_root(state, session_id).await?;
+
         let now = db::unix_seconds();
         let inserted_id = repo::partition::insert_pending(
             state,
@@ -55,7 +65,7 @@ impl Coordinator {
         .await?;
 
         let worktree_path = match worktree::provision(
-            &state.repo_root,
+            &git_root,
             &state.data_dir,
             session_id,
             inserted_id,

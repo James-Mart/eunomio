@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateSessionRequest {
+    pub remote_url: String,
     pub base_ref: String,
     pub source_ref: String,
 }
@@ -13,6 +14,12 @@ pub struct CreateSessionRequest {
 #[serde(rename_all = "camelCase")]
 pub struct Session {
     pub id: String,
+    pub normalized_remote: String,
+    pub literal_remote: String,
+    pub is_local: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repo_owner: Option<String>,
+    pub repo_name: String,
     pub base_ref: String,
     pub source_ref: String,
     pub base_node_id: String,
@@ -116,15 +123,15 @@ pub struct CursorModels {
     pub models: Vec<CursorModel>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
-pub struct RepoInfo {
-    pub name: String,
-    pub repo_root: String,
+pub struct RepoHints {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub owner: Option<String>,
+    pub suggested_remote_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub current_branch: Option<String>,
+    pub suggested_source_ref: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suggested_base_ref: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

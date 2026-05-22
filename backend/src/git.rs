@@ -37,7 +37,27 @@ pub async fn ensure_repo(path: &Path) -> Result<()> {
 }
 
 pub async fn merge_base(repo: &Path, base: &str, source: &str) -> Result<String> {
-    run(repo, &["merge-base", "--end-of-options", base, source]).await
+    let base = resolve_ref_name(repo, base).await?;
+    let source = resolve_ref_name(repo, source).await?;
+    run(
+        repo,
+        &["merge-base", "--end-of-options", &base, &source],
+    )
+    .await
+}
+
+/// Resolves `refname` in `repo`, mapping `origin/<branch>` to `<branch>` when needed (bare clones).
+pub async fn resolve_ref_name(repo: &Path, refname: &str) -> Result<String> {
+    if rev_parse(repo, refname).await.is_ok() {
+        return Ok(refname.to_string());
+    }
+    if let Some(short) = refname.strip_prefix("origin/") {
+        if !short.is_empty() && rev_parse(repo, short).await.is_ok() {
+            return Ok(short.to_string());
+        }
+    }
+    rev_parse(repo, refname).await?;
+    Ok(refname.to_string())
 }
 
 pub async fn diff_text(repo: &Path, from_tree: &str, to_tree: &str) -> Result<String> {
@@ -286,6 +306,32 @@ mod repo_name_tests {
             Some("org".to_string())
         );
     }
+
+    #[test]
+    fn normalizes_https_and_scp_to_same_network_key() {
+        use super::normalize_network_url;
+        assert_eq!(
+            normalize_network_url("https://github.com/org/repo.git"),
+            "github.com/org/repo"
+        );
+        assert_eq!(
+            normalize_network_url("git@github.com:org/repo.git"),
+            "github.com/org/repo"
+        );
+    }
+
+    #[test]
+    fn separates_local_and_remote_identities() {
+        use super::normalize_remote_identity;
+        assert_eq!(
+            normalize_remote_identity("/tmp/myrepo", true),
+            "local:/tmp/myrepo"
+        );
+        assert_eq!(
+            normalize_remote_identity("https://github.com/org/repo.git", false),
+            "remote:github.com/org/repo"
+        );
+    }
 }
 
 pub async fn rev_parse(repo: &Path, refname: &str) -> Result<String> {
@@ -459,4 +505,125 @@ pub async fn branch_exists(repo: &Path, name: &str) -> Result<bool> {
         .output()
         .await?;
     Ok(out.status.success())
+}
+
+pub fn normalize_network_url(url: &str) -> String {
+    let trimmed = url.trim().trim_end_matches('/').trim_end_matches(".git");
+    if let Some(rest) = trimmed.strip_prefix("file://") {
+        return rest.to_string();
+    }
+    if let Some((_, after_at)) = trimmed.rsplit_once('@') {
+        if !trimmed.contains("://") {
+            let (host, path) = after_at
+                .split_once(':')
+                .map(|(h, p)| (h, p))
+                .unwrap_or((after_at, ""));
+            return if path.is_empty() {
+                host.to_string()
+            } else {
+                format!("{host}/{path}")
+            };
+        }
+    }
+    let after_scheme = trimmed.split("://").nth(1).unwrap_or(trimmed);
+    after_scheme.to_string()
+}
+
+pub fn normalize_remote_identity(literal: &str, is_local: bool) -> String {
+    if is_local {
+        format!("local:{literal}")
+    } else {
+        format!("remote:{}", normalize_network_url(literal))
+    }
+}
+
+pub fn slug_from_identity(identity: &str) -> String {
+    use sha2::Digest;
+    let digest = sha2::Sha256::digest(identity.as_bytes());
+    digest.iter().take(8).map(|b| format!("{b:02x}")).collect()
+}
+
+pub fn is_local_repo_input(input: &str) -> bool {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    if trimmed.starts_with("file://") {
+        return true;
+    }
+    if trimmed.starts_with("http://")
+        || trimmed.starts_with("https://")
+        || trimmed.starts_with("ssh://")
+        || trimmed.starts_with("git://")
+    {
+        return false;
+    }
+    if trimmed.contains('@') && !trimmed.starts_with('/') {
+        return false;
+    }
+    let path = std::path::Path::new(trimmed);
+    path.is_absolute() || trimmed.starts_with('.') || path.exists()
+}
+
+pub fn repo_display_parts(
+    normalized_remote: &str,
+    is_local: bool,
+    literal_remote: &str,
+) -> (Option<String>, String) {
+    if is_local {
+        let name = std::path::Path::new(literal_remote)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(literal_remote)
+            .to_string();
+        (None, name)
+    } else {
+        let url = normalized_remote
+            .strip_prefix("remote:")
+            .unwrap_or(normalized_remote);
+        (
+            repo_owner_from_remote_url(url),
+            repo_name_from_remote_url(url),
+        )
+    }
+}
+
+pub async fn detect_trunk_ref(repo: &Path) -> Option<String> {
+    let _ = run(repo, &["remote", "set-head", "origin", "--auto"]).await;
+    let sym = run(repo, &["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"]).await.ok()?;
+    sym.strip_prefix("refs/remotes/origin/")
+        .map(str::to_string)
+        .or_else(|| {
+            sym.strip_prefix("origin/")
+                .map(str::to_string)
+        })
+}
+
+pub async fn remote_set_url(repo: &Path, url: &str) -> Result<()> {
+    run(repo, &["remote", "set-url", "origin", url])
+        .await
+        .map(|_| ())
+}
+
+pub async fn fetch_origin(repo: &Path) -> Result<()> {
+    run(repo, &["fetch", "--prune", "origin"])
+        .await
+        .map(|_| ())
+}
+
+pub async fn clone_bare(url: &str, path: &Path) -> Result<()> {
+    let path_str = path
+        .to_str()
+        .ok_or_else(|| anyhow!("clone path is not valid UTF-8: {}", path.display()))?;
+    let out = Command::new("git")
+        .args(["clone", "--bare", url, path_str])
+        .output()
+        .await?;
+    if !out.status.success() {
+        return Err(anyhow!(
+            "git clone --bare: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(())
 }

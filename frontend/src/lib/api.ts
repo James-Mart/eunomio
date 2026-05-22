@@ -1,5 +1,10 @@
 export type Session = {
   id: string;
+  normalizedRemote: string;
+  literalRemote: string;
+  isLocal: boolean;
+  repoOwner?: string;
+  repoName: string;
   baseRef: string;
   sourceRef: string;
   baseNodeId: string;
@@ -186,11 +191,10 @@ export type StartRunRequest = {
 export type CursorModel = { id: string };
 export type CursorModels = { models: CursorModel[] };
 
-export type RepoInfo = {
-  name: string;
-  repoRoot: string;
-  owner?: string;
-  currentBranch?: string;
+export type RepoHints = {
+  suggestedRemoteUrl?: string;
+  suggestedSourceRef?: string;
+  suggestedBaseRef?: string;
 };
 
 export type TunnelState = "idle" | "running" | "error";
@@ -243,8 +247,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 }
 
 export const api = {
-  createSession: (baseRef: string, sourceRef: string) =>
-    request<Session>("POST", "/sessions", { baseRef, sourceRef }),
+  createSession: (remoteUrl: string, baseRef: string, sourceRef: string) =>
+    request<Session>("POST", "/sessions", { remoteUrl, baseRef, sourceRef }),
   getSession: (id: string) => request<Session>("GET", `/sessions/${id}`),
   listSessions: () => request<Session[]>("GET", "/sessions"),
   getGraph: (id: string) => request<Graph>("GET", `/sessions/${id}/graph`),
@@ -277,7 +281,7 @@ export const api = {
   updatePartitionSettings: (patch: PartitionSettingsPatch) =>
     request<PartitionSettings>("PATCH", `/partition-settings`, patch),
   listCursorModels: () => request<CursorModels>("GET", "/cursor-models"),
-  getRepoInfo: () => request<RepoInfo>("GET", "/repo"),
+  getRepoHints: () => request<RepoHints>("GET", "/repo"),
   beginPartition: (sessionId: string, targetNodeId: string) =>
     request<Partition>(
       "POST",

@@ -64,7 +64,7 @@ async fn create_session_and_pick_target(app: &TestApp) -> (String, String) {
         &app.router,
         "POST",
         "/api/sessions",
-        json!({ "baseRef": "main", "sourceRef": "feature" }),
+        common::local_session_body(&app.repo_path(), "main", "feature"),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "create body: {body}");

@@ -5,14 +5,17 @@ A standalone tool for turning a noisy "ref A → ref B" diff into a clean, revie
 ## Language
 
 **Session**:
-One Eunomia working context, scoped to a specific `(baseRef, sourceRef)` pair against a specific REPO_ROOT.
+One Eunomia working context, scoped to a `(remote, baseRef, sourceRef)` triple.
 
-**REPO_ROOT**:
-The user's git repository. Captured as the server process's current working directory at startup; every git operation runs against this repo.
-_Avoid_: target repo, host repo.
+**Remote**:
+The normalized repository identity for a Session (`local:` + path or `remote:` + network URL). Network remotes get a managed bare clone under the state directory; local paths are used in-place.
+_Avoid_: REPO_ROOT, host repo.
+
+**Repo hints**:
+Optional cwd-detected form prefills from `GET /api/repo` (`suggestedRemoteUrl`, `suggestedSourceRef`, `suggestedBaseRef`). Not server state.
 
 **State directory**:
-`~/.eunomia/` by default. Holds the SQLite database and every Partition's worktree. Shared across all repos a user runs Eunomia against; Sessions are partitioned by REPO_ROOT.
+`~/.eunomia/` by default. Holds the SQLite database, managed bare clones (`repos/`), and every Partition's worktree. Shared across all Sessions.
 
 **Partition worktree**:
 The detached git worktree owned by a single pending Partition. The only place subagents are ever allowed to write. Each Partition has its own, so Constructors from different Partitions are mutually isolated.
@@ -118,7 +121,7 @@ A Coordinator-driven loop that turns one user-initiated Begin Partition into a b
 
 ## Relationships
 
-- A **Session** has exactly one **REPO_ROOT** and starts with exactly two **Nodes**: **base** and **final**.
+- A **Session** has exactly one **Remote** and starts with exactly two **Nodes**: **base** and **final**.
 - Every non-`base` **Node** has exactly one parent **Node**. The canonical graph is therefore a single linear chain `base → … → final`.
 - Each pending **Partition** owns exactly one **Partition worktree** for the duration of its existence.
 - A **Partition** row exists only between Begin and a terminal action (Acceptance or Abandon). The Slice it produced and the rewrite of the target Node persist after Acceptance; Run rows live alongside the Partition row and are deleted with it at the terminal action.

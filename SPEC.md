@@ -349,7 +349,7 @@ its own directory under its own HEAD.
 
 ```mermaid
 flowchart LR
-  subgraph mainRepo["main repo (REPO_ROOT)"]
+  subgraph mainRepo["session git root"]
     db[(loose commits<br/>created via commit-tree)]
     branchA[(user branches)]
     out[(branches Eunomia creates<br/>on demand, one per Node-walk)]
@@ -380,7 +380,7 @@ into a loose commit and parks the Partition at `construct_review`:
 ```
 git -C <partitionWorktree> add -A
 candidateTreeSha   = git -C <partitionWorktree> write-tree
-candidateCommitSha = git -C <REPO_ROOT> commit-tree candidateTreeSha \
+candidateCommitSha = git -C <sessionGitRoot> commit-tree candidateTreeSha \
                        -p parent.commit_sha -m edges[0].title
 git -C <partitionWorktree> reset --hard parent.commit_sha
 git -C <partitionWorktree> clean -fdx
@@ -557,7 +557,7 @@ worktree state.
 
 | Table        | Keyed by                                | What it holds                                                                                                                                                                                                                                                                          |
 | ------------ | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sessions`   | `id` (PK), unique on `(repo_root, base_ref, source_ref)` | refs, trees, `base_node_id`, `created_at`. _No_ session-level worktree path; worktrees are per-Partition. _No_ session-level Partition settings either; settings are user-global and live in a single JSON file under the State directory.                                            |
+| `sessions`   | `id` (PK), unique on `(normalized_remote, base_ref, source_ref)` | `normalized_remote`, `literal_remote`, `is_local`, refs, trees, `base_node_id`, `created_at`. _No_ session-level worktree path; worktrees are per-Partition. |
 | `nodes`      | `(session_id, node_id)`                  | every Node: tree, commit sha, parent, Title, `created_at`. Slices use exactly the same shape as seed Nodes; there is no Node-type discriminator.                                                                                                                          |
 | `partitions` | `id` (PK autoincrement), index on `(session_id, target_node_id)` | per-Partition state: strategy (nullable until Plan Accept), accepted survey / plan JSON, phase, phase_state, candidate slice tree+commit (nullable until Constructor OK), `worktree_path`, `created_at`. Deleted at terminal action (Accept or Abandon).               |
 | `runs`       | `id` (PK autoincrement), index on `(session_id, target_node_id)` | every in-flight subagent Run: partition id, kind (survey / plan / construct), parent_run_id, status, parsed result JSON, raw result text, folded `transcript_text`, error message, timestamps. **Transient** — a Run row exists only while its Partition exists; both Acceptance and Abandon delete the Run rows alongside the Partition row.                                       |
@@ -578,9 +578,9 @@ The backend is an axum app. Routes are scoped per-session and per-edge.
 
 ### Session lifecycle
 
-- `GET /api/sessions?…` — list sessions for `REPO_ROOT`.
-- `POST /api/sessions` `{ baseRef, sourceRef }` — create a Session. Seeds
-  `base` and `final` Nodes. Does not create any worktree.
+- `GET /api/sessions` — list all sessions.
+- `POST /api/sessions` `{ remoteUrl, baseRef, sourceRef }` — create a Session. Ensures local path or managed bare clone; seeds `base` and `final` Nodes.
+- `GET /api/repo` — optional cwd hints for the create-session form.
 - `GET /api/sessions/:id` — fetch a single Session.
 - `DELETE /api/sessions/:id` — tear down the Session, remove any worktrees
   still on disk for its pending Partitions.
@@ -646,17 +646,9 @@ All routes that read or mutate Partition state scope by `partition_id`
 
 ## Repository access
 
-Every Session is scoped to a **REPO_ROOT** — a local git working tree the
-server was started in (or pointed at). `baseRef` and `sourceRef` must resolve
-in that tree's object database; remote-tracking names like `origin/main` only
-work after a fetch.
+Every Session is scoped to a **Remote** — a local path or network URL supplied at create time. Network remotes use a managed bare clone under the state directory; local paths are used in-place.
 
-Eunomia delegates all authentication to the host's git installation. It has
-no credential UI. **Public** remotes work once refs are fetched into
-REPO_ROOT. **Private** remotes work only when the same machine can already
-clone or fetch that remote non-interactively (SSH keys, credential helper,
-etc.). Session create fails at ref resolution if objects are missing; clone or
-fetch failures surface as ordinary git stderr.
+Eunomia delegates authentication to the host's git installation. **Branch creation** is supported for local sessions only. Network-remote sessions hide the Branch tab and return API 400.
 
 Operational detail and a summary table live in [`README.md`](README.md#git-repository-access).
 

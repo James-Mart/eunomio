@@ -16,10 +16,12 @@ type ToolsTab = "partition" | "info" | "branch";
 export default function ToolsPane(ctx: ToolsContext) {
   const [tab, setTab] = useState<ToolsTab>("partition");
   const showNodeTabs = showNodeTools(ctx);
+  const showBranchTab = showNodeTabs && ctx.isLocal;
 
   useEffect(() => {
     if (!showNodeTabs && tab !== "partition") setTab("partition");
-  }, [showNodeTabs, tab]);
+    if (!showBranchTab && tab === "branch") setTab("partition");
+  }, [showNodeTabs, showBranchTab, tab]);
 
   if (isToolsEmpty(ctx)) {
     return (
@@ -42,7 +44,7 @@ export default function ToolsPane(ctx: ToolsContext) {
             Info
           </TabsTrigger>
         )}
-        {showNodeTabs && (
+        {showBranchTab && (
           <TabsTrigger variant="underline" value="branch">
             Branch
           </TabsTrigger>
@@ -56,7 +58,7 @@ export default function ToolsPane(ctx: ToolsContext) {
           {InfoToolPanel(ctx)}
         </TabsContent>
       )}
-      {showNodeTabs && (
+      {showBranchTab && (
         <TabsContent value="branch" className="mt-0 flex-1 min-h-0">
           {BranchToolPanel(ctx)}
         </TabsContent>

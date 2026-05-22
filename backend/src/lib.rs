@@ -11,6 +11,7 @@ pub mod middleware;
 pub mod partition_settings;
 pub mod process_util;
 pub mod repo;
+pub mod repo_store;
 pub mod server;
 pub mod sessions;
 pub mod sse;

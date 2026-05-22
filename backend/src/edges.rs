@@ -35,8 +35,9 @@ pub async fn load_edge_for_target(
     };
     let (diff, files, synthesized) = match (&parent_node_id, &parent_tree) {
         (Some(_), Some(parent_tree)) => {
+            let git_root = repo::session::git_root(state, session_id).await?;
             render_edge_diff(
-                &state.repo_root,
+                &git_root,
                 parent_tree,
                 &target_tree,
                 &base_tree,

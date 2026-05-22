@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
@@ -25,11 +25,6 @@ struct ServeArgs {
 
     #[arg(long)]
     data_dir: Option<PathBuf>,
-
-    /// Git repository to operate on. Defaults to the current working directory.
-    /// Honoured as either a CLI flag or the `EUNOMIA_REPO_ROOT` env var.
-    #[arg(long, env = "EUNOMIA_REPO_ROOT")]
-    repo_root: Option<PathBuf>,
 
     #[arg(long)]
     cursor_api_key: Option<String>,
@@ -72,26 +67,12 @@ async fn main() -> Result<()> {
 }
 
 async fn serve(args: ServeArgs) -> Result<()> {
-    let raw_repo_root = match args.repo_root.as_ref() {
-        Some(p) => p.clone(),
-        None => std::env::current_dir().context("reading current_dir for REPO_ROOT")?,
-    };
-    let repo_root = raw_repo_root.canonicalize().with_context(|| {
-        format!("canonicalising REPO_ROOT {}", raw_repo_root.display())
-    })?;
-    if !repo_root.is_dir() {
-        bail!("REPO_ROOT {} is not a directory", repo_root.display());
-    }
-    eunomia::git::ensure_repo(&repo_root)
-        .await
-        .with_context(|| format!("REPO_ROOT {} is not a git repository", repo_root.display()))?;
-
     let data_dir = args
         .data_dir
         .or_else(|| dirs::home_dir().map(|h| h.join(".eunomia")))
         .context("could not determine data dir; pass --data-dir")?;
 
-    tracing::info!(repo_root = %repo_root.display(), data_dir = %data_dir.display(), port = args.port, "starting eunomia");
+    tracing::info!(data_dir = %data_dir.display(), port = args.port, "starting eunomia");
 
     if args.new {
         let db_path = data_dir.join("eunomia.db");
@@ -119,7 +100,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
     std::env::remove_var("CURSOR_API_KEY");
 
     let state =
-        eunomia::state::build_state(repo_root, data_dir, cursor_api_key, args.dev_tunnel).await?;
+        eunomia::state::build_state(data_dir, cursor_api_key, args.dev_tunnel).await?;
 
     if args.start_tunnel {
         let dto = state

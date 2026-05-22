@@ -78,7 +78,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/cursor-models", get(get_cursor_models))
         .route("/api/subagent-prompts", get(get_subagent_prompts))
         .route("/api/nodes/:node_id/session", get(get_node_session))
-        .route("/api/repo", get(get_repo_info))
+        .route("/api/repo", get(get_repo_hints))
         .route(
             "/api/tunnel",
             get(get_tunnel).post(start_tunnel).delete(stop_tunnel),
@@ -102,21 +102,12 @@ async fn create_session(
     State(state): State<AppState>,
     Json(req): Json<CreateSessionRequest>,
 ) -> Result<(StatusCode, Json<Session>), AppError> {
-    let base_ref = req.base_ref.clone();
-    let source_ref = req.source_ref.clone();
-    let (created, outcome) = sessions::create(&state, req).await?;
-    let dto = Session {
-        id: created.id,
-        base_ref,
-        source_ref,
-        base_node_id: created.base_node_id,
-        created_at: created.created_at,
-    };
+    let (session, outcome) = sessions::create(&state, req).await?;
     let status = match outcome {
         sessions::CreateOutcome::Created => StatusCode::CREATED,
         sessions::CreateOutcome::Existed => StatusCode::OK,
     };
-    Ok((status, Json(dto)))
+    Ok((status, Json(session)))
 }
 
 async fn list_sessions(
@@ -182,8 +173,9 @@ async fn get_diff(
     }
     let before_ref = q.before_ref.as_deref().unwrap_or(&base_tree);
     let after_ref = q.after_ref.as_deref().unwrap_or(&final_tree);
+    let git_root = repo::session::git_root(&state, &session_id).await?;
     let (diff, files, synthesized) = edges::render_edge_diff(
-        &state.repo_root,
+        &git_root,
         &q.from_tree,
         &q.to_tree,
         before_ref,
@@ -273,18 +265,8 @@ async fn get_node_session(
     Ok(Json(NodeSessionLookup { session_id }))
 }
 
-async fn get_repo_info(State(state): State<AppState>) -> Result<Json<RepoInfo>, AppError> {
-    let current_branch = crate::git::current_branch(&state.repo_root).await?;
-    let name = crate::git::repo_name(&state.repo_root).await?;
-    let owner = crate::git::origin_remote_url(&state.repo_root)
-        .await?
-        .and_then(|url| crate::git::repo_owner_from_remote_url(&url));
-    Ok(Json(RepoInfo {
-        name,
-        repo_root: state.repo_root.to_string_lossy().into_owned(),
-        owner,
-        current_branch,
-    }))
+async fn get_repo_hints() -> Json<RepoHints> {
+    Json(crate::repo_store::cwd_hints().await)
 }
 
 async fn get_tunnel(State(state): State<AppState>) -> Json<TunnelStatus> {
