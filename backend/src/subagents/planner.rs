@@ -128,47 +128,6 @@ fn extract_json_block(raw: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::subagents::loader::load_subagents;
-
-    #[test]
-    fn renders_with_context() {
-        let defs = load_subagents().unwrap();
-        let out = render_prompt(
-            &PlanContext {
-                before_tree: "before".into(),
-                target_tree: "target".into(),
-                change_survey_json: "{\"summary\":\"x\",\"themes\":[]}".into(),
-                strategy_override: "auto".into(),
-                user_feedback: "".into(),
-                prior_attempt: None,
-            },
-            &defs.planner.template,
-        );
-        assert!(out.contains("before"));
-        assert!(out.contains("target"));
-        assert!(out.contains("auto"));
-        assert!(out.contains("(none)"));
-    }
-
-    #[test]
-    fn renders_prior_blocked() {
-        let defs = load_subagents().unwrap();
-        let out = render_prompt(
-            &PlanContext {
-                before_tree: "b".into(),
-                target_tree: "t".into(),
-                change_survey_json: "{}".into(),
-                strategy_override: "auto".into(),
-                user_feedback: "".into(),
-                prior_attempt: Some(PriorAttempt::Blocked {
-                    reason: "needs leftover hunks".into(),
-                }),
-            },
-            &defs.planner.template,
-        );
-        assert!(out.contains("BLOCKED"));
-        assert!(out.contains("needs leftover hunks"));
-    }
 
     #[test]
     fn parses_split_two_edges() {

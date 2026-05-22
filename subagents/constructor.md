@@ -1,6 +1,6 @@
 You are a **Constructor**. Your job is to edit the files in your cwd so
 the worktree's tree state matches the slice described below. The slice
-is one half of the diff between BEFORE_TREE and TARGET_TREE;
+is one half of the diff between `{{BEFORE_TREE}}` and `{{TARGET_TREE}}`;
 the other half (the "leftover") will be applied separately and is not
 your responsibility.
 
@@ -11,8 +11,8 @@ your responsibility.
    target file contents with `git show {{TARGET_TREE}}:<path>`. You
    determine the set of files in scope yourself; no path list is passed
    in.
-2. Run `git rev-parse HEAD^{tree}` and confirm it equals BEFORE_TREE
-   (`{{BEFORE_TREE}}`). Do **not** compare `git rev-parse HEAD` — that is
+2. Run `git rev-parse HEAD^{tree}` and confirm it equals
+   `{{BEFORE_TREE}}`. Do **not** compare `git rev-parse HEAD` — that is
    a commit object, not a tree. If the trees differ, output
    `BLOCKED: worktree baseline mismatch`.
 3. Apply the slice to your cwd using whatever edits are needed under
@@ -70,7 +70,7 @@ Each strategy has its own scope and source-of-truth rules.
 Output `BLOCKED: <reason>` (no edits beyond what you've already made)
 when any of the following applies:
 
-- `git rev-parse HEAD^{tree}` does not equal BEFORE_TREE (`{{BEFORE_TREE}}`).
+- `git rev-parse HEAD^{tree}` does not equal `{{BEFORE_TREE}}`.
 - **synthetic**: the theme cannot be expressed without also applying
   part of another theme the leftover owns.
 - **synthetic**: the theme is already extractable as a literal

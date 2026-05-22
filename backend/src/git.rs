@@ -235,6 +235,43 @@ mod name_status_tests {
     }
 }
 
+#[cfg(test)]
+mod repo_name_tests {
+    use super::repo_name_from_remote_url;
+
+    #[test]
+    fn parses_https_remote() {
+        assert_eq!(
+            repo_name_from_remote_url("https://github.com/psibase/eunomia.git"),
+            "eunomia.git"
+        );
+    }
+
+    #[test]
+    fn parses_scp_style_remote() {
+        assert_eq!(
+            repo_name_from_remote_url("git@github.com:James-Mart/eunomia.git"),
+            "eunomia.git"
+        );
+    }
+
+    #[test]
+    fn parses_ssh_url_remote() {
+        assert_eq!(
+            repo_name_from_remote_url("ssh://git@github.com/psibase/eunomia.git"),
+            "eunomia.git"
+        );
+    }
+
+    #[test]
+    fn strips_trailing_slash() {
+        assert_eq!(
+            repo_name_from_remote_url("https://github.com/org/repo.git/"),
+            "repo.git"
+        );
+    }
+}
+
 pub async fn rev_parse(repo: &Path, refname: &str) -> Result<String> {
     run(repo, &["rev-parse", "--verify", "--end-of-options", refname]).await
 }
@@ -324,6 +361,56 @@ pub async fn current_branch(repo: &Path) -> Result<Option<String>> {
     } else {
         Ok(Some(name))
     }
+}
+
+pub async fn origin_remote_url(repo: &Path) -> Result<Option<String>> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["remote", "get-url", "origin"])
+        .output()
+        .await?;
+    if !out.status.success() {
+        return Ok(None);
+    }
+    let url = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if url.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(url))
+    }
+}
+
+/// Derive a short repo name from a git remote URL (HTTPS, SSH, or SCP-style).
+pub fn repo_name_from_remote_url(url: &str) -> String {
+    let trimmed = url.trim().trim_end_matches('/');
+
+    // SCP-style: git@host:owner/repo
+    if let Some((_, path)) = trimmed.rsplit_once('@') {
+        if !trimmed.contains("://") {
+            if let Some(name) = path.rsplit('/').next().filter(|s| !s.is_empty()) {
+                return name.to_string();
+            }
+        }
+    }
+
+    trimmed
+        .rsplit('/')
+        .next()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(trimmed)
+        .to_string()
+}
+
+pub async fn repo_name(repo: &Path) -> Result<String> {
+    if let Some(url) = origin_remote_url(repo).await? {
+        return Ok(repo_name_from_remote_url(&url));
+    }
+    Ok(repo
+        .file_name()
+        .and_then(|s| s.to_str())
+        .map(String::from)
+        .unwrap_or_else(|| repo.to_string_lossy().into_owned()))
 }
 
 pub async fn branch_exists(repo: &Path, name: &str) -> Result<bool> {

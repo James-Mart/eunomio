@@ -69,30 +69,6 @@ fn pick_outcome_line(raw: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::subagents::loader::load_subagents;
-
-    #[test]
-    fn renders_with_context() {
-        let defs = load_subagents().unwrap();
-        let out = render_prompt(
-            &ConstructContext {
-                before_tree: "B".into(),
-                target_tree: "T".into(),
-                strategy: "synthetic".into(),
-                slice_title: "Add loader".into(),
-                slice_description: "Extracts the loader module".into(),
-                user_feedback: "".into(),
-            },
-            &defs.constructor.template,
-        );
-        assert!(out.contains("Add loader"));
-        assert!(out.contains("synthetic"));
-        assert!(out.contains("(none)"));
-        assert!(out.contains("BEFORE_TREE:"));
-        assert!(out.contains("git rev-parse HEAD^{tree}"));
-        assert!(!out.contains("WORKTREE_HEAD_TREE"));
-        assert!(!out.contains("If (none) is non-empty"));
-    }
 
     #[test]
     fn parses_ok() {

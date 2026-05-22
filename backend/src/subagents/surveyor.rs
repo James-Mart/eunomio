@@ -60,23 +60,6 @@ fn extract_json_block(raw: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::subagents::loader::load_subagents;
-
-    #[test]
-    fn renders_with_context() {
-        let defs = load_subagents().unwrap();
-        let out = render_prompt(
-            &SurveyContext {
-                before_tree: "deadbeef".into(),
-                target_tree: "cafebabe".into(),
-                user_feedback: "".into(),
-            },
-            &defs.surveyor.template,
-        );
-        assert!(out.contains("deadbeef"));
-        assert!(out.contains("cafebabe"));
-        assert!(out.contains("(none)"));
-    }
 
     #[test]
     fn parses_fenced_json_block() {

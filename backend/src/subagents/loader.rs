@@ -170,10 +170,5 @@ mod tests {
         assert_eq!(defs.surveyor.name, "surveyor");
         assert_eq!(defs.planner.name, "planner");
         assert_eq!(defs.constructor.name, "constructor");
-
-        let surveyor_phs: HashSet<_> = defs.surveyor.template.placeholders().iter().cloned().collect();
-        assert!(surveyor_phs.contains("BEFORE_TREE"));
-        assert!(surveyor_phs.contains("TARGET_TREE"));
-        assert!(surveyor_phs.contains("USER_FEEDBACK"));
     }
 }

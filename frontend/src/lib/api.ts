@@ -186,7 +186,7 @@ export type StartRunRequest = {
 export type CursorModel = { id: string };
 export type CursorModels = { models: CursorModel[] };
 
-export type RepoInfo = { currentBranch?: string };
+export type RepoInfo = { name: string; repoRoot: string; currentBranch?: string };
 
 export type TunnelState = "idle" | "running" | "error";
 
