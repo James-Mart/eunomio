@@ -11,8 +11,9 @@ your responsibility.
    target file contents with `git show {{TARGET_TREE}}:<path>`. You
    determine the set of files in scope yourself; no path list is passed
    in.
-2. Verify the worktree baseline (see **Baseline verification** below). If
-   the trees differ, output `BLOCKED: worktree baseline mismatch`.
+2. Verify the worktree baseline (see **Baseline verification** below).
+   Run the exact commands in that section before doing anything else. If
+   the tree check fails, output `BLOCKED: worktree baseline mismatch`.
 3. Apply the slice to your cwd using whatever edits are needed under
    the strategy's scope and source-of-truth rules below. Edit only
    files inside your cwd.
@@ -26,22 +27,47 @@ your responsibility.
 
 ## Baseline verification
 
-`{{BEFORE_TREE}}` and `{{TARGET_TREE}}` are **tree object SHAs**, not
-commits. Verify the worktree like this:
+Eunomio pins your worktree to a **commit** (`PARENT_COMMIT`) whose
+**tree** is `BEFORE_TREE`. `TARGET_TREE` is also a tree object SHA.
+These three values are different kinds of git object — do not compare
+them interchangeably.
+
+Run both checks below. **Only the second check gates blocking.**
 
 ```bash
+# 1. Sanity: detached HEAD is the expected parent commit (informational)
+git rev-parse HEAD
+# expected: {{PARENT_COMMIT}}
+
+# 2. Baseline gate: the tree at HEAD must match BeforeTree
 git rev-parse HEAD^{tree}
+# expected: {{BEFORE_TREE}}
 ```
 
-Confirm the output equals `{{BEFORE_TREE}}` exactly.
+**Pass** when check 2 prints `{{BEFORE_TREE}}` exactly. Check 1 will
+*not* equal `{{BEFORE_TREE}}` — that is normal; commits and trees are
+different object types.
 
-Only output `BLOCKED: worktree baseline mismatch` when
-`git rev-parse HEAD^{tree}` does not equal `{{BEFORE_TREE}}`.
+**Common mistakes — do not do these:**
+
+- Do **not** compare `git rev-parse HEAD` to `{{BEFORE_TREE}}`. HEAD is
+  a commit; BeforeTree is a tree. They are supposed to differ.
+- Do **not** treat `{{BEFORE_TREE}}` or `{{TARGET_TREE}}` as commits.
+  `git log {{BEFORE_TREE}}` and similar will fail or mislead.
+- Do **not** block because tree objects "do not exist as commits". Use
+  `git cat-file -t {{BEFORE_TREE}}` (expect `tree`) and
+  `git diff --histogram {{BEFORE_TREE}} {{TARGET_TREE}}` — both work
+  with tree SHAs directly.
+
+Only output `BLOCKED: worktree baseline mismatch` when check 2 fails
+(`git rev-parse HEAD^{tree}` ≠ `{{BEFORE_TREE}}`).
 
 ## Inputs
 
+- PARENT_COMMIT: `{{PARENT_COMMIT}}` — commit your worktree is detached
+  at (`git rev-parse HEAD` should match).
 - BEFORE_TREE: `{{BEFORE_TREE}}` — tree object the worktree must start
-  from (verify via `HEAD^{tree}`).
+  from (verify via `git rev-parse HEAD^{tree}`, **not** via HEAD).
 - TARGET_TREE: `{{TARGET_TREE}}` — tree the full original diff ends at;
   the slice you are building is one part of the diff between BeforeTree
   and TargetTree.

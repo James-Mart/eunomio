@@ -19,13 +19,43 @@ scope, merge atomicity, or whether the migration will ever be fully
 subdivided — recursive Partitions split the leftover later. A large
 leftover is common and is not grounds for Indivisible.
 
+## Git object types
+
+Eunomio passes **tree object SHAs**, not commits. Your worktree is
+detached at **commit** `{{PARENT_COMMIT}}`; the diff you plan is between
+**trees** `{{BEFORE_TREE}}` → `{{TARGET_TREE}}`.
+
+```bash
+git rev-parse HEAD          # commit — expect {{PARENT_COMMIT}}
+git rev-parse HEAD^{tree}   # tree — expect {{BEFORE_TREE}}
+```
+
+Use the tree SHAs directly for all diff inspection:
+
+```bash
+git diff --histogram {{BEFORE_TREE}} {{TARGET_TREE}}
+git show {{TARGET_TREE}}:<path>
+git ls-tree -r {{TARGET_TREE}}
+git cat-file -t {{BEFORE_TREE}}   # expect "tree"
+```
+
+**Common mistakes — do not do these:**
+
+- Do **not** treat `{{BEFORE_TREE}}` or `{{TARGET_TREE}}` as commits.
+  `git log {{BEFORE_TREE}}` will fail or mislead.
+- Do **not** conclude the diff is unavailable because those SHAs "are
+  not commits" or "do not exist locally". Tree SHAs work with the
+  commands above.
+- Do **not** compare `git rev-parse HEAD` to `{{BEFORE_TREE}}` — HEAD is
+  a commit; BeforeTree is its tree.
+
 ## When invoked
 
 1. Read the diff with `git diff --histogram {{BEFORE_TREE}} {{TARGET_TREE}}`
    (histogram is the canonical Eunomio algorithm). Use
    `git show {{TARGET_TREE}}:<path>` and `git ls-tree -r {{TARGET_TREE}}`
    for file contents. Your cwd is a git worktree whose `.git` resolves
-   both trees.
+   both tree objects.
 2. Identify the **themes** present in the diff. A theme is a coherent
    cluster of changes — a feature, a refactor, a bug fix, a layer
    rewrite — that could be reviewed, described, or reverted on its own.
@@ -56,7 +86,10 @@ leftover is common and is not grounds for Indivisible.
 
 ## Inputs
 
-- BEFORE_TREE: `{{BEFORE_TREE}}` — tree the diff starts at.
+- PARENT_COMMIT: `{{PARENT_COMMIT}}` — commit your worktree is detached
+  at (`git rev-parse HEAD` should match).
+- BEFORE_TREE: `{{BEFORE_TREE}}` — tree the diff starts at (use directly
+  in `git diff` / `git show`; **not** the same object as HEAD).
 - TARGET_TREE: `{{TARGET_TREE}}` — tree the diff ends at.
 - STRATEGY_OVERRIDE: `{{STRATEGY_OVERRIDE}}` — `auto` on a first attempt;
   otherwise one of `synthetic` / `vertical` / `horizontal`, set when the

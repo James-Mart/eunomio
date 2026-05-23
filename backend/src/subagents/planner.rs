@@ -42,6 +42,7 @@ pub enum PriorAttempt {
 }
 
 pub struct PlanContext {
+    pub parent_commit: String,
     pub before_tree: String,
     pub target_tree: String,
     pub change_survey_json: String,
@@ -52,6 +53,7 @@ pub struct PlanContext {
 
 pub fn render_prompt(ctx: &PlanContext, template: &PromptTemplate) -> String {
     let mut map = serde_json::Map::new();
+    map.insert("PARENT_COMMIT".into(), serde_json::json!(ctx.parent_commit));
     map.insert("BEFORE_TREE".into(), serde_json::json!(ctx.before_tree));
     map.insert("TARGET_TREE".into(), serde_json::json!(ctx.target_tree));
     map.insert(

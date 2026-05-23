@@ -59,6 +59,7 @@ impl Coordinator {
                 self.plan_prompt(
                     state,
                     partition,
+                    parent.commit_sha.clone(),
                     before_tree,
                     target_tree,
                     user_feedback,
@@ -71,6 +72,7 @@ impl Coordinator {
                 let template = self.resolve_template(RunKind::Construct, prompt_override)?;
                 self.construct_prompt(
                     partition,
+                    parent.commit_sha.clone(),
                     before_tree,
                     target_tree,
                     user_feedback,
@@ -116,6 +118,7 @@ impl Coordinator {
         &self,
         state: &AppState,
         partition: &PartitionRow,
+        parent_commit: String,
         before_tree: String,
         target_tree: String,
         user_feedback: Option<&str>,
@@ -133,6 +136,7 @@ impl Coordinator {
             .lookup_prior_attempt(state, &partition.org_id, partition.id.as_str())
             .await?;
         let ctx = subagents::planner::PlanContext {
+            parent_commit,
             before_tree,
             target_tree,
             change_survey_json: survey_json,
@@ -146,6 +150,7 @@ impl Coordinator {
     fn construct_prompt(
         &self,
         partition: &PartitionRow,
+        parent_commit: String,
         before_tree: String,
         target_tree: String,
         user_feedback: Option<&str>,
@@ -165,6 +170,7 @@ impl Coordinator {
             .strategy
             .ok_or_else(|| AppError::BadRequest("no strategy on partition".into()))?;
         let ctx = subagents::constructor::ConstructContext {
+            parent_commit,
             before_tree: before_tree.clone(),
             target_tree,
             strategy: strategy.as_str().to_string(),

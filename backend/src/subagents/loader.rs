@@ -95,6 +95,7 @@ pub fn surveyor_placeholders() -> &'static [&'static str] {
 
 pub fn planner_placeholders() -> &'static [&'static str] {
     &[
+        "PARENT_COMMIT",
         "BEFORE_TREE",
         "TARGET_TREE",
         "CHANGE_SURVEY_JSON",
@@ -106,6 +107,7 @@ pub fn planner_placeholders() -> &'static [&'static str] {
 
 pub fn constructor_placeholders() -> &'static [&'static str] {
     &[
+        "PARENT_COMMIT",
         "BEFORE_TREE",
         "TARGET_TREE",
         "STRATEGY",
