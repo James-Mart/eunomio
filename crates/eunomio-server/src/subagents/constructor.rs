@@ -13,6 +13,7 @@ pub enum ConstructOutput {
 }
 
 pub struct ConstructContext {
+    pub worktree_path: String,
     pub parent_commit: String,
     pub before_tree: String,
     pub target_tree: String,
@@ -24,6 +25,7 @@ pub struct ConstructContext {
 
 pub fn render_prompt(ctx: &ConstructContext, template: &PromptTemplate) -> String {
     let mut map = serde_json::Map::new();
+    map.insert("WORKTREE_PATH".into(), serde_json::json!(ctx.worktree_path));
     map.insert("PARENT_COMMIT".into(), serde_json::json!(ctx.parent_commit));
     map.insert("BEFORE_TREE".into(), serde_json::json!(ctx.before_tree));
     map.insert("TARGET_TREE".into(), serde_json::json!(ctx.target_tree));

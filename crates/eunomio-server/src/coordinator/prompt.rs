@@ -167,6 +167,7 @@ impl Coordinator {
             .strategy
             .ok_or_else(|| AppError::BadRequest("no strategy on partition".into()))?;
         let ctx = subagents::constructor::ConstructContext {
+            worktree_path: partition.worktree_path.clone(),
             parent_commit,
             before_tree: before_tree.clone(),
             target_tree,

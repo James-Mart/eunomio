@@ -36,6 +36,33 @@ pub async fn provision(
     Ok(worktree_path)
 }
 
+/// Confirms `worktree` is detached at `parent_commit` with tree
+/// `before_tree`. Used before spawning the Constructor so a wrong cwd
+/// or stale checkout fails server-side instead of burning a subagent run.
+pub async fn verify_baseline(
+    worktree: &Path,
+    parent_commit: &str,
+    before_tree: &str,
+) -> Result<(), AppError> {
+    let head = git::rev_parse_in(worktree, "HEAD")
+        .await
+        .map_err(|e| AppError::Internal(anyhow!("baseline HEAD: {e}")))?;
+    let head_tree = git::rev_parse_in(worktree, "HEAD^{tree}")
+        .await
+        .map_err(|e| AppError::Internal(anyhow!("baseline HEAD^{{tree}}: {e}")))?;
+    if head != parent_commit {
+        return Err(AppError::Internal(anyhow!(
+            "worktree HEAD {head} != parent commit {parent_commit}"
+        )));
+    }
+    if head_tree != before_tree {
+        return Err(AppError::Internal(anyhow!(
+            "worktree HEAD^{{tree}} {head_tree} != before tree {before_tree}"
+        )));
+    }
+    Ok(())
+}
+
 /// Resets `worktree` back to `parent_commit` and clears every untracked
 /// file. With `strict = true` (used during constructor capture) failures
 /// surface as `AppError::Internal`; with `strict = false` (used during

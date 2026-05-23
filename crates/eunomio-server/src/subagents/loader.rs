@@ -109,6 +109,7 @@ pub fn planner_placeholders() -> &'static [&'static str] {
 
 pub fn constructor_placeholders() -> &'static [&'static str] {
     &[
+        "WORKTREE_PATH",
         "PARENT_COMMIT",
         "BEFORE_TREE",
         "TARGET_TREE",

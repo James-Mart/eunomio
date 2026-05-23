@@ -154,6 +154,12 @@ impl Coordinator {
                 parent_node.ok_or_else(|| AppError::BadRequest("no parent node".into()))?;
             let worktree_path = PathBuf::from(&partition.worktree_path);
             worktree::reset_to_parent(&worktree_path, &parent.commit_sha, true).await?;
+            worktree::verify_baseline(
+                &worktree_path,
+                &parent.commit_sha,
+                &parent.tree_sha,
+            )
+            .await?;
         }
         let prompt = self
             .build_prompt(
