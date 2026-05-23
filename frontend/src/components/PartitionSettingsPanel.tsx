@@ -84,13 +84,24 @@ export default function PartitionSettingsPanel() {
   useAbortableEffect(async (signal) => {
     setSettings(null);
     setModels({ kind: "loading" });
-    const [s, m] = await Promise.all([
-      api.getPartitionSettings().catch(() => null),
-      api.listCursorModels().catch(() => null),
-    ]);
-    if (signal.aborted) return;
-    if (s) setSettings(s);
-    if (m) setModels({ kind: "success", models: m.models });
+
+    void (async () => {
+      try {
+        const s = await api.getPartitionSettings();
+        if (!signal.aborted) setSettings(s);
+      } catch {
+        if (!signal.aborted) setSettings(null);
+      }
+    })();
+
+    void (async () => {
+      try {
+        const m = await api.listCursorModels();
+        if (!signal.aborted) setModels({ kind: "success", models: m.models });
+      } catch {
+        if (!signal.aborted) setModels({ kind: "success", models: [] });
+      }
+    })();
   }, []);
 
   const applyOptimistic = async <K extends keyof PartitionSettings>(
