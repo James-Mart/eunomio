@@ -89,6 +89,7 @@ export type CoordinatorSettings = {
   model: string;
   humanInTheLoop: HumanInTheLoopSettings;
   maxIterations: IterationLimit;
+  surveyorEnabled: boolean;
 };
 
 export interface PartitionSettings {

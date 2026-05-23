@@ -134,6 +134,14 @@ export default function PartitionSettingsPanel() {
       "Failed to save settings",
     );
 
+  const onSurveyorEnabledChange = (next: boolean) =>
+    settings &&
+    applyOptimistic(
+      "coordinator",
+      { ...settings.coordinator, surveyorEnabled: next },
+      "Failed to save settings",
+    );
+
   const updateRoleModel = (role: SubagentCategory, next: string) =>
     settings &&
     applyOptimistic(
@@ -171,6 +179,7 @@ export default function PartitionSettingsPanel() {
           settings={settings}
           models={models}
           onModelChange={onCoordinatorModelChange}
+          onSurveyorEnabledChange={onSurveyorEnabledChange}
           onHitlChange={onHitlChange}
           onMaxIterationsChange={onMaxIterationsChange}
         />
@@ -490,12 +499,14 @@ function CoordinatorPanel({
   settings,
   models,
   onModelChange,
+  onSurveyorEnabledChange,
   onHitlChange,
   onMaxIterationsChange,
 }: {
   settings: PartitionSettings | null;
   models: ModelsState;
   onModelChange: (next: string) => void;
+  onSurveyorEnabledChange: (next: boolean) => void;
   onHitlChange: (next: HumanInTheLoopSettings) => void;
   onMaxIterationsChange: (next: IterationLimit) => void;
 }) {
@@ -507,6 +518,7 @@ function CoordinatorPanel({
       afterIndivisible: true,
     };
   const disabled = !settings;
+  const surveyorEnabled = settings?.coordinator.surveyorEnabled ?? true;
   const selected = settings?.coordinator.model ?? "composer-2";
   const iterations = settings?.coordinator.maxIterations;
   const iterationsOption = iterationLimitToOption(iterations);
@@ -527,6 +539,27 @@ function CoordinatorPanel({
       </section>
 
       <section className="space-y-3">
+        <div className="flex items-start gap-3">
+          <Checkbox
+            id="coordinator-surveyor-enabled"
+            checked={surveyorEnabled}
+            disabled={disabled}
+            onChange={(e) => onSurveyorEnabledChange(e.target.checked)}
+            className="mt-0.5"
+          />
+          <div className="space-y-0.5">
+            <Label htmlFor="coordinator-surveyor-enabled" className="font-normal">
+              Enable surveyor
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Run a separate Survey phase before Plan. When off, the planner
+              surveys the diff inline.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="space-y-3">
         <h4 className="text-sm font-medium">Human-in-the-loop</h4>
         <div className="space-y-3">
           <HitlRow
@@ -534,7 +567,7 @@ function CoordinatorPanel({
             label="Pause after survey"
             description="Wait for me to review the survey before planning."
             checked={hitl.afterSurvey}
-            disabled={disabled}
+            disabled={disabled || !surveyorEnabled}
             onChange={(checked) => onHitlChange({ ...hitl, afterSurvey: checked })}
           />
           <HitlRow

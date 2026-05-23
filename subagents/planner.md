@@ -26,22 +26,30 @@ leftover is common and is not grounds for Indivisible.
    `git show {{TARGET_TREE}}:<path>` and `git ls-tree -r {{TARGET_TREE}}`
    for file contents. Your cwd is a git worktree whose `.git` resolves
    both trees.
-2. Read CHANGE_SURVEY_JSON (see Inputs) for the prior digest of themes —
-   these are your candidates for a `synthetic` slice.
-3. Estimate edge size (~one story point ≈ ~150 changed lines / few files).
+2. Identify the **themes** present in the diff. A theme is a coherent
+   cluster of changes — a feature, a refactor, a bug fix, a layer
+   rewrite — that could be reviewed, described, or reverted on its own.
+   Size each theme at roughly **one story point** of work. Cap at the
+   **top 5 themes**; if the diff has more candidates, merge or drop the
+   least significant. Describe themes **neutrally**: summarise what is
+   in the diff, do not flag worries about it.
+3. For `synthetic` strategy candidates, use `themes[]` from
+   CHANGE_SURVEY_JSON (see Inputs) when non-empty; otherwise use the
+   themes you identified in step 2.
+4. Estimate edge size (~one story point ≈ ~150 changed lines / few files).
    If ≤ ~one story point, apply "When to call indivisible" — if all criteria
    hold, output Indivisible and stop. If > ~one story point, ask: can you
    name one reviewable first commit where **both** slice and leftover each
    earn a commit slot (see split quality below)? If not, output Indivisible
    and stop.
-4. Pick a strategy (`synthetic` / `vertical` / `horizontal`)
+5. Pick a strategy (`synthetic` / `vertical` / `horizontal`)
    by asking: which strategy's **best single slice** would feel most
    natural to review on its own? A good slice is tightly coupled
    internally and minimally coupled to the leftover. Prefer slices
    that compile / typecheck on their own. The slice must be buildable
    under the chosen strategy's Constructor rules (see constructibility
    in Rules). Respect STRATEGY_OVERRIDE (see Inputs) if set.
-5. Within that strategy, pick the slice itself and describe both edges
+6. Within that strategy, pick the slice itself and describe both edges
    (slice first, leftover second). Every changed hunk in the diff must
    live in exactly one edge — no duplicates, no omissions. A single
    file's hunks may be split across the two edges.
@@ -53,8 +61,8 @@ leftover is common and is not grounds for Indivisible.
 - STRATEGY_OVERRIDE: `{{STRATEGY_OVERRIDE}}` — `auto` on a first attempt;
   otherwise one of `synthetic` / `vertical` / `horizontal`, set when the
   user asked for a re-plan with a specific strategy.
-- CHANGE_SURVEY_JSON: `{{CHANGE_SURVEY_JSON}}` — prior digest of the diff
-  into themes.
+- CHANGE_SURVEY_JSON: `{{CHANGE_SURVEY_JSON}}` — prior ChangeSurvey from a
+  separate Survey run, when one exists; use `themes[]` when non-empty.
 - USER_FEEDBACK: `{{USER_FEEDBACK}}` — feedback on a prior plan, or
   `(none)`. Treat as the user's read on what your previous attempt got
   wrong: a critique of an edge, an objection to the boundary, or a
@@ -69,11 +77,12 @@ leftover is common and is not grounds for Indivisible.
   refactor, one bug fix) that **requires a synthesized intermediate** code
   state — a slice tree containing content in neither BeforeTree nor
   TargetTree — to separate that theme cleanly from the rest. Use
-  `themes[]` from the ChangeSurvey as candidates. If the best theme is
-  already a clean hunk-subset of TargetTree, pick `vertical` or
-  `horizontal` instead — that's not a synthetic slice. On edges > ~one
-  story point, prefer synthetic over Indivisible when a theme can be
-  separated with a synthesized intermediate.
+  `themes[]` from CHANGE_SURVEY_JSON when non-empty; otherwise use themes
+  from step 2. If the best theme is already a clean hunk-subset of
+  TargetTree, pick `vertical` or `horizontal` instead — that's not a
+  synthetic slice. On edges > ~one story point, prefer synthetic over
+  Indivisible when a theme can be separated with a synthesized
+  intermediate.
 - **vertical** — extract a thin end-to-end tracer bullet that cuts
   through every architectural layer the diff touches, producing a
   self-contained working slice.

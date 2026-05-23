@@ -498,6 +498,91 @@ async fn hitl_off_drives_full_chain_without_explicit_accepts() {
     assert_eq!(graph["nodes"].as_array().unwrap().len(), 3);
 }
 
+async fn set_surveyor_disabled_hitl_off(app: &TestApp) {
+    let (status, _) = app.auth_json(
+        "PATCH",
+        "/api/partition-settings",
+        json!({
+            "coordinator": {
+                "model": "composer-2",
+                "surveyorEnabled": false,
+                "humanInTheLoop": {
+                    "afterSurvey": false,
+                    "afterPlanning": false,
+                    "afterConstruct": false,
+                    "afterIndivisible": false,
+                }
+            }
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn surveyor_disabled_skips_to_plan() {
+    let runner = Arc::new(FakeSubagentRunner::new(vec![
+        plan_script("synthetic"),
+        construct_ok_script(),
+    ]));
+    let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    set_surveyor_disabled_hitl_off(&app).await;
+    let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
+
+    let mut rx = app.state.coordinator.subscribe(&session_id);
+
+    let (status, body) = app.auth_empty(
+        "POST",
+        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "begin body: {body}");
+    let partition_id = body["id"].as_str().unwrap().to_string();
+
+    let started = next_event(&mut rx).await;
+    assert!(matches!(started, SseEvent::Started { .. }));
+
+    let first_phase = loop {
+        let ev = next_event(&mut rx).await;
+        if let SseEvent::Phase { name, state, .. } = &ev {
+            break (*name, *state);
+        }
+    };
+    assert_eq!(first_phase.0, PhaseName::Plan);
+    assert_eq!(first_phase.1, PhaseState::Running);
+
+    let (_, runs) = app.auth_empty(
+        "GET",
+        &format!("/api/partitions/{partition_id}/runs"),
+    )
+    .await;
+    assert!(
+        !runs
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["kind"] == "survey"),
+        "expected no survey run, got {runs}"
+    );
+
+    let mut got_finished = false;
+    for _ in 0..30 {
+        let ev = next_event(&mut rx).await;
+        if matches!(ev, SseEvent::Finished { .. }) {
+            got_finished = true;
+            break;
+        }
+        if let SseEvent::Phase {
+            state: PhaseState::AwaitingReview,
+            ..
+        } = &ev
+        {
+            panic!("HITL-off path should never park at awaiting_review, got {ev:?}");
+        }
+    }
+    assert!(got_finished, "did not see Finished event");
+}
+
 fn plan_indivisible_script(rationale: &str) -> Vec<HelperEvent> {
     vec![HelperEvent::Finished {
         run_id: "0".to_string(),

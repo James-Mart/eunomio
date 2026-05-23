@@ -206,6 +206,7 @@ pub struct NewPartitionInsert {
     pub session_id: String,
     pub target_node_id: String,
     pub worktree_path: String,
+    pub initial_phase: PhaseName,
     pub remaining_depth: Option<i64>,
     pub now: i64,
 }
@@ -219,22 +220,25 @@ pub async fn insert_pending(state: &AppState, row: NewPartitionInsert) -> Result
         session_id,
         target_node_id,
         worktree_path,
+        initial_phase,
         remaining_depth,
         now,
     } = row;
+    let initial_phase = initial_phase.as_str().to_string();
     let inserted_id = state
         .db
         .call(move |conn| {
             let tx = conn.transaction()?;
             tx.execute(
                 "INSERT INTO partitions (id, org_id, user_id, session_id, target_node_id, phase, phase_state, worktree_path, remaining_depth, created_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, 'survey', 'running', ?6, ?7, ?8)",
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'running', ?7, ?8, ?9)",
                 tokio_rusqlite::params![
                     partition_id,
                     org_id,
                     user_id,
                     session_id,
                     target_node_id,
+                    initial_phase,
                     worktree_path,
                     remaining_depth,
                     now

@@ -31,6 +31,8 @@ pub struct CoordinatorSettings {
     pub human_in_the_loop: HumanInTheLoop,
     #[serde(default = "default_iteration_limit")]
     pub max_iterations: IterationLimit,
+    #[serde(default = "default_true")]
+    pub surveyor_enabled: bool,
 }
 
 impl Default for CoordinatorSettings {
@@ -39,6 +41,7 @@ impl Default for CoordinatorSettings {
             model: default_model(),
             human_in_the_loop: HumanInTheLoop::default(),
             max_iterations: default_iteration_limit(),
+            surveyor_enabled: true,
         }
     }
 }

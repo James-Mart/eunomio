@@ -5,6 +5,14 @@ use crate::{
 
 use super::Coordinator;
 
+fn first_run_kind(settings: &PartitionSettings) -> RunKind {
+    if settings.coordinator.surveyor_enabled {
+        RunKind::Survey
+    } else {
+        RunKind::Plan
+    }
+}
+
 impl Coordinator {
     pub async fn begin_partition(
         &self,
@@ -13,19 +21,8 @@ impl Coordinator {
         session_id: &str,
         target_node_id: &str,
     ) -> Result<Partition, AppError> {
-        let settings = load_for_partition(state, org_id, session_id).await?;
-        let remaining_depth = match settings.coordinator.max_iterations {
-            IterationLimit::Count { count } => Some(count as i64),
-            IterationLimit::Auto => None,
-        };
-        self.begin_partition_internal(
-            state,
-            org_id,
-            session_id,
-            target_node_id,
-            remaining_depth,
-        )
-        .await
+        self.begin_partition_internal(state, org_id, session_id, target_node_id, None)
+            .await
     }
 
     pub(super) async fn begin_child_partition(
@@ -42,7 +39,7 @@ impl Coordinator {
             org_id,
             session_id,
             target_node_id,
-            remaining_depth,
+            Some(remaining_depth),
         )
         .await
     }
@@ -53,8 +50,17 @@ impl Coordinator {
         org_id: &str,
         session_id: &str,
         target_node_id: &str,
-        remaining_depth: Option<i64>,
+        remaining_depth: Option<Option<i64>>,
     ) -> Result<Partition, AppError> {
+        let settings = load_for_partition(state, org_id, session_id).await?;
+        let remaining_depth = remaining_depth.unwrap_or_else(|| {
+            match settings.coordinator.max_iterations {
+                IterationLimit::Count { count } => Some(count as i64),
+                IterationLimit::Auto => None,
+            }
+        });
+        let first_kind = first_run_kind(&settings);
+
         let (_, parent_node) =
             repo::node::target_and_parent(state, org_id, session_id, target_node_id).await?;
         let parent = parent_node.ok_or_else(|| {
@@ -81,6 +87,7 @@ impl Coordinator {
                 session_id: session_id.to_string(),
                 target_node_id: target_node_id.to_string(),
                 worktree_path: String::new(),
+                initial_phase: first_kind.phase(),
                 remaining_depth,
                 now,
             },
@@ -128,7 +135,7 @@ impl Coordinator {
             org_id.to_string(),
             inserted_id,
             StartRunRequest {
-                kind: RunKind::Survey,
+                kind: first_kind,
                 ..Default::default()
             },
         )
