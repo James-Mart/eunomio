@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 import { ApiError } from "@/lib/api";
 
 export function formatError(e: unknown, fallback: string): string {

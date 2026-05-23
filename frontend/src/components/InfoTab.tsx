@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 import { CopyIcon } from "@primer/octicons-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";

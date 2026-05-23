@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 export type ConnectionStatus = "connecting" | "open" | "closed";
 
 export type SubscribeEventSourceOptions = {

@@ -25,9 +25,26 @@ flowchart LR
 | Process | Port | Restarts on… |
 | --- | --- | --- |
 | `vite` | 5173 | `frontend/src/**` → HMR |
-| `eunomio` (axum) | 3001 | `backend/src/**` or `Cargo.toml` → cargo-watch |
+| `eunomio` (axum) | 3001 | `crates/**` or `Cargo.toml` → cargo-watch |
 
 Restarting the backend leaves Vite running — the browser sees a brief 502 until axum is back.
+
+### Crate layout
+
+The Rust backend is a Cargo workspace under `crates/`:
+
+```
+eunomio-core              types, traits, AppError (incl. types/repo.rs row DTOs)
+eunomio-helper-protocol   RunRequest, SubagentRunner trait, wire events
+eunomio-keystore-file     FileKeyStore (BYOK credentials)
+eunomio-sqlite            SqliteDatastore + repo modules
+eunomio-auth-local        LocalAuthProvider (session cookies, login flow)
+eunomio-sandbox-linux     LinuxSandboxRuntime (pass-through stub today)
+eunomio-server            axum router, coordinator, middleware, tunnel
+eunomio-bin-local         main() — wires trait objects and serves
+```
+
+Only `eunomio-bin-local` depends on every impl crate; `eunomio-server` sees deployment-specific behavior through `Arc<dyn …>` trait objects on `AppState` (`datastore`, `keystore`, `auth`, plus `coordinator` owning runner/quota). `SandboxRuntime` is owned by `CursorHelperRunner` (via `SubagentRunner::list_models` and run spawning), not exposed on `AppState`. There is no runtime `DeploymentMode` flag — the binary you run *is* the deployment shape.
 
 ### State directory
 
@@ -53,6 +70,8 @@ Hosted deployment design is documented separately in [`HOSTED_DEPLOYMENT.md`](HO
 Eunomio runs on the user's workstation against their own repositories.
 
 ### Auth (local mode)
+
+There is no runtime `DeploymentMode` — the local binary (`eunomio-bin-local`) *is* local deployment. Hosted shape will be a separate binary with its own trait impls.
 
 Local mode uses an org/user model with a singleton org (`id = 'local'`). Multiple user profiles can share one data directory; sessions are visible org-wide.
 
@@ -117,7 +136,7 @@ Future direction: cloud-hosted Cursor agents would sandbox execution; not implem
 
 ### Cloudflared binary
 
-When `cloudflared` is not on `$PATH`, eunomio downloads a pinned release, SHA-256 verifies against embedded hashes, and extracts before execution. Mismatch deletes the download and returns `cloudflared_sha_mismatch`. See [`backend/src/tunnel.rs`](backend/src/tunnel.rs) for pin/upgrade procedure.
+When `cloudflared` is not on `$PATH`, eunomio downloads a pinned release, SHA-256 verifies against embedded hashes, and extracts before execution. Mismatch deletes the download and returns `cloudflared_sha_mismatch`. See [`crates/eunomio-server/src/tunnel/install.rs`](crates/eunomio-server/src/tunnel/install.rs) for pin/upgrade procedure.
 
 ### Reporting
 
@@ -168,9 +187,9 @@ Diffs use `git diff --histogram`. Strategy rules constrain Constructor scope (Sy
 
 ### Persistent state
 
-SQLite tables: `sessions`, `nodes`, `partitions`, `runs`. Pre-release schema is malleable — update `CREATE TABLE` in [`backend/src/db.rs`](backend/src/db.rs) and wipe with `eunomio --new`. No migration shims.
+SQLite tables: `sessions`, `nodes`, `partitions`, `runs`. Pre-release schema is malleable — update `CREATE TABLE` in [`crates/eunomio-sqlite/src/db.rs`](crates/eunomio-sqlite/src/db.rs) and wipe with `eunomio --new`. No migration shims.
 
-Partition settings live in `~/.eunomio/settings.json` (global per user), not on the session row.
+Partition settings live in `~/.eunomio/users/<userId>/settings.json` (per user), not on the session row.
 
 ### HTTP surface (summary)
 

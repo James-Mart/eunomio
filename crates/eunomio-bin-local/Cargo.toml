@@ -1,0 +1,43 @@
+[package]
+name = "eunomio-bin-local"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "eunomio_bin_local"
+path = "src/lib.rs"
+
+[[bin]]
+name = "eunomio"
+path = "src/main.rs"
+
+[dependencies]
+eunomio-server = { path = "../eunomio-server" }
+eunomio-core = { path = "../eunomio-core" }
+eunomio-helper-protocol = { path = "../eunomio-helper-protocol" }
+eunomio-keystore-file = { path = "../eunomio-keystore-file" }
+eunomio-sqlite = { path = "../eunomio-sqlite" }
+eunomio-auth-local = { path = "../eunomio-auth-local" }
+eunomio-sandbox-linux = { path = "../eunomio-sandbox-linux" }
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+dirs = "5"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
+pretty_assertions = "1"
+http-body-util = "0.1"
+axum = "0.7"
+tower = { version = "0.5", features = ["util"] }
+uuid = { version = "1", features = ["v4"] }
+async-trait = "0.1"
+tokio-rusqlite = "0.5"
+eunomio-sqlite = { path = "../eunomio-sqlite" }
+eunomio-keystore-file = { path = "../eunomio-keystore-file" }
+eunomio-auth-local = { path = "../eunomio-auth-local" }

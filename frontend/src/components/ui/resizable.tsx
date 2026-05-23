@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 import * as React from "react"
 import { GrabberIcon } from "@primer/octicons-react"
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels"

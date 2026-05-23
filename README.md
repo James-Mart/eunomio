@@ -2,6 +2,8 @@
 
 Turn a noisy "ref A → ref B" diff into a clean, reviewable commit history by exploring a graph of AI-assisted, human-supervised commits.
 
+Licensed under [Apache License 2.0](LICENSE).
+
 ## Documentation
 
 User docs: run `npm run dev:docs` and open [http://localhost:3000/docs](http://localhost:3000/docs).
@@ -22,6 +24,18 @@ npm run build
 # → target/release/eunomio
 ```
 
+Install the binary to `$PATH`:
+
+```bash
+cargo install --path crates/eunomio-bin-local --force
+```
+
+License header check (run before committing code changes):
+
+```bash
+npm run check:license
+```
+
 ## Maintainer docs
 
 - [`CONTEXT.md`](CONTEXT.md) — canonical terminology (glossary)
@@ -32,8 +46,17 @@ npm run build
 ## Layout
 
 ```
-backend/    Rust axum + SQLite
-frontend/   Vite + React + TS + Tailwind
-docs/       Fumadocs user documentation site
-subagents/  prompt markdown for surveyor/planner/constructor
+crates/
+  eunomio-core/           domain types + traits
+  eunomio-server/         axum handlers, middleware, coordinator
+  eunomio-helper-protocol/ cursor-helper wire format
+  eunomio-sqlite/         Datastore impl (SQLite)
+  eunomio-sandbox-linux/  SandboxRuntime impl (no-op stub today)
+  eunomio-auth-local/     AuthProvider impl
+  eunomio-keystore-file/  KeyStore impl
+  eunomio-bin-local/      local single-binary main()
+frontend/                 Vite + React + TS + Tailwind
+helper/                   cursor-helper (Node SEA)
+docs/                     Fumadocs user documentation site
+subagents/                prompt markdown for surveyor/planner/constructor
 ```

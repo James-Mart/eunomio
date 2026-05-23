@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 import concurrently from "concurrently";
 
 function shellQuote(arg) {
@@ -10,7 +12,7 @@ const cargoRunArgs = ["--port", "3001", "--dev-tunnel", ...extraArgs];
 const cargoRunTail = cargoRunArgs.map(shellQuote).join(" ");
 
 const backendCommand =
-  `cd backend && cargo watch -w src -w Cargo.toml -w ../subagents -- cargo run -- ${cargoRunTail}`;
+  `cargo watch -w crates -w subagents -- cargo run -p eunomio-bin-local -- ${cargoRunTail}`;
 
 const { result } = concurrently(
   [

@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 import { useSyncExternalStore } from "react";
 
 export type SystemError = { code: string; message: string };

@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 import { Agent, CursorAgentError } from "@cursor/sdk";
 
 function emit(event) {

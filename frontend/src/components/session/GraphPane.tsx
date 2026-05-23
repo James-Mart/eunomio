@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 import { useEffect, useMemo } from "react";
 import {
   Background,

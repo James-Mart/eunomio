@@ -1,3 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["backend"]
+members = [
+  "crates/eunomio-core",
+  "crates/eunomio-helper-protocol",
+  "crates/eunomio-keystore-file",
+  "crates/eunomio-sqlite",
+  "crates/eunomio-auth-local",
+  "crates/eunomio-sandbox-linux",
+  "crates/eunomio-server",
+  "crates/eunomio-bin-local",
+]

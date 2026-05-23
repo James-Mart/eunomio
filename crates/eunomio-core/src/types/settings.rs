@@ -1,0 +1,152 @@
+// SPDX-License-Identifier: Apache-2.0
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GeneralSettings {
+    #[serde(default)]
+    pub transcripts_enabled: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PartitionSettings {
+    #[serde(default)]
+    pub general: GeneralSettings,
+    #[serde(default)]
+    pub coordinator: CoordinatorSettings,
+    #[serde(default)]
+    pub surveyor: SubagentSettings,
+    #[serde(default)]
+    pub planner: SubagentSettings,
+    #[serde(default)]
+    pub constructor: SubagentSettings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CoordinatorSettings {
+    #[serde(default = "default_model")]
+    pub model: String,
+    #[serde(default)]
+    pub human_in_the_loop: HumanInTheLoop,
+    #[serde(default = "default_iteration_limit")]
+    pub max_iterations: IterationLimit,
+    #[serde(default = "default_true")]
+    pub surveyor_enabled: bool,
+}
+
+impl Default for CoordinatorSettings {
+    fn default() -> Self {
+        Self {
+            model: default_model(),
+            human_in_the_loop: HumanInTheLoop::default(),
+            max_iterations: default_iteration_limit(),
+            surveyor_enabled: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HumanInTheLoop {
+    #[serde(default = "default_true")]
+    pub after_survey: bool,
+    #[serde(default = "default_true")]
+    pub after_planning: bool,
+    #[serde(default = "default_true")]
+    pub after_construct: bool,
+    #[serde(default = "default_true")]
+    pub after_indivisible: bool,
+}
+
+impl Default for HumanInTheLoop {
+    fn default() -> Self {
+        Self {
+            after_survey: true,
+            after_planning: true,
+            after_construct: true,
+            after_indivisible: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum IterationLimit {
+    Count {
+        #[serde(default = "default_count")]
+        count: u32,
+    },
+    Auto,
+}
+
+fn default_count() -> u32 {
+    1
+}
+
+fn default_iteration_limit() -> IterationLimit {
+    IterationLimit::Count { count: 1 }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubagentSettings {
+    #[serde(default)]
+    pub override_model: bool,
+    #[serde(default = "default_model")]
+    pub model: String,
+}
+
+impl Default for SubagentSettings {
+    fn default() -> Self {
+        Self {
+            override_model: false,
+            model: default_model(),
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_model() -> String {
+    "composer-2".to_string()
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PartitionSettingsPatch {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub general: Option<GeneralSettings>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coordinator: Option<CoordinatorSettings>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surveyor: Option<SubagentSettings>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub planner: Option<SubagentSettings>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub constructor: Option<SubagentSettings>,
+}
+
+impl PartitionSettings {
+    pub fn apply_patch(&mut self, patch: PartitionSettingsPatch) {
+        if let Some(v) = patch.general {
+            self.general = v;
+        }
+        if let Some(v) = patch.coordinator {
+            self.coordinator = v;
+        }
+        if let Some(v) = patch.surveyor {
+            self.surveyor = v;
+        }
+        if let Some(v) = patch.planner {
+            self.planner = v;
+        }
+        if let Some(v) = patch.constructor {
+            self.constructor = v;
+        }
+    }
+}

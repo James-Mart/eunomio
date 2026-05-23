@@ -4,13 +4,14 @@
   "version": "0.0.0",
   "scripts": {
     "dev": "node scripts/dev.mjs",
-    "dev:backend": "cd backend && cargo watch -w src -w Cargo.toml -w ../subagents -- cargo run -- --port 3001 --dev-tunnel",
+    "dev:backend": "cargo watch -w crates -w subagents -- cargo run -p eunomio-bin-local -- --port 3001 --dev-tunnel",
     "dev:frontend": "cd frontend && npm run dev",
     "dev:new": "rm -f ~/.eunomio/eunomio.db ~/.eunomio/eunomio.db-wal ~/.eunomio/eunomio.db-shm && npm run dev --",
     "dev:docs": "npm --prefix docs run dev",
     "build:docs": "npm --prefix docs run build",
-    "build": "npm --prefix helper install && npm --prefix helper run build && npm --prefix frontend run build && cargo build --release --manifest-path backend/Cargo.toml",
-    "install:bin": "npm --prefix helper install && npm --prefix helper run build && npm --prefix frontend run build && cargo install --path backend --force && npm run clean:helper-cache",
+    "build": "npm --prefix helper install && npm --prefix helper run build && npm --prefix frontend run build && cargo build --release --manifest-path Cargo.toml --bin eunomio",
+    "install:bin": "npm --prefix helper install && npm --prefix helper run build && npm --prefix frontend run build && cargo install --path crates/eunomio-bin-local --force && npm run clean:helper-cache",
+    "check:license": "bash scripts/check-spdx-headers.sh",
     "clean:helper-cache": "node -e \"const fs=require('fs'),path=require('path'),os=require('os');const d=os.tmpdir();for(const e of fs.readdirSync(d)){if(e.startsWith('eunomio-helper-')){const p=path.join(d,e);fs.rmSync(p,{recursive:true,force:true});console.log('removed',p);}}\""
   },
   "devDependencies": {

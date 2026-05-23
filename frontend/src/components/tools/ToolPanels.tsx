@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 import type { Partition, PartitionStrategy } from "@/lib/api";
 import BranchTab from "@/components/BranchTab";
 import InfoTab from "@/components/InfoTab";

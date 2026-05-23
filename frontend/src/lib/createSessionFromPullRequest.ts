@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 import { api, type ResolvedPullRequest, type Session } from "./api";
 
 export type CreateSessionPhase = "resolving" | "fetching" | "creating";

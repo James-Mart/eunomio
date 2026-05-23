@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 import { Cursor } from "@cursor/sdk";
 import { run } from "./run.mjs";
 

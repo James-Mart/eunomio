@@ -351,15 +351,103 @@ dependencies = [
 ]
 
 [[package]]
-name = "eunomio"
+name = "eunomio-auth-local"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64",
+ "eunomio-core",
+ "getrandom 0.2.17",
+ "regex",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "eunomio-bin-local"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "clap",
+ "dirs",
+ "eunomio-auth-local",
+ "eunomio-core",
+ "eunomio-helper-protocol",
+ "eunomio-keystore-file",
+ "eunomio-sandbox-linux",
+ "eunomio-server",
+ "eunomio-sqlite",
+ "http-body-util",
+ "pretty_assertions",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-rusqlite",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "eunomio-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "http",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "uuid",
+]
+
+[[package]]
+name = "eunomio-helper-protocol"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "eunomio-core",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "eunomio-keystore-file"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "eunomio-core",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "eunomio-sandbox-linux"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "eunomio-core",
+]
+
+[[package]]
+name = "eunomio-server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "axum",
  "base64",
- "clap",
- "dirs",
+ "eunomio-core",
+ "eunomio-helper-protocol",
  "futures",
  "getrandom 0.2.17",
  "http-body-util",
@@ -368,7 +456,6 @@ dependencies = [
  "pretty_assertions",
  "regex",
  "reqwest",
- "rusqlite",
  "rust-embed",
  "serde",
  "serde_json",
@@ -376,12 +463,25 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
- "tokio-rusqlite",
  "tokio-stream",
  "tower",
  "tower-http 0.5.2",
  "tracing",
- "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "eunomio-sqlite"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "eunomio-core",
+ "rusqlite",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-rusqlite",
  "uuid",
 ]
 

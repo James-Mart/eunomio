@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 import { XIcon } from "@primer/octicons-react";
 import { useSearchParams } from "react-router-dom";
 

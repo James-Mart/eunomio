@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import type { Graph, GraphNode, Partition } from "@/lib/api";

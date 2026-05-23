@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 import type { Edge as FlowEdge, Node } from "@xyflow/react";
 
 import type {

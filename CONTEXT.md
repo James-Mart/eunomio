@@ -119,6 +119,17 @@ A Planner output declaring that the diff between a Partition's BeforeTree and Ta
 **Auto fan-out**:
 A Coordinator-driven loop that turns one user-initiated Begin Partition into a binary tree of Partitions: each Acceptance auto-Begins two new Partitions, one targeting the newly inserted Slice's incoming Edge and one targeting the renamed-target's incoming Edge. Configured by `coordinator.maxIterations` in Partition settings: `{ kind: "count", count: N }` caps the tree depth at N (count=1 disables fan-out entirely, matching the pre-feature behaviour); `{ kind: "auto" }` removes the depth cap. Branches terminate naturally on an **Indivisible verdict**, a Constructor `BLOCKED`, a Run error, a user Abandon, or the depth budget reaching zero. Orthogonal to the HITL flags — each Phase still respects its own `afterX` flag, so a user can run Auto fan-out with HITL on and review every gate in the tree manually.
 
+## Deployment shapes
+
+**Local mode**:
+The single-binary tool (`eunomio-bin-local`) running on a developer's machine. One org-of-one, loopback bind, BYOK Cursor key, SQLite datastore. See [`ARCHITECTURE.md`](ARCHITECTURE.md).
+
+**Hosted mode**:
+The future multi-tenant SaaS deployment behind a reverse proxy, with GitHub OAuth, Postgres, operator key pool, and per-org quotas. See [`HOSTED_DEPLOYMENT.md`](HOSTED_DEPLOYMENT.md).
+
+**Org**:
+The tenancy axis. Every tenant-scoped row carries an `org_id`; a request's principal `(user_id, org_id)` can only access rows matching its `org_id`. Personal accounts are org-of-one; teams add `org_memberships` rows.
+
 ## Relationships
 
 - A **Session** has exactly one **Remote** and starts with exactly two **Nodes**: **base** and **final**.
@@ -134,3 +145,4 @@ A Coordinator-driven loop that turns one user-initiated Begin Partition into a b
 - "lifecycle" was previously used as a domain noun for the per-Partition flow — resolved: **Partition** is the entity. "Lifecycle" must not be used as a substitute for "Partition" (e.g. "begin a Lifecycle", "Lifecycle row"). It remains a legitimate _descriptor_ of a Partition's flow through its Phases — both in prose ("the Partition's lifecycle") and as a qualified identifier for things that describe that flow (e.g. the `Lifecycle` snapshot type, `LifecycleStepper` UI widget, `usePartitionLifecycle` hook).
 - "concern" was previously the name for a survey item — resolved: canonical term is **Theme**. "Concern" is avoided because it carries a negative valence (the survey describes what's in the diff, neutrally; it does not flag worries).
 - "user concern" was previously a separate upfront input channel to the Surveyor and Planner — resolved: collapsed into `user_feedback`, supplied only at Review gates on re-runs. There is no upfront user-supplied prose on a Partition.
+- "deployment-mode" / `EUNOMIO_MODE` — there is no runtime mode flag; the deployment shape *is* the running binary. "Local mode" and "Hosted mode" refer to the two binaries (`eunomio-bin-local` vs the future `eunomio-bin-hosted`), not a runtime branch inside one process.

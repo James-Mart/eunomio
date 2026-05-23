@@ -55,7 +55,7 @@ The OSS repo exposes the boundaries between "shared core" and "deployment-specif
 
 The HTTP routes, middleware (CSRF, `CurrentPrincipal`, audit log), helper-subprocess protocol, SSE streaming, domain model, React frontend, and `cursor-helper` itself all live in OSS and accept these traits as parameters. Neither binary contains hardcoded "if hosted" branches.
 
-### Repo layout (target)
+### Repo layout (current monorepo)
 
 ```
 eunomio/                          # public, Apache-2.0
@@ -74,6 +74,8 @@ eunomio/                          # public, Apache-2.0
   HOSTED_DEPLOYMENT.md            # this doc, shipped in OSS for reference
   LICENSE                         # Apache-2.0
 ```
+
+The OSS crate layout described above is implemented in this monorepo today. The `eunomio-hosted/` box remains aspirational.
 
 ```
 eunomio-hosted/                   # private, FSL-1.1-Apache-2.0
@@ -111,7 +113,7 @@ Every domain row that belongs to a tenant carries an `org_id` (sessions, partiti
 
 Personal accounts are modeled as **org-of-one**: signing up with GitHub auto-creates a personal org with one member (you). Teams come later as additional `org_memberships` rows; no migration of existing data needed.
 
-Local mode runs as a degenerate case: one row in `orgs`, one row in `users`, one row in `org_memberships`. The middleware applies the same `org_id` filter.
+Local mode runs as a degenerate case today: one row in `orgs`, one row in `users`, one row in `org_memberships`, with the middleware applying the same `org_id` filter.
 
 ## Option B topology
 
@@ -223,7 +225,7 @@ Every request to protected `/api/*` handlers carries a `CurrentPrincipal { user_
 
 - **Shape:** opaque random 32-byte session ID. Persisted server-side in an `auth_sessions` table (`session_id`, `user_id`, `created_at`, `last_seen_at`, `expires_at`, `ip`, `user_agent`). Cookie carries only the ID; revocation is one row delete.
 - **Attributes:** `HttpOnly`, `SameSite=Lax`, `Path=/`. Hosted: `Secure` + `__Host-` prefix (forces Secure, no Domain, Path=/, prevents same-site subdomain shadowing).
-- **Naming:** distinct per mode (`eunomio_local_session` vs `__Host-eunomio_session`). A browser visiting both origins never gets cookie collisions, and a cookie's intended scope is self-evident.
+- **Naming:** distinct per mode (`eunomio_local_session` vs `__Host-eunomio_session`). A browser visiting both origins never gets cookie collisions, and a cookie's intended scope is self-evident. Implemented today as `eunomio_local_session` in `crates/eunomio-auth-local/`; hosted's `__Host-eunomio_session` is unimplemented.
 - **Lifetime:** 30-day absolute expiry; 7-day idle expiry refreshed on each authenticated request. Session ID is rotated on login and on privilege change (e.g. switching active org).
 - **Logout:** `POST /api/auth/logout` deletes the `auth_sessions` row and clears the cookie. Cookie alone is not enough; revocation must hit the server-side row.
 
@@ -238,13 +240,7 @@ The frontend's `fetch` wrapper adds the header unconditionally. Any endpoint tha
 
 ### Local mode
 
-- **Mode detection:** default when not passed `--mode hosted`. No `EUNOMIO_MODE` env var.
-- **First visit:** if no user exists in the DB, the UI shows a login form with:
-  - **Username** — prefilled with the OS username (`$USER` / `whoami`)
-  - **Cursor API key** — never prefilled with a secret value. If a key was supplied at launch via `CURSOR_API_KEY`, the form shows "Detected key from environment — use it?" with a confirm button; the secret itself stays server-side until the user confirms.
-- **Submit:** creates the singleton org + user + membership in one transaction (idempotent via `INSERT … ON CONFLICT` on a singleton sentinel row), writes the Cursor key to `~/.eunomio/credentials`, sets the session cookie.
-- **Return visits:** session cookie → `GET /api/me` → app loads without re-login.
-- **Trust boundary:** loopback bind + OS user; see [`ARCHITECTURE.md`](ARCHITECTURE.md) for tunnel share tokens (capability-based, separate from user login).
+Local-mode auth (singleton org, server-side session cookie, CSRF header, audit log) is implemented; see [`ARCHITECTURE.md`](ARCHITECTURE.md) §Auth (local mode) for the live contract. Hosted-mode auth is described below.
 
 ### Hosted mode
 
@@ -303,7 +299,7 @@ Outside the allowlist, the backend uses the connection peer for rate-limit/audit
 
 ### Audit log
 
-An `auth_events` table records: login (success / failure / unverified email refusal), logout, session rotation, OAuth identity link/unlink, org membership change, plan change, operator key rotation. Each row carries `org_id`, `user_id` (when known), `event_type`, `ip`, `user_agent`, `created_at`, and `details_json`. Audit events are written in the same transaction as the operation they describe.
+An `auth_events` table records: login (success / failure / unverified email refusal), logout, session rotation, OAuth identity link/unlink, org membership change, plan change, operator key rotation. Each row carries `org_id`, `user_id` (when known), `event_type`, `ip`, `user_agent`, `created_at`, and `details_json`. Audit events are written in the same transaction as the operation they describe. Implemented today as the `auth_events` table in `crates/eunomio-sqlite/`; hosted extends the event taxonomy.
 
 ### Public (unauthenticated) routes
 
@@ -327,27 +323,13 @@ All Cursor SDK calls go through a single resolver. Deployment mode selects the s
 
 ### Transport into the helper subprocess
 
-The `cursor-helper` subprocess reads its job description from stdin as a single JSON request (today: `{ model, cwd, prompt, runId }`). The Cursor API key is added to that JSON envelope as `cursorApiKey` and **never placed in the subprocess environment**. Rationale: `CURSOR_API_KEY` in env is readable via `/proc/<pid>/environ` to any process running as the same uid; in hosted with per-run containers and `/proc` masked this is moot, but in local single-binary on a shared workstation it's a real leak channel. Stdin-only is the symmetric and safer transport.
+The Cursor API key is passed to the helper via a stdin JSON envelope (`cursorApiKey` field), never via the subprocess environment; the helper unsets `process.env.CURSOR_API_KEY` immediately after parsing. See `crates/eunomio-helper-protocol/` and `helper/src/run.mjs` for the shipped wire contract.
 
-The helper unsets `process.env.CURSOR_API_KEY` immediately after parsing the stdin payload, even if it happens to be set, so child processes the SDK spawns do not inherit it.
+Rationale: `CURSOR_API_KEY` in env is readable via `/proc/<pid>/environ` to any process running as the same uid; in hosted with per-run containers and `/proc` masked this is moot, but in local single-binary on a shared workstation it's a real leak channel. Stdin-only is the symmetric and safer transport.
 
 ### Local credentials file
 
-Path: `~/.eunomio/credentials` (JSON, mode `0600`):
-
-```json
-{ "cursorApiKey": "..." }
-```
-
-At process boot, the effective key is resolved as:
-
-1. Existing credentials file (the persisted choice).
-2. `CURSOR_API_KEY` env, **for this process only**. Cleared from the process env after read; never written to the credentials file.
-3. Unset → UI shows the first-run flow asking the user to paste a key.
-
-There is no `--cursor-api-key` CLI flag. Passing secrets via argv puts them in `ps`, shell history, and any process-listing telemetry. Scripts that need to inject a key set `CURSOR_API_KEY` before launching eunomio; that value is used for the current run and not persisted.
-
-Persistence to `~/.eunomio/credentials` happens only via explicit UI action (first-run form, or a later Settings page). The env-supplied key is per-run and disappears with the process.
+Local BYOK key resolution (per-user credentials file, launch env hint, mode `0600`) is implemented in `crates/eunomio-keystore-file/`; see [`ARCHITECTURE.md`](ARCHITECTURE.md) §Auth (local mode) for the live contract.
 
 ### Hosted: operator key pool
 
@@ -424,8 +406,6 @@ Hosted-specific resources:
 - **Isolated git storage per partition** in the host filesystem, sandbox-mounted into the helper container.
 - **Session ownership enforced via the `CurrentPrincipal` middleware** on every API access. Handlers do not write SQL without the middleware-provided `org_id` parameter.
 
-The `orgs`, `users`, `org_memberships`, `oauth_identities`, `auth_sessions`, `auth_events`, and `org_quotas` tables, along with `org_id` columns on existing tables, land with the `--mode hosted` work; they are not required to exist before that work begins. The current single-user schema in `db.rs` remains valid for local mode and is migrated forward without data loss when the org/user model lands.
-
 ## Frontend serving comparison
 
 | Context | Who serves UI | Who serves `/api` |
@@ -442,21 +422,21 @@ Avoid split origins (UI on `app.example.com`, API on `api.example.com`) unless y
 
 These must all be true before opening hosted to multi-tenant traffic. Soft launches to a single trusted org tier may proceed without some, with explicit decisions logged.
 
-- Trait seams (`AuthProvider`, `KeyStore`, `SandboxRuntime`, `Datastore`, `QuotaEnforcer`) factored out in the OSS repo; OSS local binary builds and runs from those seams via the local implementations.
+- Trait seams (`AuthProvider`, `KeyStore`, `SandboxRuntime`, `Datastore`, `QuotaEnforcer`) factored out in the OSS repo; OSS local binary builds and runs from those seams via the local implementations. *(OSS side shipped; hosted impl still required)*
 - `eunomio-hosted` private repo exists with hosted implementations of those traits; depends on a pinned `eunomio` OSS tag.
-- License headers in place: Apache-2.0 in OSS, FSL-1.1-Apache-2.0 in hosted; CI enforces no FSL header leaks into the OSS repo.
+- License headers in place: Apache-2.0 in OSS, FSL-1.1-Apache-2.0 in hosted; CI enforces no FSL header leaks into the OSS repo. *(OSS side shipped; hosted impl still required)*
 - `--mode hosted` implemented in the hosted binary; binds UDS; rejects `--enable-tunnel`.
 - Postgres-backed `orgs`, `users`, `org_memberships`, `auth_sessions`, `auth_events`, `org_quotas` schema deployed.
 - GitHub OAuth integrated with `state` + PKCE; account creation gated on `email_verified` primary email.
-- Session cookie uses `__Host-` prefix, `SameSite=Lax`, `HttpOnly`, `Secure`; CSRF custom-header middleware in place on all mutating verbs.
+- Session cookie uses `__Host-` prefix, `SameSite=Lax`, `HttpOnly`, `Secure`; CSRF custom-header middleware in place on all mutating verbs. *(OSS side shipped for local cookie + CSRF; hosted `__Host-` cookie still required)*
 - Sandbox contract implemented and enforced for every helper invocation (container in hosted, kernel namespaces in local).
 - Hostile-remote hardening: egress allowlist + git config restrictions + clone size/time limits.
 - Per-org hard caps on token spend and concurrent runs, enforced at run-start.
 - Operator Cursor keys sourced from an external secrets manager; never from disk or env on app nodes.
-- Cursor key passed to helper via stdin JSON, never env.
+- Cursor key passed to helper via stdin JSON, never env. *(OSS side shipped; hosted impl still required)*
 - Trusted-proxy CIDR/UDS config in place; forwarded headers honored only from configured sources.
 - Security headers shipped in the canonical nginx config (HSTS, CSP, X-Content-Type-Options, Referrer-Policy, cache directives for assets vs `index.html`).
-- `auth_events` audit log written in-transaction for all auth state changes.
+- `auth_events` audit log written in-transaction for all auth state changes. *(OSS side shipped; hosted extends event taxonomy)*
 - Tunnel sharing disabled.
 
 ## Out of scope (for now)

@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRightIcon, CopyIcon } from "@primer/octicons-react";
 import { toast } from "sonner";

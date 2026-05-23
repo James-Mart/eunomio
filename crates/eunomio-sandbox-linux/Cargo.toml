@@ -1,0 +1,8 @@
+[package]
+name = "eunomio-sandbox-linux"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eunomio-core = { path = "../eunomio-core" }
+async-trait = "0.1"

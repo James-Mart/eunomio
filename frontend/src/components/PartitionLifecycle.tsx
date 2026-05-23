@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 import { Fragment } from "react";
 import type { IconProps } from "@primer/octicons-react";
 import {

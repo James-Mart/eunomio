@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 import { useCallback, useEffect, useState } from "react";
 import { AlertIcon, SyncIcon } from "@primer/octicons-react";
 import { toast } from "sonner";

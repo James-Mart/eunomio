@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 import { NavLink, useLocation } from "react-router-dom";
 
 import { useSettingsDrill } from "@/components/SettingsDrillContext";
