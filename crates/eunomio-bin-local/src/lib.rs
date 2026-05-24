@@ -45,7 +45,7 @@ pub async fn build_local_state(
         quota,
         launch_pull_request,
         tunnel_enabled: false,
-        dev_tunnel: false,
+        allow_dev_url: false,
     })
     .await
 }

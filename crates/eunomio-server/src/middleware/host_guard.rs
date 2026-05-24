@@ -14,15 +14,9 @@ use axum::{
 /// has open and against DNS-rebinding reads, since browsers will happily
 /// connect to 127.0.0.1 under an attacker-controlled hostname.
 ///
-/// In `--dev-tunnel` mode we additionally accept `Origin` headers that name a
-/// `*.trycloudflare.com` subdomain. The browser loads the UI from the public
-/// cloudflared URL and Vite proxies `/api/*` to the backend with
-/// `changeOrigin: true` (which rewrites `Host` to loopback) but leaves the
-/// original `Origin` intact. Without this exemption every mutating request
-/// through the dev tunnel 403s; with it, the production CSRF/DNS-rebinding
-/// defence still applies to every other deployment. The dev tunnel skips the
-/// share-token gate by design, so allowing this origin does not weaken any
-/// guarantee that wasn't already waived for dev.
+/// With `--allow-dev-url`, accept `Origin` headers naming `*.trycloudflare.com`.
+/// The UI is loaded from the public URL; Vite proxies `/api/*` with loopback
+/// `Host` but leaves `Origin` on the trycloudflare subdomain.
 pub async fn host_guard(State(state): State<AppState>, req: Request, next: Next) -> Response {
     let host_header = req
         .headers()
@@ -32,7 +26,7 @@ pub async fn host_guard(State(state): State<AppState>, req: Request, next: Next)
         return forbidden_host();
     }
     if let Some(origin) = req.headers().get(header::ORIGIN).and_then(|v| v.to_str().ok()) {
-        let dev_origin_ok = state.tunnel.dev_mode() && origin_is_dev_tunnel(origin);
+        let dev_origin_ok = state.tunnel.allow_dev_url() && origin_is_trycloudflare(origin);
         if !origin_is_loopback(origin) && !dev_origin_ok {
             return forbidden_host();
         }
@@ -63,9 +57,8 @@ fn origin_is_loopback(origin: &str) -> bool {
 /// Matches origins of the form `https://<sub>.trycloudflare.com`, where
 /// `<sub>` is a single non-empty label of ASCII letters, digits, or hyphens
 /// (the format cloudflared's Quick Tunnel issues, and the same shape matched
-/// by the URL regex in `tunnel/process.rs`). Used only when `--dev-tunnel`
-/// is active.
-fn origin_is_dev_tunnel(origin: &str) -> bool {
+/// by the URL regex in `tunnel/process.rs`). Used only with `--allow-dev-url`.
+fn origin_is_trycloudflare(origin: &str) -> bool {
     let Some(rest) = origin.strip_prefix("https://") else {
         return false;
     };
@@ -126,44 +119,38 @@ mod tests {
     }
 
     #[test]
-    fn accepts_dev_tunnel_origins() {
-        assert!(origin_is_dev_tunnel(
+    fn accepts_trycloudflare_origins() {
+        assert!(origin_is_trycloudflare(
             "https://tee-left-stood-ping.trycloudflare.com"
         ));
-        assert!(origin_is_dev_tunnel("https://abc123.trycloudflare.com"));
-        assert!(origin_is_dev_tunnel(
+        assert!(origin_is_trycloudflare("https://abc123.trycloudflare.com"));
+        assert!(origin_is_trycloudflare(
             "https://a-b-c-1-2-3.trycloudflare.com"
         ));
     }
 
     #[test]
-    fn rejects_non_dev_tunnel_origins() {
-        // http:// is rejected — quick tunnels are always https.
-        assert!(!origin_is_dev_tunnel(
+    fn rejects_non_trycloudflare_origins() {
+        assert!(!origin_is_trycloudflare(
             "http://tee-left-stood-ping.trycloudflare.com"
         ));
-        // Bare apex is rejected (no subdomain).
-        assert!(!origin_is_dev_tunnel("https://trycloudflare.com"));
-        assert!(!origin_is_dev_tunnel("https://.trycloudflare.com"));
-        // Multi-label subdomain is rejected — quick tunnels are single-label.
-        assert!(!origin_is_dev_tunnel(
+        assert!(!origin_is_trycloudflare("https://trycloudflare.com"));
+        assert!(!origin_is_trycloudflare("https://.trycloudflare.com"));
+        assert!(!origin_is_trycloudflare(
             "https://foo.bar.trycloudflare.com"
         ));
-        // Suffix-spoofing must not match.
-        assert!(!origin_is_dev_tunnel(
+        assert!(!origin_is_trycloudflare(
             "https://attacker-trycloudflare.com"
         ));
-        assert!(!origin_is_dev_tunnel(
+        assert!(!origin_is_trycloudflare(
             "https://sub.trycloudflare.com.evil.com"
         ));
-        // Disallowed characters in the label.
-        assert!(!origin_is_dev_tunnel(
+        assert!(!origin_is_trycloudflare(
             "https://has_underscore.trycloudflare.com"
         ));
-        assert!(!origin_is_dev_tunnel("https://has space.trycloudflare.com"));
-        // Other schemes / shapes.
-        assert!(!origin_is_dev_tunnel("ftp://sub.trycloudflare.com"));
-        assert!(!origin_is_dev_tunnel("https://evil.com"));
-        assert!(!origin_is_dev_tunnel("null"));
+        assert!(!origin_is_trycloudflare("https://has space.trycloudflare.com"));
+        assert!(!origin_is_trycloudflare("ftp://sub.trycloudflare.com"));
+        assert!(!origin_is_trycloudflare("https://evil.com"));
+        assert!(!origin_is_trycloudflare("null"));
     }
 }

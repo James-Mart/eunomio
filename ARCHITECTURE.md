@@ -6,17 +6,19 @@ Maintainer reference for how eunomio is built and how it behaves at runtime. Use
 
 ## Dev mode and run modes
 
-Two layers of live reload in dev — Vite HMR for the UI, cargo-watch for the backend — plus an optional in-app cloudflared tunnel for sharing the UI on the public internet. Dev reload and the tunnel are independent.
+Two layers of live reload in dev — Vite HMR for the UI, cargo-watch for the backend — plus an optional **external** `cloudflared` process (started by `npm run dev`) for a stable public URL. The tunnel outlives backend restarts; only `cargo watch` respawns axum.
 
 ```mermaid
 flowchart LR
   browser["browser"]
+  cf["cloudflared"]
   vite["vite :5173"]
   rust["eunomio axum :3001"]
   repo[("git root")]
   state[("~/.eunomio/")]
 
-  browser --> vite
+  browser --> cf
+  cf --> vite
   vite -->|"/api proxy"| rust
   rust --> repo
   rust --> state
@@ -24,10 +26,11 @@ flowchart LR
 
 | Process | Port | Restarts on… |
 | --- | --- | --- |
+| `cloudflared` | — | `npm run dev` stopped |
 | `vite` | 5173 | `frontend/src/**` → HMR |
 | `eunomio` (axum) | 3001 | `crates/**` or `Cargo.toml` → cargo-watch |
 
-Restarting the backend leaves Vite running — the browser sees a brief 502 until axum is back.
+Restarting the backend leaves Vite and `cloudflared` running — the public URL stays the same; the browser may see a brief 502 on API until axum is back.
 
 ### Crate layout
 
@@ -113,20 +116,19 @@ sequenceDiagram
 
 The HTTP listener binds `127.0.0.1` only. The local OS user remains the outer trust boundary — any process as that user can read SQLite, credentials files, and worktrees. Application auth separates user profiles within the data directory and prepares hosted deployment.
 
-A host guard middleware rejects requests whose `Host` or `Origin` header is not `127.0.0.1`, `localhost`, or `[::1]`. This closes CSRF from arbitrary sites and DNS-rebinding reads. The guard applies to every method, including SSE.
+A host guard middleware rejects requests whose `Host` or `Origin` header is not `127.0.0.1`, `localhost`, or `[::1]`, except when `--allow-dev-url` is set and `Origin` names `https://<sub>.trycloudflare.com` (Vite dev over an external tunnel). This closes CSRF from arbitrary sites and DNS-rebinding reads. The guard applies to every method, including SSE.
 
 ### Tunnel
 
-Tunnel sharing is disabled by default. Pass `--enable-tunnel` (release binary) or `--dev-tunnel` (dev only) to enable.
+Tunnel sharing is disabled by default. Pass `--enable-tunnel` on the release binary to enable in-app sharing (UI, token, `POST /api/tunnel`).
 
 When enabled, `POST /api/tunnel` opens a second listener with token-checking middleware and exposes it via `cloudflared`. **The share token grants full admin access** — view diffs, accept/abandon partitions, change settings, trigger billed runs. User session cookie and `X-Eunomio-Request` CSRF header are still required for all API access via the tunnel listener (share token is an additional gate on the tunnel only).
 
 - Rotate: `DELETE /api/tunnel` then `POST /api/tunnel`; old tokens stop immediately
 - Tokens may appear in Cloudflare edge logs at first hit
 - Full token is only returned on the host-gated local listener; SSE subscribers get a redacted DTO
-- `--dev-tunnel` enables sharing against Vite :5173, skips the share-token gate, auto-starts at boot — see [`docs/adr/0003-public-url-token-tunnel.md`](docs/adr/0003-public-url-token-tunnel.md)
 
-The in-app tunnel is most useful in single-binary mode. In dev, the tunnel exposes only `/api/*` (Vite is separate).
+**Dev (`npm run dev`):** `dev.mjs` runs a long-lived `cloudflared` → Vite `:5173` (stable URL in `~/.eunomio/dev-tunnel.url`). The backend uses `--allow-dev-url` so API requests with a `*.trycloudflare.com` `Origin` are accepted; it does not spawn `cloudflared` or enable the tunnel API. See [`docs/adr/0003-public-url-token-tunnel.md`](docs/adr/0003-public-url-token-tunnel.md).
 
 ### Subagents are unsandboxed
 

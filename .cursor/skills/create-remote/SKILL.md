@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # create-remote
 
-Boot eunomio's dev stack (Rust backend + Vite frontend) against an arbitrary
+Boot eunomio's dev stack (Rust backend + Vite frontend + external tunnel) against an arbitrary
 git repo, and surface the public Cloudflare tunnel URL.
 
 ## Parameters
@@ -18,7 +18,8 @@ git repo, and surface the public Cloudflare tunnel URL.
 ## Preconditions
 
 - Run from the eunomio repo root (`npm run dev` lives in its `package.json`).
-- `cloudflared` must be on `PATH` (check with `which cloudflared`).
+- `cloudflared` on `$PATH` or at `~/.eunomio/bin/cloudflared` (if missing, run
+  `cargo run -p eunomio-bin-local -- --enable-tunnel` once to download, or install manually).
 - Ports `3001` (backend) and `5173` (frontend Vite) must be free. Kill any
   prior `eunomio` / `vite` / `cloudflared` processes before starting.
 - `REPO_ROOT` must be a git repo (contains `.git`).
@@ -39,8 +40,8 @@ git repo, and surface the public Cloudflare tunnel URL.
    backend opens the SQLite file it holds it open via WAL, and deleting
    underneath it leaves the running process with a phantom db. Wiping all
    three files (`.db`, `-wal`, `-shm`) matches what the backend's hidden
-   `--new` flag does in `backend/src/main.rs`; deleting only `eunomio.db`
-   leaves WAL frames that will be replayed on next open.
+   `--new` flag does in `crates/eunomio-bin-local/src/main.rs`; deleting only
+   `eunomio.db` leaves WAL frames that will be replayed on next open.
 
    `npm run dev` invokes the backend with no `--data-dir`, so it defaults to
    `~/.eunomio/`. If the user has overridden the data dir elsewhere, wipe
@@ -54,27 +55,26 @@ git repo, and surface the public Cloudflare tunnel URL.
    EUNOMIO_REPO_ROOT=<REPO_ROOT> npm run dev > /tmp/eunomio-dev.log 2>&1 &
    ```
 
-   Why this works: `npm run dev` already invokes the backend with
-   `--dev-tunnel`, which enables sharing, auto-starts cloudflared, and prints the
-   trycloudflare URL to stdout on a single line.
+   `npm run dev` runs `cloudflared` in a separate process (stable across backend
+   rebuilds), the backend with `--allow-dev-url`, and Vite.
 
-   Do *not* try to bake the wipe into this command by appending `--new` to
-   the cargo invocation in `package.json`. `npm run dev` runs the backend
-   under `cargo watch`, which respawns the binary on every Rust edit; with
-   `--new` baked in, every rebuild would silently wipe the user's sessions
-   mid-session. The one-shot `rm` in step 2 is the correct boundary.
+   Do *not* append `--new` to the cargo invocation in `package.json`. The
+   one-shot `rm` in step 2 is the correct boundary.
 
-4. Poll `/tmp/eunomio-dev.log` until a line matching `https://*.trycloudflare.com`
-   appears (usually within ~10s after first compile, longer on a cold cargo
-   build). If nothing appears after ~3 minutes, dump the tail of the log and
-   stop — something is wrong (missing cloudflared, port conflict, compile
-   error, etc.).
+4. Poll until the tunnel URL is available (usually within ~10s after
+   `cloudflared` starts, longer on a cold cargo build). Prefer, in order:
 
-5. **Print the URL to the user in the assistant message body.** The whole
-   point of this skill is that the user gets a clickable, copyable URL — do
-   not bury it inside tool output, a code fence the user has to expand, or a
-   summary that paraphrases it away. The minimum acceptable output is a line
-   in the chat reply containing the bare URL, e.g.
+   ```bash
+   cat ~/.eunomio/dev-tunnel.url
+   ```
+
+   ```bash
+   grep -oE 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' /tmp/eunomio-dev.log | tail -1
+   ```
+
+   If nothing appears after ~3 minutes, dump the tail of the log and stop.
+
+5. **Print the URL to the user in the assistant message body.** Minimum:
 
    ```
    Public tunnel: https://<sub>.trycloudflare.com
@@ -82,38 +82,22 @@ git repo, and surface the public Cloudflare tunnel URL.
    Frontend:      http://127.0.0.1:5173
    ```
 
-## Why the URL rotates on every backend rebuild
+## Stable URL across backend rebuilds
 
-`npm run dev` runs the backend under `cargo watch`, which kills and respawns
-the eunomio binary whenever Rust sources change. Each eunomio process spawns
-`cloudflared` as a child with `kill_on_drop(true)` (`backend/src/tunnel.rs`,
-`spawn_cloudflared`), so the cloudflared process dies with it. On restart,
-eunomio invokes `cloudflared tunnel --url http://localhost:5173` with no
-named tunnel and no Cloudflare account credentials — that is a TryCloudflare
-"Quick Tunnel", which allocates a fresh random `*.trycloudflare.com`
-subdomain every invocation. There is no way to pin or reuse the subdomain
-without switching to a named tunnel tied to a Cloudflare account.
-
-Practical consequence: any Rust edit invalidates the URL the user is
-currently sharing. If they need a stable URL, tell them to either (a) stop
-editing backend sources, or (b) run eunomio without `cargo watch` (e.g.
-`cargo run -- --port 3001 --dev-tunnel` directly).
-
-When you detect that a new URL has been issued (e.g. the user asks again, or
-you re-tail after a rebuild), print the new URL in the chat reply the same
-way — do not assume the previously-printed URL is still valid.
+`cargo watch` restarts only the backend. The `[tunnel]` process keeps the same
+`*.trycloudflare.com` URL for the whole `npm run dev` session. A new URL appears
+only when the dev stack (or `cloudflared`) is restarted.
 
 ## Other caveats
 
-- The dev tunnel skips the share-token gate (see `--dev-tunnel` in
-  `backend/src/main.rs`) — anyone with the URL has full UI access. Do not
-  share it outside trusted channels.
-- Logs go to `/tmp/eunomio-dev.log`. To recover the current URL later:
-  `grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' /tmp/eunomio-dev.log | tail -1`.
+- Anyone with the URL has full UI access (no share token in dev). Do not share
+  outside trusted channels.
+- Quick tunnels may not proxy SSE reliably; live session streams on a phone may
+  need polling or a named tunnel later.
 
-## Reference: relevant CLI flags
+## Reference: CLI flags
 
-Both are hidden from `--help` and set by `npm run dev`'s backend invocation:
-
-- `--dev-tunnel`: enable sharing, route traffic to the Vite dev server, skip
-  the share-token gate, and auto-start cloudflared at boot (printing the URL).
+- `--allow-dev-url`: set by `npm run dev` backend; allows `*.trycloudflare.com`
+  API origins. Does not start `cloudflared`.
+- `--enable-tunnel`: in-app tunnel (token, mobile UI, spawn at boot). Use once to
+  populate `~/.eunomio/bin/cloudflared` if the dev tunnel cannot find a binary.

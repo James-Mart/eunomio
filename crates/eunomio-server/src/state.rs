@@ -43,14 +43,18 @@ pub struct BuildStateOptions {
     pub quota: Arc<dyn QuotaEnforcer>,
     pub launch_pull_request: Option<String>,
     pub tunnel_enabled: bool,
-    pub dev_tunnel: bool,
+    pub allow_dev_url: bool,
 }
 
 pub async fn build_state(opts: BuildStateOptions) -> Result<AppState> {
     tokio::fs::create_dir_all(&opts.data_dir)
         .await
         .with_context(|| format!("create_dir_all {}", opts.data_dir.display()))?;
-    let tunnel = TunnelRegistry::new(opts.data_dir.clone(), opts.tunnel_enabled, opts.dev_tunnel);
+    let tunnel = TunnelRegistry::new(
+        opts.data_dir.clone(),
+        opts.tunnel_enabled,
+        opts.allow_dev_url,
+    );
     let subagents = load_subagents()?;
     let coordinator = Coordinator::new(subagents, opts.runner, opts.quota);
     let state = AppState(Arc::new(AppStateInner {

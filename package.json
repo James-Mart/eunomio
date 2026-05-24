@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "scripts": {
     "dev": "node scripts/dev.mjs",
-    "dev:backend": "cargo watch -w crates -w subagents -- cargo run -p eunomio-bin-local -- --port 3001 --dev-tunnel",
+    "dev:backend": "cargo watch -w crates -w subagents -- cargo run -p eunomio-bin-local -- --port 3001 --allow-dev-url",
     "dev:frontend": "cd frontend && npm run dev",
     "dev:new": "rm -f ~/.eunomio/eunomio.db ~/.eunomio/eunomio.db-wal ~/.eunomio/eunomio.db-shm && npm run dev --",
     "dev:docs": "npm --prefix docs run dev",

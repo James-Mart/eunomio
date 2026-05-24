@@ -27,8 +27,6 @@ mod install;
 mod process;
 
 const BROADCAST_CAPACITY: usize = 16;
-const DEV_TUNNEL_TARGET_PORT: u16 = 5173;
-
 #[derive(Clone)]
 pub struct TunnelRegistry {
     inner: Arc<Inner>,
@@ -40,7 +38,7 @@ pub(crate) struct Inner {
     data_dir: PathBuf,
     start_gate: tokio::sync::Mutex<()>,
     enabled: bool,
-    dev_mode: bool,
+    allow_dev_url: bool,
 }
 
 pub(crate) enum TunnelState {
@@ -57,7 +55,7 @@ pub(crate) struct Running {
 }
 
 impl TunnelRegistry {
-    pub fn new(data_dir: PathBuf, enabled: bool, dev_mode: bool) -> Self {
+    pub fn new(data_dir: PathBuf, enabled: bool, allow_dev_url: bool) -> Self {
         let (events, _) = broadcast::channel(BROADCAST_CAPACITY);
         Self {
             inner: Arc::new(Inner {
@@ -66,7 +64,7 @@ impl TunnelRegistry {
                 data_dir,
                 start_gate: tokio::sync::Mutex::new(()),
                 enabled,
-                dev_mode,
+                allow_dev_url,
             }),
         }
     }
@@ -76,11 +74,8 @@ impl TunnelRegistry {
         snapshot(&state, &self.inner)
     }
 
-    /// True when the backend was launched with `--dev-tunnel`. Callers use
-    /// this to relax loopback-only checks for requests that arrive from the
-    /// active trycloudflare URL via the Vite dev proxy.
-    pub fn dev_mode(&self) -> bool {
-        self.inner.dev_mode
+    pub fn allow_dev_url(&self) -> bool {
+        self.inner.allow_dev_url
     }
 
     /// Same as [`Self::status`] with the share token stripped. Use this for
@@ -104,6 +99,13 @@ impl TunnelRegistry {
     }
 
     async fn start_inner(&self, router: Router) -> Result<TunnelStatus, AppError> {
+        if self.inner.allow_dev_url {
+            return Err(AppError::Conflict {
+                code: "tunnel_external_dev".into(),
+                message: "in-app tunnel is disabled with --allow-dev-url; use npm run dev".into(),
+            });
+        }
+
         let _gate = self.inner.start_gate.lock().await;
         {
             let state = self.inner.state.lock().unwrap();
@@ -119,13 +121,7 @@ impl TunnelRegistry {
             .await
             .map_err(map_binary_error)?;
 
-        let (target_port, token, serve_shutdown_tx) = if self.inner.dev_mode {
-            drop(router);
-            (DEV_TUNNEL_TARGET_PORT, None, None)
-        } else {
-            let (port, token, shutdown_tx) = spawn_local_auth_listener(router).await?;
-            (port, Some(token), Some(shutdown_tx))
-        };
+        let (port, token, serve_shutdown_tx) = spawn_local_auth_listener(router).await?;
 
         let (ready_tx, ready_rx) = oneshot::channel::<Result<TunnelStatus, AppError>>();
         let (stop_tx, stop_rx) = oneshot::channel::<()>();
@@ -134,12 +130,12 @@ impl TunnelRegistry {
             process::supervise(
                 inner,
                 binary,
-                target_port,
-                token,
+                port,
+                Some(token),
                 ready_tx,
                 stop_tx,
                 stop_rx,
-                serve_shutdown_tx,
+                Some(serve_shutdown_tx),
             )
             .await;
         });
@@ -261,7 +257,7 @@ pub(crate) fn transition_to(inner: &Arc<Inner>, next: TunnelState) {
 }
 
 pub(crate) fn snapshot(state: &TunnelState, inner: &Inner) -> TunnelStatus {
-    let token_required = inner.enabled && !inner.dev_mode;
+    let token_required = inner.enabled && !inner.allow_dev_url;
     let enabled = inner.enabled;
     match state {
         TunnelState::Idle => TunnelStatus {
