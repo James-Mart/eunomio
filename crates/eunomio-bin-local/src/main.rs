@@ -42,11 +42,17 @@ struct ServeArgs {
     #[arg(long, hide = true)]
     new: bool,
 
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "Enable in-app Cloudflare quick tunnel: share token, mobile UI, auto-start at boot. For Vite dev with a stable URL, use npm run dev instead."
+    )]
     enable_tunnel: bool,
 
-    #[arg(long, hide = true)]
-    dev_tunnel: bool,
+    #[arg(
+        long,
+        help = "Allow API requests from *.trycloudflare.com origins (npm run dev + external tunnel). Does not start cloudflared or enable the tunnel API."
+    )]
+    allow_dev_url: bool,
 
     #[arg(long)]
     pr: Option<String>,
@@ -103,7 +109,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
         tracing::info!(pull_request_url = %url, "launch pull request configured");
     }
 
-    let tunnel_enabled = args.enable_tunnel || args.dev_tunnel;
+    let tunnel_enabled = args.enable_tunnel;
 
     let datastore: Arc<dyn Datastore> =
         Arc::new(SqliteDatastore::open(&data_dir.join("eunomio.db")).await?);
@@ -127,7 +133,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
         quota,
         launch_pull_request: args.pr,
         tunnel_enabled,
-        dev_tunnel: args.dev_tunnel,
+        allow_dev_url: args.allow_dev_url,
     })
     .await?;
 
@@ -141,9 +147,6 @@ async fn serve(args: ServeArgs) -> Result<()> {
                 if let Some(url) = dto.url {
                     println!("{url}");
                 }
-            }
-            Err(e) if args.dev_tunnel => {
-                return Err(anyhow::anyhow!("tunnel auto-start: {e:?}"));
             }
             Err(e) => {
                 tracing::warn!(error = ?e, "tunnel auto-start failed; continuing without public URL");

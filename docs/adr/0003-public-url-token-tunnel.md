@@ -10,10 +10,10 @@ Consequences worth knowing: the share token lives in memory only and is gone on 
 
 ## Dev escape hatch
 
-A hidden `--dev-tunnel` flag on the `eunomio` binary swaps the second listener for a direct cloudflared pointer at `http://localhost:5173` (the Vite dev server) and skips token generation entirely. This is set only by `npm run dev`'s backend invocation so HMR works end-to-end over the public URL; the trycloudflare subdomain itself is then the only secret. Release builds never set the flag, so the production tunnel design above is unaffected. The UI surfaces this state in `MobileShareCard` by hiding the token query param and showing a "Dev tunnel: no share token" warning.
+`npm run dev` runs `cloudflared` as a **sibling** process (via `scripts/dev.mjs`), targeting `http://localhost:5173` (Vite). The URL is written to `~/.eunomio/dev-tunnel.url` and printed as `[tunnel] https://….trycloudflare.com`. That process survives `cargo watch` backend restarts, so the public URL stays stable for the dev session.
 
-Passing `--dev-tunnel` implicitly enables tunnel sharing and auto-starts cloudflared at boot (printing the trycloudflare URL to stdout), so every cargo-watch rebuild re-shares the dev server without UI access. Failure to start cloudflared with `--dev-tunnel` exits the process non-zero.
+The backend is started with `--allow-dev-url`: it accepts `Origin: https://*.trycloudflare.com` on the main `:3001` API (Vite proxies `/api` with loopback `Host`). It does **not** spawn `cloudflared`, enable `/api/tunnel`, or show the “Continue on mobile” card. The trycloudflare subdomain is the only secret.
 
 ## Prod opt-in
 
-Tunnel sharing is disabled by default. Pass `--enable-tunnel` to enable the API/UI, auto-start cloudflared at boot, and print the trycloudflare URL. Boot auto-start failure with `--enable-tunnel` alone does not block the server — tunnel state becomes `error` and the user can retry from the UI. Both `--enable-tunnel` and `--dev-tunnel` may be passed together; dev behavior wins and fail-fast boot applies.
+Tunnel sharing is disabled by default. Pass `--enable-tunnel` to enable the API/UI, auto-start cloudflared at boot, and print the trycloudflare URL. Boot auto-start failure with `--enable-tunnel` alone does not block the server — tunnel state becomes `error` and the user can retry from the UI.
