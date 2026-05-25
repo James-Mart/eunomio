@@ -19,24 +19,19 @@ export function ShavingTimelineBar({
       ? carriedLabel(track, stepIndex)
       : "";
   return (
-    <div className="h-16 shrink-0 border-t bg-background px-4 py-2">
-      <div className="h-4 truncate text-xs text-muted-foreground">
+    <div className="shrink-0 border-t bg-background px-4 py-2">
+      <div className="h-4 truncate text-center text-xs text-foreground">
         {activeLabel}
       </div>
-      <div className="flex items-center gap-3">
-        <span className="w-28 text-xs tabular-nums text-muted-foreground">
-          Step {stepIndex + 1} / {track.steps.length + 1}
-        </span>
-        <input
-          className="h-2 flex-1 accent-primary"
-          type="range"
-          min={0}
-          max={max}
-          step={1}
-          value={stepIndex}
-          onChange={(event) => onStepIndexChange(Number(event.target.value))}
-        />
-      </div>
+      <input
+        className="mt-2 h-2 w-full accent-primary"
+        type="range"
+        min={0}
+        max={max}
+        step={1}
+        value={stepIndex}
+        onChange={(event) => onStepIndexChange(Number(event.target.value))}
+      />
     </div>
   );
 }

@@ -49,25 +49,23 @@ export function CanonicalEdgePane({ sessionId, node }: Props) {
     const selectedIndex = Math.min(stepIndex, track.stepDiffs.length - 1);
     const selectedDiff = track.stepDiffs[selectedIndex];
     return (
-      <div className="flex h-full min-h-0 flex-col">
-        <div className="min-h-0 flex-1">
-          <EdgePane
-            sessionId={sessionId}
-            fromTree={selectedDiff.fromTree}
-            toTree={selectedDiff.toTree}
-            beforeRef={track.parentTreeSha}
-            afterRef={track.headTreeSha}
-            loadedEdge={selectedDiff}
-            viewedPaths={viewedPaths}
-            onToggleViewed={toggleViewed}
+      <EdgePane
+        sessionId={sessionId}
+        fromTree={selectedDiff.fromTree}
+        toTree={selectedDiff.toTree}
+        beforeRef={track.parentTreeSha}
+        afterRef={track.headTreeSha}
+        loadedEdge={selectedDiff}
+        viewedPaths={viewedPaths}
+        onToggleViewed={toggleViewed}
+        footer={
+          <ShavingTimelineBar
+            track={track}
+            stepIndex={selectedIndex}
+            onStepIndexChange={setStepIndex}
           />
-        </div>
-        <ShavingTimelineBar
-          track={track}
-          stepIndex={selectedIndex}
-          onStepIndexChange={setStepIndex}
-        />
-      </div>
+        }
+      />
     );
   }
 

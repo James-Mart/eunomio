@@ -1,6 +1,13 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { processFile, type FileDiffMetadata } from "@pierre/diffs";
 import { FileDiff, Virtualizer } from "@pierre/diffs/react";
 import { FileTree, useFileTree, useFileTreeSelection } from "@pierre/trees/react";
@@ -32,6 +39,7 @@ import { cn, cssEscape } from "@/lib/utils";
 type ViewedProps = {
   viewedPaths?: ReadonlySet<string>;
   onToggleViewed?: (path: string, viewed: boolean) => void;
+  footer?: ReactNode;
 };
 
 type Props = ViewedProps &
@@ -67,7 +75,7 @@ type Overflow = "scroll" | "wrap";
 const FILE_DATA_ATTR = "data-edge-file-path";
 
 export default function EdgePane(props: Props) {
-  const { sessionId, viewedPaths, onToggleViewed } = props;
+  const { sessionId, viewedPaths, onToggleViewed, footer } = props;
   const targetNodeId = "targetNodeId" in props ? props.targetNodeId : undefined;
   const fromTree = "fromTree" in props ? props.fromTree : undefined;
   const toTree = "toTree" in props ? props.toTree : undefined;
@@ -387,6 +395,11 @@ export default function EdgePane(props: Props) {
               )}
             >
               <FileDiff
+                key={
+                  fromTree != null && toTree != null
+                    ? `${fromTree}-${toTree}-${file.name}`
+                    : undefined
+                }
                 fileDiff={file}
                 options={{
                   theme: "github-dark",
@@ -439,6 +452,7 @@ export default function EdgePane(props: Props) {
           );
         })}
       </Virtualizer>
+      {footer}
     </div>
   );
 
