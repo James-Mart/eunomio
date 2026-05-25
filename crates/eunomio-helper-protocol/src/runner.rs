@@ -66,7 +66,9 @@ impl HelperEvent {
         match self {
             HelperEvent::Started { agent_id, .. } => HelperEvent::Started { run_id, agent_id },
             HelperEvent::SdkMessage { message, .. } => HelperEvent::SdkMessage { run_id, message },
-            HelperEvent::UsageReported { usage, .. } => HelperEvent::UsageReported { run_id, usage },
+            HelperEvent::UsageReported { usage, .. } => {
+                HelperEvent::UsageReported { run_id, usage }
+            }
             HelperEvent::Finished {
                 result,
                 duration_ms,

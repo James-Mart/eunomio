@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use eunomio_core::types::*;
-use crate::{AppError, state::AppState };
+use crate::{state::AppState, AppError};
 use anyhow::{Context, Result};
+use eunomio_core::types::*;
 use std::path::{Path, PathBuf};
 
 pub fn user_settings_path(data_dir: &Path, user_id: &str) -> PathBuf {
@@ -42,7 +42,11 @@ pub async fn load_for_partition(
     org_id: &str,
     session_id: &str,
 ) -> Result<PartitionSettings, AppError> {
-    let user_id = state.datastore.sessions().user_id(org_id, session_id).await?;
+    let user_id = state
+        .datastore
+        .sessions()
+        .user_id(org_id, session_id)
+        .await?;
     load_for_user(&state.data_dir, &user_id).await
 }
 

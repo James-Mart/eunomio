@@ -7,11 +7,7 @@
 // before extraction, since Cloudflare publishes asset-level hashes).
 use crate::{AppError, TunnelStateName, TunnelStatus};
 use anyhow::{anyhow, Context, Result};
-use axum::{
-    http::StatusCode,
-    middleware::from_fn_with_state,
-    Router,
-};
+use axum::{http::StatusCode, middleware::from_fn_with_state, Router};
 use std::{
     path::PathBuf,
     sync::{Arc, Mutex},

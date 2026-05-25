@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use eunomio_core::AppError;
 use axum::http::StatusCode;
+use eunomio_core::AppError;
 
 pub use eunomio_helper_protocol::{
     HelperEvent, ListModelsRequest, ListModelsResponse, RunHandle, RunRequest, SubagentRunner,

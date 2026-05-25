@@ -69,3 +69,15 @@ pub struct NewRunInsert {
     pub prompt_text: String,
     pub started_at: i64,
 }
+
+#[derive(Debug, Clone)]
+pub struct NewShavingTrackInsert {
+    pub org_id: String,
+    pub session_id: String,
+    pub slice_node_id: String,
+    pub parent_tree_sha: String,
+    pub head_tree_sha: String,
+    pub steps: Vec<ShavingStep>,
+    pub ref_name: String,
+    pub created_at: i64,
+}

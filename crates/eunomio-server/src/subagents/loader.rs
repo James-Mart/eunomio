@@ -160,11 +160,8 @@ mod tests {
 
     #[test]
     fn unknown_placeholder_fails_to_parse() {
-        let err = PromptTemplate::parse(
-            "hello {{NOPE}}".to_string(),
-            surveyor_placeholders(),
-        )
-        .unwrap_err();
+        let err = PromptTemplate::parse("hello {{NOPE}}".to_string(), surveyor_placeholders())
+            .unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("NOPE"), "msg = {msg}");
     }

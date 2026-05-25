@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{auth::CurrentPrincipal, AppError, ServerError, state::AppState};
+use crate::{auth::CurrentPrincipal, state::AppState, AppError, ServerError};
 use axum::{
     extract::{Path, State},
     http::StatusCode,

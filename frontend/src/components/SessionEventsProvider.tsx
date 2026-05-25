@@ -355,6 +355,17 @@ export function usePartitionLifecycle(
 
 const EMPTY_LIFECYCLES: Lifecycle[] = [];
 
+export function useAllPartitionLifecycles(): Map<string, Lifecycle> {
+  const store = useStore();
+  const subscribe = store.subscribe;
+  const getSnapshot = store.getSnapshot;
+  return useSyncExternalStore(
+    subscribe,
+    () => getSnapshot().lifecycles,
+    () => getSnapshot().lifecycles,
+  );
+}
+
 export function usePartitionLifecyclesByTarget(
   targetNodeId: string,
 ): Lifecycle[] {

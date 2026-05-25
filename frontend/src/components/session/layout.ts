@@ -7,6 +7,7 @@ import type {
   GraphNode,
   Partition,
 } from "@/lib/api";
+import type { Lifecycle } from "@/components/SessionEventsProvider";
 import type { NodeCardData, NodePartitionGlance } from "@/components/NodeCard";
 
 export const NODE_X = 0;
@@ -20,8 +21,17 @@ export type Chain = {
   positionByNodeId: Map<string, string>;
 };
 
+function partitionInError(
+  p: Partition,
+  lifecycles: Map<string, Lifecycle> | undefined,
+): boolean {
+  if (p.phaseState === "error") return true;
+  return !!lifecycles?.get(p.id)?.lastError;
+}
+
 export function partitionGlanceByNode(
   partitions: Partition[],
+  lifecycles?: Map<string, Lifecycle>,
 ): Map<string, NodePartitionGlance> {
   const byTarget = new Map<string, Partition[]>();
   for (const p of partitions) {
@@ -31,13 +41,13 @@ export function partitionGlanceByNode(
   }
   const out = new Map<string, NodePartitionGlance>();
   for (const [targetNodeId, siblings] of byTarget) {
-    const blocked = siblings.some(
-      (p) =>
-        p.phaseState === "awaiting_review" || p.phaseState === "error",
-    );
+    const errored = siblings.some((p) => partitionInError(p, lifecycles));
+    const blocked =
+      !errored &&
+      siblings.some((p) => p.phaseState === "awaiting_review");
     out.set(targetNodeId, {
       count: siblings.length,
-      status: blocked ? "blocked" : "running",
+      status: errored ? "error" : blocked ? "blocked" : "running",
     });
   }
   return out;
@@ -203,6 +213,7 @@ export function candidateLayout(
       title: planEdges[0].title,
       description: planEdges[0].description,
       strategy: null,
+      hasShavingTrack: false,
     };
     const renamedTarget: GraphNode = {
       ...target,

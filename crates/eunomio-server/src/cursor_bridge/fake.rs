@@ -51,8 +51,8 @@ impl SubagentRunner for FakeSubagentRunner {
         };
         drop(scripts);
         self.spawned.fetch_add(1, Ordering::SeqCst);
-        let hang_after_events = events.len() == 1
-            && matches!(events.first(), Some(HelperEvent::SdkMessage { .. }));
+        let hang_after_events =
+            events.len() == 1 && matches!(events.first(), Some(HelperEvent::SdkMessage { .. }));
         let events: Vec<HelperEvent> = events
             .into_iter()
             .map(|e| e.with_run_id(run_id.clone()))

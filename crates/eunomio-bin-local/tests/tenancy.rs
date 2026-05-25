@@ -118,36 +118,94 @@ async fn session_repo_wrong_org_returns_not_found() {
     let fx = seed_fixture(&app.state).await;
 
     assert_eq!(
-        app.state.datastore.sessions().exists(EVIL_ORG, &fx.session_id)
+        app.state
+            .datastore
+            .sessions()
+            .exists(EVIL_ORG, &fx.session_id)
             .await
             .unwrap(),
         false
     );
-    assert_not_found(app.state.datastore.sessions().ensure(EVIL_ORG, &fx.session_id).await);
-    assert_not_found_opt(app.state.datastore.sessions().get(EVIL_ORG, &fx.session_id).await);
-    assert_not_found_row(app.state.datastore.sessions().user_id(EVIL_ORG, &fx.session_id).await);
+    assert_not_found(
+        app.state
+            .datastore
+            .sessions()
+            .ensure(EVIL_ORG, &fx.session_id)
+            .await,
+    );
+    assert_not_found_opt(
+        app.state
+            .datastore
+            .sessions()
+            .get(EVIL_ORG, &fx.session_id)
+            .await,
+    );
     assert_not_found_row(
-        app.state.datastore.sessions().repo_fields(EVIL_ORG, &fx.session_id).await,
+        app.state
+            .datastore
+            .sessions()
+            .user_id(EVIL_ORG, &fx.session_id)
+            .await,
+    );
+    assert_not_found_row(
+        app.state
+            .datastore
+            .sessions()
+            .repo_fields(EVIL_ORG, &fx.session_id)
+            .await,
     );
     assert_not_found_row(repo_store::session_git_root(&app.state, EVIL_ORG, &fx.session_id).await);
-    assert_not_found_opt(app.state.datastore.sessions().final_tree(EVIL_ORG, &fx.session_id).await);
-    assert_not_found_opt(app.state.datastore.sessions().base_tree(EVIL_ORG, &fx.session_id).await);
+    assert_not_found_opt(
+        app.state
+            .datastore
+            .sessions()
+            .final_tree(EVIL_ORG, &fx.session_id)
+            .await,
+    );
+    assert_not_found_opt(
+        app.state
+            .datastore
+            .sessions()
+            .base_tree(EVIL_ORG, &fx.session_id)
+            .await,
+    );
     assert_not_found_row(
-        app.state.datastore.sessions().seed_trees(EVIL_ORG, &fx.session_id).await,
+        app.state
+            .datastore
+            .sessions()
+            .seed_trees(EVIL_ORG, &fx.session_id)
+            .await,
     );
-    assert_not_found(app.state.datastore.sessions().delete_cascade(EVIL_ORG, &fx.session_id).await);
-    assert!(
-        app.state.datastore.sessions().exists(&fx.org_id, &fx.session_id)
-            .await
-            .unwrap()
+    assert_not_found(
+        app.state
+            .datastore
+            .sessions()
+            .delete_cascade(EVIL_ORG, &fx.session_id)
+            .await,
     );
-    assert!(app.state.datastore.sessions().list(EVIL_ORG).await.unwrap().is_empty());
-    assert!(
-        app.state.datastore.sessions().list_partition_worktrees(EVIL_ORG, &fx.session_id)
-            .await
-            .unwrap()
-            .is_empty()
-    );
+    assert!(app
+        .state
+        .datastore
+        .sessions()
+        .exists(&fx.org_id, &fx.session_id)
+        .await
+        .unwrap());
+    assert!(app
+        .state
+        .datastore
+        .sessions()
+        .list(EVIL_ORG)
+        .await
+        .unwrap()
+        .is_empty());
+    assert!(app
+        .state
+        .datastore
+        .sessions()
+        .list_partition_worktrees(EVIL_ORG, &fx.session_id)
+        .await
+        .unwrap()
+        .is_empty());
 }
 
 #[tokio::test]
@@ -155,100 +213,151 @@ async fn partition_repo_wrong_org_returns_not_found() {
     let app = TestApp::spawn().await;
     let fx = seed_fixture(&app.state).await;
 
-    assert_not_found_row(app.state.datastore.partitions().get(EVIL_ORG, &fx.partition_id).await);
-    assert!(
-        app.state.datastore.partitions().list(EVIL_ORG, &fx.session_id, None)
-            .await
-            .unwrap()
-            .is_empty()
+    assert_not_found_row(
+        app.state
+            .datastore
+            .partitions()
+            .get(EVIL_ORG, &fx.partition_id)
+            .await,
     );
-    assert!(
-        app.state.datastore.partitions().list_siblings(EVIL_ORG,
-            &fx.session_id,
-            &fx.final_node_id,
-            &fx.partition_id,)
+    assert!(app
+        .state
+        .datastore
+        .partitions()
+        .list(EVIL_ORG, &fx.session_id, None)
         .await
         .unwrap()
-            .is_empty()
-    );
-    assert_not_found(app.state.datastore.partitions().delete(EVIL_ORG, &fx.partition_id).await);
-    assert_not_found(
-        app.state.datastore.partitions().delete_with_runs(EVIL_ORG, &fx.partition_id).await,
-    );
-    assert_not_found(
-        app.state.datastore.partitions().delete_many_with_runs(EVIL_ORG,
-            vec![fx.partition_id.clone()],
-        )
-        .await,
-    );
-    assert_not_found(
-        app.state.datastore.partitions().clear_plan_and_slice(EVIL_ORG, &fx.partition_id).await,
-    );
-    assert_not_found(
-        app.state.datastore.partitions().accept_survey(EVIL_ORG, &fx.partition_id, "{}".into()).await,
-    );
-    assert_not_found(
-        app.state.datastore.partitions().accept_plan(EVIL_ORG,
+        .is_empty());
+    assert!(app
+        .state
+        .datastore
+        .partitions()
+        .list_siblings(
+            EVIL_ORG,
+            &fx.session_id,
+            &fx.final_node_id,
             &fx.partition_id,
-            "{}".into(),
-            PartitionStrategy::Synthetic,
         )
-        .await,
-    );
+        .await
+        .unwrap()
+        .is_empty());
     assert_not_found(
-        app.state.datastore.partitions().set_phase_state(EVIL_ORG,
-            &fx.partition_id,
-            PhaseState::Running,)
-        .await,
-    );
-    assert_not_found(
-        app.state.datastore.partitions().set_phase_running(EVIL_ORG, &fx.partition_id, PhaseName::Survey)
+        app.state
+            .datastore
+            .partitions()
+            .delete(EVIL_ORG, &fx.partition_id)
             .await,
     );
     assert_not_found(
-        app.state.datastore.partitions().set_worktree_path(EVIL_ORG,
-            &fx.partition_id,
-            "/other".into(),
-        )
-        .await,
+        app.state
+            .datastore
+            .partitions()
+            .delete_with_runs(EVIL_ORG, &fx.partition_id)
+            .await,
     );
     assert_not_found(
-        app.state.datastore.partitions().accept_constructor_ok(EVIL_ORG,
-            &fx.partition_id,
-            "tree".into(),
-            "commit".into(),
-            &fx.run_id,
-            "{}".into(),
-            "ok".into(),
-        )
-        .await,
+        app.state
+            .datastore
+            .partitions()
+            .delete_many_with_runs(EVIL_ORG, vec![fx.partition_id.clone()])
+            .await,
     );
     assert_not_found(
-        app.state.datastore.partitions().accept_constructor_blocked(EVIL_ORG,
-            &fx.partition_id,
-            &fx.run_id,
-            "{}".into(),
-            "blocked".into(),
-        )
-        .await,
+        app.state
+            .datastore
+            .partitions()
+            .clear_plan_and_slice(EVIL_ORG, &fx.partition_id)
+            .await,
     );
     assert_not_found(
-        app.state.datastore.partitions().fail_run(EVIL_ORG,
-            &fx.partition_id,
-            &fx.run_id,
-            "err".into(),
-            None,
-        )
-        .await,
+        app.state
+            .datastore
+            .partitions()
+            .accept_survey(EVIL_ORG, &fx.partition_id, "{}".into())
+            .await,
     );
     assert_not_found(
-        app.state.datastore.partitions().cancel_run(EVIL_ORG, &fx.partition_id, &fx.run_id).await,
+        app.state
+            .datastore
+            .partitions()
+            .accept_plan(
+                EVIL_ORG,
+                &fx.partition_id,
+                "{}".into(),
+                PartitionStrategy::Synthetic,
+            )
+            .await,
     );
-    assert!(
-        app.state.datastore.partitions().get(&fx.org_id, &fx.partition_id)
-            .await
-            .is_ok()
+    assert_not_found(
+        app.state
+            .datastore
+            .partitions()
+            .set_phase_state(EVIL_ORG, &fx.partition_id, PhaseState::Running)
+            .await,
     );
+    assert_not_found(
+        app.state
+            .datastore
+            .partitions()
+            .set_phase_running(EVIL_ORG, &fx.partition_id, PhaseName::Survey)
+            .await,
+    );
+    assert_not_found(
+        app.state
+            .datastore
+            .partitions()
+            .set_worktree_path(EVIL_ORG, &fx.partition_id, "/other".into())
+            .await,
+    );
+    assert_not_found(
+        app.state
+            .datastore
+            .partitions()
+            .accept_constructor_ok(
+                EVIL_ORG,
+                &fx.partition_id,
+                "tree".into(),
+                "commit".into(),
+                &fx.run_id,
+                "{}".into(),
+                "ok".into(),
+            )
+            .await,
+    );
+    assert_not_found(
+        app.state
+            .datastore
+            .partitions()
+            .accept_constructor_blocked(
+                EVIL_ORG,
+                &fx.partition_id,
+                &fx.run_id,
+                "{}".into(),
+                "blocked".into(),
+            )
+            .await,
+    );
+    assert_not_found(
+        app.state
+            .datastore
+            .partitions()
+            .fail_run(EVIL_ORG, &fx.partition_id, &fx.run_id, "err".into(), None)
+            .await,
+    );
+    assert_not_found(
+        app.state
+            .datastore
+            .partitions()
+            .cancel_run(EVIL_ORG, &fx.partition_id, &fx.run_id)
+            .await,
+    );
+    assert!(app
+        .state
+        .datastore
+        .partitions()
+        .get(&fx.org_id, &fx.partition_id)
+        .await
+        .is_ok());
 }
 
 #[tokio::test]
@@ -257,29 +366,63 @@ async fn run_repo_wrong_org_returns_not_found() {
     let fx = seed_fixture(&app.state).await;
 
     assert_not_found_row(app.state.datastore.runs().get(EVIL_ORG, &fx.run_id).await);
-    assert!(
-        app.state.datastore.runs().list_for_partition(EVIL_ORG, &fx.partition_id)
-            .await
-            .unwrap()
-            .is_empty()
+    assert!(app
+        .state
+        .datastore
+        .runs()
+        .list_for_partition(EVIL_ORG, &fx.partition_id)
+        .await
+        .unwrap()
+        .is_empty());
+    assert_not_found_opt(
+        app.state
+            .datastore
+            .runs()
+            .get_prompt(EVIL_ORG, &fx.run_id)
+            .await,
     );
-    assert_not_found_opt(app.state.datastore.runs().get_prompt(EVIL_ORG, &fx.run_id).await);
     assert_not_found(
-        app.state.datastore.runs().append_transcript_text(EVIL_ORG, &fx.run_id, "chunk").await,
+        app.state
+            .datastore
+            .runs()
+            .append_transcript_text(EVIL_ORG, &fx.run_id, "chunk")
+            .await,
     );
     assert_not_found(
-        app.state.datastore.runs().finish_success(EVIL_ORG, &fx.run_id, "{}".into(), None).await,
+        app.state
+            .datastore
+            .runs()
+            .finish_success(EVIL_ORG, &fx.run_id, "{}".into(), None)
+            .await,
     );
-    assert_not_found(app.state.datastore.runs().finish_error(EVIL_ORG, &fx.run_id, "err".into()).await);
-    assert_not_found(app.state.datastore.runs().cancel(EVIL_ORG, &fx.run_id).await);
     assert_not_found(
-        app.state.datastore.runs().cancel_running_for_partition(EVIL_ORG, &fx.partition_id).await,
+        app.state
+            .datastore
+            .runs()
+            .finish_error(EVIL_ORG, &fx.run_id, "err".into())
+            .await,
     );
-    assert!(
-        app.state.datastore.runs().get(&fx.org_id, &fx.run_id)
-            .await
-            .is_ok()
+    assert_not_found(
+        app.state
+            .datastore
+            .runs()
+            .cancel(EVIL_ORG, &fx.run_id)
+            .await,
     );
+    assert_not_found(
+        app.state
+            .datastore
+            .runs()
+            .cancel_running_for_partition(EVIL_ORG, &fx.partition_id)
+            .await,
+    );
+    assert!(app
+        .state
+        .datastore
+        .runs()
+        .get(&fx.org_id, &fx.run_id)
+        .await
+        .is_ok());
 }
 
 #[tokio::test]
@@ -287,37 +430,56 @@ async fn node_repo_wrong_org_returns_not_found() {
     let app = TestApp::spawn().await;
     let fx = seed_fixture(&app.state).await;
 
-    assert!(
-        app.state.datastore.nodes().list_for_session(EVIL_ORG, &fx.session_id)
-            .await
-            .unwrap()
-            .is_empty()
-    );
+    assert!(app
+        .state
+        .datastore
+        .nodes()
+        .list_for_session(EVIL_ORG, &fx.session_id)
+        .await
+        .unwrap()
+        .is_empty());
     assert_not_found_opt(
-        app.state.datastore.nodes().get(EVIL_ORG, &fx.session_id, &fx.final_node_id).await,
-    );
-    assert_not_found_row(
-        app.state.datastore.nodes().target_and_parent(EVIL_ORG, &fx.session_id, &fx.final_node_id).await,
-    );
-    assert_not_found_opt(
-        app.state.datastore.nodes().target_tree_and_parent(EVIL_ORG, &fx.session_id, &fx.final_node_id)
+        app.state
+            .datastore
+            .nodes()
+            .get(EVIL_ORG, &fx.session_id, &fx.final_node_id)
             .await,
     );
     assert_not_found_row(
-        app.state.datastore.nodes().update_title(EVIL_ORG,
-            &fx.session_id,
-            &fx.final_node_id,
-            "x",)
-        .await,
+        app.state
+            .datastore
+            .nodes()
+            .target_and_parent(EVIL_ORG, &fx.session_id, &fx.final_node_id)
+            .await,
     );
-    assert!(
-        app.state.datastore.nodes().walk_to_base(EVIL_ORG, &fx.session_id, &fx.final_node_id)
-            .await
-            .unwrap()
-            .is_empty()
+    assert_not_found_opt(
+        app.state
+            .datastore
+            .nodes()
+            .target_tree_and_parent(EVIL_ORG, &fx.session_id, &fx.final_node_id)
+            .await,
     );
     assert_not_found_row(
-        app.state.datastore.nodes().session_for_node_id(EVIL_ORG, &fx.final_node_id).await,
+        app.state
+            .datastore
+            .nodes()
+            .update_title(EVIL_ORG, &fx.session_id, &fx.final_node_id, "x")
+            .await,
+    );
+    assert!(app
+        .state
+        .datastore
+        .nodes()
+        .walk_to_base(EVIL_ORG, &fx.session_id, &fx.final_node_id)
+        .await
+        .unwrap()
+        .is_empty());
+    assert_not_found_row(
+        app.state
+            .datastore
+            .nodes()
+            .session_for_node_id(EVIL_ORG, &fx.final_node_id)
+            .await,
     );
 }
 
@@ -327,23 +489,27 @@ async fn finalize_construct_accept_wrong_org_returns_not_found() {
     let fx = seed_fixture(&app.state).await;
     let now = db::unix_seconds();
     assert_not_found(
-        app.state.datastore.partitions().finalize_construct_accept(EVIL_ORG.to_string(),
-            fx.session_id.clone(),
-            fx.partition_id.clone(),
-            fx.final_node_id.clone(),
-            Uuid::new_v4().to_string(),
-            fx.base_node_id.clone(),
-            "tree".into(),
-            "commit".into(),
-            "slice".into(),
-            "desc".into(),
-            None,
-            "leftover".into(),
-            "desc".into(),
-            vec![],
-            now,
-        )
-        .await,
+        app.state
+            .datastore
+            .partitions()
+            .finalize_construct_accept(
+                EVIL_ORG.to_string(),
+                fx.session_id.clone(),
+                fx.partition_id.clone(),
+                fx.final_node_id.clone(),
+                Uuid::new_v4().to_string(),
+                fx.base_node_id.clone(),
+                "tree".into(),
+                "commit".into(),
+                "slice".into(),
+                "desc".into(),
+                None,
+                "leftover".into(),
+                "desc".into(),
+                vec![],
+                now,
+            )
+            .await,
     );
 }
 
@@ -351,19 +517,21 @@ async fn finalize_construct_accept_wrong_org_returns_not_found() {
 async fn distinct_trees_in_session_wrong_org_returns_false() {
     let app = TestApp::spawn().await;
     let fx = seed_fixture(&app.state).await;
-    let known = app.state.datastore.nodes().distinct_trees_in_session(EVIL_ORG,
-        &fx.session_id,
-        &["b".repeat(40).as_str()],
-    )
-    .await
-    .unwrap();
+    let known = app
+        .state
+        .datastore
+        .nodes()
+        .distinct_trees_in_session(EVIL_ORG, &fx.session_id, &["b".repeat(40).as_str()])
+        .await
+        .unwrap();
     assert_eq!(known, false);
-    let known = app.state.datastore.nodes().distinct_trees_in_session(&fx.org_id,
-        &fx.session_id,
-        &["b".repeat(40).as_str()],
-    )
-    .await
-    .unwrap();
+    let known = app
+        .state
+        .datastore
+        .nodes()
+        .distinct_trees_in_session(&fx.org_id, &fx.session_id, &["b".repeat(40).as_str()])
+        .await
+        .unwrap();
     assert_eq!(known, true);
 }
 
@@ -376,24 +544,28 @@ async fn insert_carries_org_and_user_ids() {
     let final_node_id = Uuid::new_v4().to_string();
     let now = db::unix_seconds();
 
-    app.state.datastore.sessions().insert_seed_nodes(org_id.clone(),
-        user_id.clone(),
-        session_id.clone(),
-        "/tmp/repo".into(),
-        "/tmp/repo".into(),
-        true,
-        "main".into(),
-        "feature".into(),
-        "a".repeat(40),
-        "b".repeat(40),
-        base_node_id,
-        final_node_id.clone(),
-        "c".repeat(40),
-        "d".repeat(40),
-        now,
-    )
-    .await
-    .unwrap();
+    app.state
+        .datastore
+        .sessions()
+        .insert_seed_nodes(
+            org_id.clone(),
+            user_id.clone(),
+            session_id.clone(),
+            "/tmp/repo".into(),
+            "/tmp/repo".into(),
+            true,
+            "main".into(),
+            "feature".into(),
+            "a".repeat(40),
+            "b".repeat(40),
+            base_node_id,
+            final_node_id.clone(),
+            "c".repeat(40),
+            "d".repeat(40),
+            now,
+        )
+        .await
+        .unwrap();
 
     let row = test_db::query_two_strings(
         &app.state,

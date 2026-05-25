@@ -4,6 +4,7 @@ use super::{
     helper_assets::ensure_helper_extracted, helper_stdio::spawn_helper_via_sandbox, unavailable,
     wire::HelperWireEvent,
 };
+use anyhow::anyhow;
 use eunomio_core::{
     traits::sandbox::{SandboxRuntime, SandboxScope},
     types::CursorModel,
@@ -12,7 +13,6 @@ use eunomio_core::{
 use eunomio_helper_protocol::{
     HelperEvent, ListModelsRequest, ListModelsResponse, RunHandle, RunRequest, SubagentRunner,
 };
-use anyhow::anyhow;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, BufReader};

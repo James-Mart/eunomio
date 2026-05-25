@@ -1,16 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use eunomio_core::types::*;
 use crate::{
-    auth::{auth_routes, public_auth_routes, require_csrf_header, require_principal, CurrentPrincipal},
-    launch::public_launch_routes,
+    auth::{
+        auth_routes, public_auth_routes, require_csrf_header, require_principal, CurrentPrincipal,
+    },
     branching, edge_file_viewed, edges, embed,
-    ServerError,
-    AppError,
+    launch::public_launch_routes,
     middleware::host_guard,
     partition_settings, sessions, sse,
     state::AppState,
-     
+    AppError, ServerError,
 };
 use anyhow::Result;
 use axum::{
@@ -21,6 +20,7 @@ use axum::{
     routing::{delete, get, patch, post, put},
     Json, Router,
 };
+use eunomio_core::types::*;
 use futures::stream::Stream;
 use std::{convert::Infallible, net::SocketAddr};
 use tower_http::trace::TraceLayer;
@@ -31,12 +31,13 @@ fn protected_routes() -> Router<AppState> {
     Router::new()
         .route("/api/sessions", post(create_session).get(list_sessions))
         .route("/api/sessions/validate", post(validate_session))
-        .route(
-            "/api/sessions/:id",
-            get(get_session).delete(delete_session),
-        )
+        .route("/api/sessions/:id", get(get_session).delete(delete_session))
         .route("/api/sessions/:id/graph", get(get_graph))
         .route("/api/sessions/:id/edges/:target_node_id", get(get_edge))
+        .route(
+            "/api/sessions/:id/nodes/:node_id/shaving-track",
+            get(get_shaving_track),
+        )
         .route(
             "/api/sessions/:id/edges/:target_node_id/viewed",
             get(edge_file_viewed::get_edge_viewed),
@@ -47,10 +48,7 @@ fn protected_routes() -> Router<AppState> {
         )
         .route("/api/sessions/:id/diff", get(get_diff))
         .route("/api/sessions/:id/nodes/:node_id", patch(rename_node))
-        .route(
-            "/api/sessions/:id/nodes/:node_id/branch",
-            post(branch_node),
-        )
+        .route("/api/sessions/:id/nodes/:node_id/branch", post(branch_node))
         .route(
             "/api/partition-settings",
             get(get_partition_settings).patch(patch_partition_settings),
@@ -152,7 +150,9 @@ async fn list_sessions(
     State(state): State<AppState>,
     principal: CurrentPrincipal,
 ) -> Result<Json<Vec<Session>>, ServerError> {
-    Ok(Json(state.datastore.sessions().list(&principal.org_id).await?))
+    Ok(Json(
+        state.datastore.sessions().list(&principal.org_id).await?,
+    ))
 }
 
 async fn get_session(
@@ -160,7 +160,11 @@ async fn get_session(
     principal: CurrentPrincipal,
     Path(id): Path<String>,
 ) -> Result<Json<Session>, ServerError> {
-    state.datastore.sessions().get(&principal.org_id, &id).await?
+    state
+        .datastore
+        .sessions()
+        .get(&principal.org_id, &id)
+        .await?
         .map(Json)
         .ok_or(AppError::NotFound.into())
 }
@@ -170,8 +174,16 @@ async fn get_graph(
     principal: CurrentPrincipal,
     Path(id): Path<String>,
 ) -> Result<Json<Graph>, ServerError> {
-    state.datastore.sessions().ensure(&principal.org_id, &id).await?;
-    let nodes = state.datastore.nodes().list_for_session(&principal.org_id, &id).await?;
+    state
+        .datastore
+        .sessions()
+        .ensure(&principal.org_id, &id)
+        .await?;
+    let nodes = state
+        .datastore
+        .nodes()
+        .list_for_session(&principal.org_id, &id)
+        .await?;
     if nodes.is_empty() {
         return Err(AppError::NotFound.into());
     }
@@ -193,14 +205,55 @@ async fn get_edge(
     Path((session_id, target_node_id)): Path<(String, String)>,
 ) -> Result<Json<Edge>, ServerError> {
     Ok(Json(
-        edges::load_edge_for_target(
-            &state,
-            &principal.org_id,
-            &session_id,
-            target_node_id,
-        )
-        .await?,
+        edges::load_edge_for_target(&state, &principal.org_id, &session_id, target_node_id).await?,
     ))
+}
+
+async fn get_shaving_track(
+    State(state): State<AppState>,
+    principal: CurrentPrincipal,
+    Path((session_id, node_id)): Path<(String, String)>,
+) -> Result<Json<ShavingTrackResponse>, ServerError> {
+    state
+        .datastore
+        .sessions()
+        .ensure(&principal.org_id, &session_id)
+        .await?;
+    let track = state
+        .datastore
+        .shaving_tracks()
+        .get(&principal.org_id, &session_id, &node_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+
+    let git_root =
+        crate::repo_store::session_git_root(&state, &principal.org_id, &session_id).await?;
+    let mut step_diffs = Vec::with_capacity(track.steps.len());
+    for step in &track.steps {
+        let (diff, files, synthesized) = edges::render_edge_diff(
+            &git_root,
+            &track.parent_tree_sha,
+            &step.tree_sha,
+            &track.parent_tree_sha,
+            &track.head_tree_sha,
+        )
+        .await?;
+        step_diffs.push(Diff {
+            from_tree: track.parent_tree_sha.clone(),
+            to_tree: step.tree_sha.clone(),
+            diff,
+            files,
+            synthesized,
+        });
+    }
+
+    Ok(Json(ShavingTrackResponse {
+        slice_node_id: track.slice_node_id,
+        parent_tree_sha: track.parent_tree_sha,
+        head_tree_sha: track.head_tree_sha,
+        steps: track.steps,
+        step_diffs,
+    }))
 }
 
 async fn get_diff(
@@ -209,33 +262,26 @@ async fn get_diff(
     Path(session_id): Path<String>,
     axum::extract::Query(q): axum::extract::Query<DiffQuery>,
 ) -> Result<Json<Diff>, ServerError> {
-    let (base_tree, final_tree) =
-        state.datastore.sessions().seed_trees(&principal.org_id, &session_id).await?;
-    let mut trees_to_check: Vec<&str> = vec![&q.from_tree, &q.to_tree];
-    if let Some(ref r) = q.before_ref {
-        trees_to_check.push(r);
-    }
-    if let Some(ref r) = q.after_ref {
-        trees_to_check.push(r);
-    }
-    if !state.datastore.nodes().distinct_trees_in_session(
-        &principal.org_id,
-        &session_id,
-        &trees_to_check,
-    ).await? {
-        return Err(AppError::NotFound.into());
-    }
+    let (base_tree, final_tree) = state
+        .datastore
+        .sessions()
+        .seed_trees(&principal.org_id, &session_id)
+        .await?;
     let before_ref = q.before_ref.as_deref().unwrap_or(&base_tree);
     let after_ref = q.after_ref.as_deref().unwrap_or(&final_tree);
-    let git_root = crate::repo_store::session_git_root(&state, &principal.org_id, &session_id).await?;
-    let (diff, files, synthesized) = edges::render_edge_diff(
-        &git_root,
-        &q.from_tree,
-        &q.to_tree,
-        before_ref,
-        after_ref,
-    )
-    .await?;
+    let trees_to_check: Vec<&str> = vec![&q.from_tree, &q.to_tree, before_ref, after_ref];
+    if !state
+        .datastore
+        .diff_authorization()
+        .trees_authorized_for_diff(&principal.org_id, &session_id, &trees_to_check)
+        .await?
+    {
+        return Err(AppError::NotFound.into());
+    }
+    let git_root =
+        crate::repo_store::session_git_root(&state, &principal.org_id, &session_id).await?;
+    let (diff, files, synthesized) =
+        edges::render_edge_diff(&git_root, &q.from_tree, &q.to_tree, before_ref, after_ref).await?;
     Ok(Json(Diff {
         from_tree: q.from_tree,
         to_tree: q.to_tree,
@@ -254,7 +300,11 @@ async fn rename_node(
     if req.title.trim().is_empty() {
         return Err(AppError::BadRequest("title must be non-empty".into()).into());
     }
-    state.datastore.sessions().ensure(&principal.org_id, &session_id).await?;
+    state
+        .datastore
+        .sessions()
+        .ensure(&principal.org_id, &session_id)
+        .await?;
     let node = state
         .datastore
         .nodes()
@@ -314,12 +364,10 @@ async fn get_cursor_models(
         .get(&principal.user_id)
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("reading cursor api key: {e}")))?
-        .ok_or_else(|| {
-            AppError::Unrecoverable {
-                status: StatusCode::SERVICE_UNAVAILABLE,
-                code: "cursor_sdk_unavailable".into(),
-                message: "Cursor API key not configured".into(),
-            }
+        .ok_or_else(|| AppError::Unrecoverable {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            code: "cursor_sdk_unavailable".into(),
+            message: "Cursor API key not configured".into(),
         })?;
     let models = state.coordinator.list_models(&api_key).await?;
     Ok(Json(CursorModels { models }))
@@ -334,8 +382,11 @@ async fn get_node_session(
     principal: CurrentPrincipal,
     Path(node_id): Path<String>,
 ) -> Result<Json<NodeSessionLookup>, ServerError> {
-    let session_id =
-        state.datastore.nodes().session_for_node_id(&principal.org_id, &node_id).await?;
+    let session_id = state
+        .datastore
+        .nodes()
+        .session_for_node_id(&principal.org_id, &node_id)
+        .await?;
     Ok(Json(NodeSessionLookup { session_id }))
 }
 
@@ -354,9 +405,7 @@ async fn get_tunnel(State(state): State<AppState>) -> Json<TunnelStatus> {
     Json(state.tunnel.status())
 }
 
-async fn start_tunnel(
-    State(state): State<AppState>,
-) -> Result<Json<TunnelStatus>, ServerError> {
+async fn start_tunnel(State(state): State<AppState>) -> Result<Json<TunnelStatus>, ServerError> {
     let auth_router = router(state.clone());
     let dto = state.tunnel.start(auth_router).await?;
     Ok(Json(dto))
@@ -375,7 +424,8 @@ async fn tunnel_events(
             status: StatusCode::FORBIDDEN,
             code: "tunnel_disabled".into(),
             message: "tunnel sharing is not enabled".into(),
-        }.into());
+        }
+        .into());
     }
     let rx = state.tunnel.subscribe();
     let initial = Some(state.tunnel.status_redacted());

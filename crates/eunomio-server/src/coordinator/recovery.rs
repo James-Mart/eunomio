@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{AppError, state::AppState, worktree};
+use crate::{state::AppState, worktree, AppError};
 use std::path::Path;
 
 const LOCAL_ORG_ID: &str = "local";
@@ -23,13 +23,25 @@ impl Coordinator {
 }
 
 async fn repair_stuck_runs(state: &AppState) -> Result<(), AppError> {
-    let stuck = state.datastore.runs().list_running_ids(LOCAL_ORG_ID).await?;
-    state.datastore.runs().mark_errored(LOCAL_ORG_ID, stuck, "process_restart").await?;
+    let stuck = state
+        .datastore
+        .runs()
+        .list_running_ids(LOCAL_ORG_ID)
+        .await?;
+    state
+        .datastore
+        .runs()
+        .mark_errored(LOCAL_ORG_ID, stuck, "process_restart")
+        .await?;
     Ok(())
 }
 
 async fn prune_dead_partition_rows(state: &AppState) -> Result<Vec<String>, AppError> {
-    let rows = state.datastore.partitions().list_id_session_worktree(LOCAL_ORG_ID).await?;
+    let rows = state
+        .datastore
+        .partitions()
+        .list_id_session_worktree(LOCAL_ORG_ID)
+        .await?;
     let mut alive = Vec::with_capacity(rows.len());
     for (id, _session_id, worktree_path) in rows {
         if Path::new(&worktree_path).exists() {
@@ -40,7 +52,11 @@ async fn prune_dead_partition_rows(state: &AppState) -> Result<Vec<String>, AppE
                 worktree = %worktree_path,
                 "partition worktree missing on disk; deleting row"
             );
-            state.datastore.partitions().delete_with_runs(LOCAL_ORG_ID, &id).await?;
+            state
+                .datastore
+                .partitions()
+                .delete_with_runs(LOCAL_ORG_ID, &id)
+                .await?;
         }
     }
     Ok(alive)
@@ -80,11 +96,7 @@ async fn sweep_orphan_worktree_dirs(state: &AppState, alive: &[String]) {
             if !worktree_path.exists() {
                 continue;
             }
-            if pid_opt
-                .as_ref()
-                .map(|p| alive.contains(p))
-                .unwrap_or(false)
-            {
+            if pid_opt.as_ref().map(|p| alive.contains(p)).unwrap_or(false) {
                 continue;
             }
             tracing::info!(path = %worktree_path.display(), "removing orphan partition worktree");

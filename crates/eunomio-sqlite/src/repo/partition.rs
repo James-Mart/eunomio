@@ -146,7 +146,8 @@ impl PartitionRepo for SqlitePartitionRepo {
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(rows)
             })
-            .await.map_err(crate::repo::map_sqlite_err)?;
+            .await
+            .map_err(crate::repo::map_sqlite_err)?;
         Ok(rows)
     }
 
@@ -261,11 +262,7 @@ impl PartitionRepo for SqlitePartitionRepo {
         Ok(inserted_id)
     }
 
-    async fn clear_plan_and_slice(
-        &self,
-        org_id: &str,
-        partition_id: &str,
-    ) -> Result<(), AppError> {
+    async fn clear_plan_and_slice(&self, org_id: &str, partition_id: &str) -> Result<(), AppError> {
         let org_id = org_id.to_string();
         let partition_id = partition_id.to_string();
         self.conn
@@ -624,7 +621,8 @@ impl PartitionRepo for SqlitePartitionRepo {
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(rows)
             })
-            .await.map_err(crate::repo::map_sqlite_err)?;
+            .await
+            .map_err(crate::repo::map_sqlite_err)?;
         Ok(rows)
     }
 }

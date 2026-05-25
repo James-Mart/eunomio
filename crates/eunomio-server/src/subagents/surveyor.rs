@@ -46,8 +46,7 @@ pub fn parse_output(raw: &str) -> Result<SurveyOutput, ParseError> {
 }
 
 fn extract_json_block(raw: &str) -> Option<String> {
-    let re =
-        regex::Regex::new(r"(?s)```(?:json)?\s*\n(.*?)\n```").expect("valid json fence regex");
+    let re = regex::Regex::new(r"(?s)```(?:json)?\s*\n(.*?)\n```").expect("valid json fence regex");
     if let Some(cap) = re.captures(raw) {
         return Some(cap.get(1)?.as_str().to_string());
     }

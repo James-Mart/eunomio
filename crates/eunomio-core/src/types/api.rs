@@ -67,6 +67,7 @@ pub struct GraphNode {
     pub title: String,
     pub description: String,
     pub strategy: Option<PartitionStrategy>,
+    pub has_shaving_track: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -124,6 +125,32 @@ pub struct DiffQuery {
     pub before_ref: Option<String>,
     #[serde(default)]
     pub after_ref: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShavingStep {
+    pub tree_sha: String,
+    pub commit_sha: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShavingTrack {
+    pub slice_node_id: String,
+    pub parent_tree_sha: String,
+    pub head_tree_sha: String,
+    pub steps: Vec<ShavingStep>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShavingTrackResponse {
+    pub slice_node_id: String,
+    pub parent_tree_sha: String,
+    pub head_tree_sha: String,
+    pub steps: Vec<ShavingStep>,
+    pub step_diffs: Vec<Diff>,
 }
 
 #[derive(Debug, Deserialize, Default)]

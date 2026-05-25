@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::{
+    shavings::generate::{self, AttachTrackInput},
+    state::AppState,
+    subagents::surveyor::SurveyOutput,
+    worktree, AppError,
+};
 use eunomio_core::types::*;
-use crate::{AppError, state::AppState, subagents::surveyor::SurveyOutput , worktree};
 use std::path::PathBuf;
 use uuid::Uuid;
 
@@ -15,7 +20,11 @@ impl Coordinator {
         partition_id: &str,
         req: AcceptSurveyRequest,
     ) -> Result<Partition, AppError> {
-        let row = state.datastore.partitions().get(org_id, partition_id).await?;
+        let row = state
+            .datastore
+            .partitions()
+            .get(org_id, partition_id)
+            .await?;
         ensure_at_gate(&row, PhaseName::Survey, "survey")?;
         self.do_accept_survey(state, org_id, partition_id, &req.run_id)
             .await
@@ -40,9 +49,16 @@ impl Coordinator {
             .ok_or_else(|| AppError::BadRequest("survey run has no parsed result".into()))?;
         let _: SurveyOutput = serde_json::from_str(result_json)
             .map_err(|e| AppError::BadRequest(format!("invalid survey result: {e}")))?;
-        state.datastore.partitions().accept_survey(org_id, partition_id, result_json.to_string())
+        state
+            .datastore
+            .partitions()
+            .accept_survey(org_id, partition_id, result_json.to_string())
             .await?;
-        let new_row = state.datastore.partitions().get(org_id, partition_id).await?;
+        let new_row = state
+            .datastore
+            .partitions()
+            .get(org_id, partition_id)
+            .await?;
         self.spawn_run_boxed(
             state.clone(),
             org_id.to_string(),
@@ -64,7 +80,11 @@ impl Coordinator {
         partition_id: &str,
         req: AcceptPlanRequest,
     ) -> Result<Partition, AppError> {
-        let row = state.datastore.partitions().get(org_id, partition_id).await?;
+        let row = state
+            .datastore
+            .partitions()
+            .get(org_id, partition_id)
+            .await?;
         ensure_at_gate(&row, PhaseName::Plan, "plan")?;
         self.do_accept_plan(state, org_id, partition_id, &req.run_id)
             .await
@@ -88,9 +108,21 @@ impl Coordinator {
             .as_deref()
             .ok_or_else(|| AppError::BadRequest("plan run has no parsed result".into()))?;
         let split = parse_split_plan(result_json)?;
-        state.datastore.partitions().accept_plan(org_id, partition_id, result_json.to_string(), split.strategy)
+        state
+            .datastore
+            .partitions()
+            .accept_plan(
+                org_id,
+                partition_id,
+                result_json.to_string(),
+                split.strategy,
+            )
             .await?;
-        let new_row = state.datastore.partitions().get(org_id, partition_id).await?;
+        let new_row = state
+            .datastore
+            .partitions()
+            .get(org_id, partition_id)
+            .await?;
         self.spawn_run_boxed(
             state.clone(),
             org_id.to_string(),
@@ -111,7 +143,11 @@ impl Coordinator {
         org_id: &str,
         partition_id: &str,
     ) -> Result<(), AppError> {
-        let row = state.datastore.partitions().get(org_id, partition_id).await?;
+        let row = state
+            .datastore
+            .partitions()
+            .get(org_id, partition_id)
+            .await?;
         if !matches!(row.phase, PhaseName::Construct) {
             return Err(AppError::Conflict {
                 code: "not_at_gate".into(),
@@ -127,7 +163,11 @@ impl Coordinator {
         org_id: &str,
         partition_id: &str,
     ) -> Result<(), AppError> {
-        let row = state.datastore.partitions().get(org_id, partition_id).await?;
+        let row = state
+            .datastore
+            .partitions()
+            .get(org_id, partition_id)
+            .await?;
         let candidate_tree = row
             .candidate_slice_tree_sha
             .clone()
@@ -144,14 +184,20 @@ impl Coordinator {
 
         let session_id = row.session_id.clone();
         let target_node_id = row.target_node_id.clone();
-        let (_target_node, parent_node) = state.datastore.nodes().target_and_parent(org_id, &session_id, &target_node_id,
-        ).await?;
+        let (_target_node, parent_node) = state
+            .datastore
+            .nodes()
+            .target_and_parent(org_id, &session_id, &target_node_id)
+            .await?;
         let parent = parent_node.ok_or_else(|| {
             AppError::BadRequest("target has no parent; cannot insert slice".into())
         })?;
 
-        let siblings = state.datastore.partitions().list_siblings(org_id, &session_id, &target_node_id, partition_id,
-        ).await?;
+        let siblings = state
+            .datastore
+            .partitions()
+            .list_siblings(org_id, &session_id, &target_node_id, partition_id)
+            .await?;
 
         self.cancel_siblings(&siblings).await;
 
@@ -164,28 +210,50 @@ impl Coordinator {
         let remaining_depth = row.remaining_depth;
 
         let sibling_ids: Vec<String> = siblings.iter().map(|s| s.id.clone()).collect();
-        state.datastore.partitions().finalize_construct_accept(org_id.to_string(),
-            session_id.clone(),
-            partition_id.to_string(),
-            target_node_id.clone(),
-            slice_node_id.clone(),
-            parent.node_id.clone(),
-            candidate_tree,
-            candidate_commit,
-            slice_title,
-            slice_description,
-            row.strategy,
-            leftover_title,
-            leftover_description,
-            sibling_ids,
-            now,
-        ).await?;
+        let candidate_tree_for_shavings = candidate_tree.clone();
+        let candidate_commit_for_shavings = candidate_commit.clone();
+        state
+            .datastore
+            .partitions()
+            .finalize_construct_accept(
+                org_id.to_string(),
+                session_id.clone(),
+                partition_id.to_string(),
+                target_node_id.clone(),
+                slice_node_id.clone(),
+                parent.node_id.clone(),
+                candidate_tree,
+                candidate_commit,
+                slice_title,
+                slice_description,
+                row.strategy,
+                leftover_title,
+                leftover_description,
+                sibling_ids,
+                now,
+            )
+            .await?;
+
+        generate::try_attach_track(
+            state,
+            AttachTrackInput {
+                org_id: org_id.to_string(),
+                session_id: session_id.clone(),
+                slice_node_id: slice_node_id.clone(),
+                parent_node_id: parent.node_id.clone(),
+                parent_tree_sha: parent.tree_sha.clone(),
+                parent_commit_sha: parent.commit_sha.clone(),
+                candidate_tree_sha: candidate_tree_for_shavings,
+                candidate_commit_sha: candidate_commit_for_shavings,
+            },
+        )
+        .await;
 
         teardown_worktrees(state, org_id, &row, &siblings).await;
         self.emit_acceptance_events(&session_id, &target_node_id, partition_id, &siblings);
-        self.inner.runs.unmark_abandoning_many(
-            &siblings.iter().map(|s| s.id.clone()).collect::<Vec<_>>(),
-        );
+        self.inner
+            .runs
+            .unmark_abandoning_many(&siblings.iter().map(|s| s.id.clone()).collect::<Vec<_>>());
 
         self.maybe_spawn_fanout(
             state,
@@ -285,11 +353,23 @@ impl Coordinator {
         org_id: &str,
         partition_id: &str,
     ) -> Result<(), AppError> {
-        let row = state.datastore.partitions().get(org_id, partition_id).await?;
+        let row = state
+            .datastore
+            .partitions()
+            .get(org_id, partition_id)
+            .await?;
         self.inner.runs.mark_abandoning(partition_id);
         self.inner.runs.take_and_cancel(partition_id).await;
-        state.datastore.runs().cancel_running_for_partition(org_id, partition_id).await?;
-        state.datastore.partitions().delete_with_runs(org_id, partition_id).await?;
+        state
+            .datastore
+            .runs()
+            .cancel_running_for_partition(org_id, partition_id)
+            .await?;
+        state
+            .datastore
+            .partitions()
+            .delete_with_runs(org_id, partition_id)
+            .await?;
         let worktree_path = PathBuf::from(&row.worktree_path);
         let git_root = crate::repo_store::session_git_root(state, org_id, &row.session_id).await?;
         worktree::teardown(&git_root, &worktree_path).await;

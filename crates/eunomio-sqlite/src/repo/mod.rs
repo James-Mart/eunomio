@@ -8,22 +8,26 @@ pub(crate) fn map_sqlite_err(e: tokio_rusqlite::Error) -> AppError {
 
 pub mod auth_event;
 pub mod auth_session;
+pub mod diff_authorization;
 pub mod edge_file_viewed;
 pub mod node;
 pub mod org;
 pub mod partition;
 pub mod run;
 pub mod session;
+pub mod shaving_track;
 pub mod user;
 
 pub use auth_event::SqliteAuthEventRepo;
 pub use auth_session::SqliteAuthSessionRepo;
+pub use diff_authorization::SqliteDiffAuthorizationRepo;
 pub use edge_file_viewed::SqliteEdgeFileViewedRepo;
 pub use node::SqliteNodeRepo;
 pub use org::SqliteOrgRepo;
 pub use partition::SqlitePartitionRepo;
 pub use run::SqliteRunRepo;
 pub use session::SqliteSessionRepo;
+pub use shaving_track::SqliteShavingTrackRepo;
 pub use user::SqliteUserRepo;
 
 pub(crate) fn require_affected_sqlite(rows: usize) -> Result<(), tokio_rusqlite::Error> {

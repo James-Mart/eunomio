@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::{git, repo_store, state::AppState, AppError};
 use eunomio_core::types::*;
-use crate::{AppError, git, repo_store, state::AppState };
 use std::path::Path;
 use uuid::Uuid;
 

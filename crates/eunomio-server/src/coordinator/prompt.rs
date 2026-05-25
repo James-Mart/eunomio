@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use eunomio_core::types::*;
 use crate::{
-    AppError,
     state::AppState,
     subagents::{
         self,
@@ -13,8 +11,9 @@ use crate::{
         planner::PriorAttempt,
         PromptTemplate,
     },
-     
+    AppError,
 };
+use eunomio_core::types::*;
 use serde::Deserialize;
 
 use super::{parse_split_plan, Coordinator};
@@ -39,10 +38,16 @@ impl Coordinator {
         strategy_override: Option<PartitionStrategy>,
         prompt_override: Option<&str>,
     ) -> Result<String, AppError> {
-        let (target_node, parent_node) = state.datastore.nodes().target_and_parent(&partition.org_id, &partition.session_id, &partition.target_node_id,
-        ).await?;
-        let parent =
-            parent_node.ok_or_else(|| AppError::BadRequest("no parent node".into()))?;
+        let (target_node, parent_node) = state
+            .datastore
+            .nodes()
+            .target_and_parent(
+                &partition.org_id,
+                &partition.session_id,
+                &partition.target_node_id,
+            )
+            .await?;
+        let parent = parent_node.ok_or_else(|| AppError::BadRequest("no parent node".into()))?;
         let before_tree = parent.tree_sha.clone();
         let target_tree = target_node.tree_sha.clone();
 
@@ -185,7 +190,11 @@ impl Coordinator {
         org_id: &str,
         partition_id: &str,
     ) -> Result<Option<PriorAttempt>, AppError> {
-        let runs = state.datastore.runs().list_for_partition(org_id, partition_id).await?;
+        let runs = state
+            .datastore
+            .runs()
+            .list_for_partition(org_id, partition_id)
+            .await?;
         let last_construct = runs.iter().find(|r| {
             r.kind == RunKind::Construct
                 && matches!(r.status, RunStatus::Finished | RunStatus::Error)
@@ -201,18 +210,19 @@ impl Coordinator {
         };
         match parsed {
             ConstructResultJson::Blocked { reason } => Ok(Some(PriorAttempt::Blocked { reason })),
-            ConstructResultJson::Ok => Ok(last_split_plan_edge_zero(&runs)
-                .map(|edge| PriorAttempt::Candidate {
-                    slice_title: edge.title,
-                    slice_description: edge.description,
-                })),
+            ConstructResultJson::Ok => {
+                Ok(
+                    last_split_plan_edge_zero(&runs).map(|edge| PriorAttempt::Candidate {
+                        slice_title: edge.title,
+                        slice_description: edge.description,
+                    }),
+                )
+            }
         }
     }
 }
 
-fn last_split_plan_edge_zero(
-    runs: &[RunRow],
-) -> Option<crate::subagents::planner::PlanEdge> {
+fn last_split_plan_edge_zero(runs: &[RunRow]) -> Option<crate::subagents::planner::PlanEdge> {
     let plan_run = runs
         .iter()
         .find(|r| r.kind == RunKind::Plan && r.status == RunStatus::Finished)?;

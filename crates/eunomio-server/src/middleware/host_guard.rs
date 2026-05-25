@@ -25,7 +25,11 @@ pub async fn host_guard(State(state): State<AppState>, req: Request, next: Next)
     if !host_header.map(is_loopback_host).unwrap_or(false) {
         return forbidden_host();
     }
-    if let Some(origin) = req.headers().get(header::ORIGIN).and_then(|v| v.to_str().ok()) {
+    if let Some(origin) = req
+        .headers()
+        .get(header::ORIGIN)
+        .and_then(|v| v.to_str().ok())
+    {
         let dev_origin_ok = state.tunnel.allow_dev_url() && origin_is_trycloudflare(origin);
         if !origin_is_loopback(origin) && !dev_origin_ok {
             return forbidden_host();
@@ -148,7 +152,9 @@ mod tests {
         assert!(!origin_is_trycloudflare(
             "https://has_underscore.trycloudflare.com"
         ));
-        assert!(!origin_is_trycloudflare("https://has space.trycloudflare.com"));
+        assert!(!origin_is_trycloudflare(
+            "https://has space.trycloudflare.com"
+        ));
         assert!(!origin_is_trycloudflare("ftp://sub.trycloudflare.com"));
         assert!(!origin_is_trycloudflare("https://evil.com"));
         assert!(!origin_is_trycloudflare("null"));

@@ -59,10 +59,7 @@ mod tests {
 
     #[test]
     fn folds_top_level_text_fixture() {
-        assert_eq!(
-            fold_sdk_event(&json!({"text": "s"})),
-            Some("s".into())
-        );
+        assert_eq!(fold_sdk_event(&json!({"text": "s"})), Some("s".into()));
     }
 
     #[test]

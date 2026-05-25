@@ -69,7 +69,9 @@ async fn install_from_download(
             .await
             .context("running tar to extract cloudflared archive")?;
         if !status.success() {
-            return Err(anyhow!("tar exited with status {status} extracting cloudflared"));
+            return Err(anyhow!(
+                "tar exited with status {status} extracting cloudflared"
+            ));
         }
         let _ = tokio::fs::remove_file(download_path).await;
     } else if download_path != final_path {
@@ -90,11 +92,13 @@ async fn verify_sha256(path: &Path, expected: &str) -> Result<()> {
     let path_owned = path.to_path_buf();
     let expected_owned = expected.to_string();
     tokio::task::spawn_blocking(move || -> Result<()> {
-        let mut file = std::fs::File::open(&path_owned)
-            .with_context(|| format!("opening downloaded cloudflared at {}", path_owned.display()))?;
+        let mut file = std::fs::File::open(&path_owned).with_context(|| {
+            format!("opening downloaded cloudflared at {}", path_owned.display())
+        })?;
         let mut hasher = Sha256::new();
-        std::io::copy(&mut file, &mut hasher)
-            .with_context(|| format!("hashing downloaded cloudflared at {}", path_owned.display()))?;
+        std::io::copy(&mut file, &mut hasher).with_context(|| {
+            format!("hashing downloaded cloudflared at {}", path_owned.display())
+        })?;
         let actual = format!("{:x}", hasher.finalize());
         if actual.eq_ignore_ascii_case(&expected_owned) {
             return Ok(());

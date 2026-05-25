@@ -29,14 +29,13 @@ pub(super) async fn supervise(
     stop_rx: oneshot::Receiver<()>,
     serve_shutdown_tx: Option<oneshot::Sender<()>>,
 ) {
-    let (child, line_rx, url) =
-        match start_cloudflared_until_url(&binary, target_port).await {
-            Ok(triple) => triple,
-            Err(e) => {
-                fail_startup(&inner, ready_tx, serve_shutdown_tx, e);
-                return;
-            }
-        };
+    let (child, line_rx, url) = match start_cloudflared_until_url(&binary, target_port).await {
+        Ok(triple) => triple,
+        Err(e) => {
+            fail_startup(&inner, ready_tx, serve_shutdown_tx, e);
+            return;
+        }
+    };
 
     let started_at = eunomio_core::unix_seconds();
     let (dto_full, dto_redacted) = {

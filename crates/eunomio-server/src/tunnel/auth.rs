@@ -64,8 +64,7 @@ fn redirect_and_set_cookie(req: &Request, token: &Uuid) -> Response<Body> {
         format!("{path}?{new_query}")
     };
     let cookie = format!("{SHARE_COOKIE}={token}; HttpOnly; Secure; SameSite=Lax; Path=/");
-    let location =
-        HeaderValue::from_str(&target).unwrap_or_else(|_| HeaderValue::from_static("/"));
+    let location = HeaderValue::from_str(&target).unwrap_or_else(|_| HeaderValue::from_static("/"));
     let cookie_header =
         HeaderValue::from_str(&cookie).unwrap_or_else(|_| HeaderValue::from_static(""));
     (

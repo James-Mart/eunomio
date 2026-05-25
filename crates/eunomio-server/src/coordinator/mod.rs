@@ -1,17 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use eunomio_core::types::*;
 use crate::{
     cursor_bridge::{RunHandle, SubagentRunner},
-    AppError,
     state::AppState,
     subagents::{
         planner::{PlanOutput, PlanStrategy},
         Subagents,
     },
-     
+    AppError,
 };
 use eunomio_core::traits::QuotaEnforcer;
+use eunomio_core::types::*;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::{broadcast, Mutex};
@@ -97,7 +96,10 @@ impl RunHandleRegistry {
     }
 
     async fn insert(&self, partition_id: &str, handle: RunHandle) {
-        self.handles.lock().await.insert(partition_id.to_string(), handle);
+        self.handles
+            .lock()
+            .await
+            .insert(partition_id.to_string(), handle);
     }
 
     async fn take_and_cancel(&self, partition_id: &str) {
@@ -112,7 +114,10 @@ impl RunHandleRegistry {
     }
 
     fn mark_abandoning(&self, partition_id: &str) {
-        self.abandoning.lock().unwrap().insert(partition_id.to_string());
+        self.abandoning
+            .lock()
+            .unwrap()
+            .insert(partition_id.to_string());
     }
 
     fn unmark_abandoning(&self, partition_id: &str) {
@@ -169,7 +174,11 @@ impl Coordinator {
         org_id: &str,
         partition_id: &str,
     ) -> Result<Vec<Run>, AppError> {
-        let rows = state.datastore.runs().list_for_partition(org_id, partition_id).await?;
+        let rows = state
+            .datastore
+            .runs()
+            .list_for_partition(org_id, partition_id)
+            .await?;
         Ok(rows.into_iter().map(|r| r.into()).collect())
     }
 
@@ -180,7 +189,11 @@ impl Coordinator {
         session_id: &str,
         target_node_id: Option<&str>,
     ) -> Result<Vec<Partition>, AppError> {
-        let rows = state.datastore.partitions().list(org_id, session_id, target_node_id).await?;
+        let rows = state
+            .datastore
+            .partitions()
+            .list(org_id, session_id, target_node_id)
+            .await?;
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
@@ -190,7 +203,11 @@ impl Coordinator {
         org_id: &str,
         partition_id: &str,
     ) -> Result<Partition, AppError> {
-        let row = state.datastore.partitions().get(org_id, partition_id).await?;
+        let row = state
+            .datastore
+            .partitions()
+            .get(org_id, partition_id)
+            .await?;
         Ok(row.into())
     }
 
@@ -201,7 +218,11 @@ impl Coordinator {
         partition_id: &str,
         run_id: &str,
     ) -> Result<Transcript, AppError> {
-        state.datastore.partitions().get(org_id, partition_id).await?;
+        state
+            .datastore
+            .partitions()
+            .get(org_id, partition_id)
+            .await?;
         let run = state.datastore.runs().get(org_id, run_id).await?;
         if run.partition_id != partition_id {
             return Err(AppError::NotFound);
@@ -271,7 +292,9 @@ pub(super) fn parse_split_plan(plan_json: &str) -> Result<SplitPlan, AppError> {
     let plan: PlanOutput = serde_json::from_str(plan_json)
         .map_err(|e| AppError::BadRequest(format!("invalid plan: {e}")))?;
     match plan {
-        PlanOutput::Split { strategy, edges, .. } => Ok(SplitPlan {
+        PlanOutput::Split {
+            strategy, edges, ..
+        } => Ok(SplitPlan {
             strategy: match strategy {
                 PlanStrategy::Synthetic => PartitionStrategy::Synthetic,
                 PlanStrategy::Vertical => PartitionStrategy::Vertical,

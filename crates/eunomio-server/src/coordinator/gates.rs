@@ -1,12 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::{partition_settings::load_for_partition, state::AppState, AppError};
 use eunomio_core::types::*;
-use crate::{
-    AppError,
-    partition_settings::load_for_partition,
-    state::AppState,
-     
-};
 
 use super::{scope::PhaseScope, Coordinator};
 
@@ -27,9 +22,7 @@ impl Coordinator {
         let hitl = settings.coordinator.human_in_the_loop;
 
         if kind == RunKind::Plan && is_indivisible(payload.as_ref()) {
-            return self
-                .on_indivisible_plan(state, scope, payload, hitl)
-                .await;
+            return self.on_indivisible_plan(state, scope, payload, hitl).await;
         }
 
         let gate = gate_for(kind, hitl);
@@ -75,8 +68,15 @@ impl Coordinator {
         kind: RunKind,
         payload: Option<serde_json::Value>,
     ) -> Result<(), AppError> {
-        state.datastore.partitions().set_phase_state(&scope.org_id, &scope.partition_id, PhaseState::AwaitingReview,
-        ).await?;
+        state
+            .datastore
+            .partitions()
+            .set_phase_state(
+                &scope.org_id,
+                &scope.partition_id,
+                PhaseState::AwaitingReview,
+            )
+            .await?;
         self.emit(
             &scope.session_id,
             SseEvent::Phase {
@@ -114,9 +114,11 @@ impl Coordinator {
                     .do_accept_plan(&state_owned, &org_id, &partition_id, &run_id)
                     .await
                     .map(|_| ()),
-                RunKind::Construct => coord
-                    .do_accept_construct(&state_owned, &org_id, &partition_id)
-                    .await,
+                RunKind::Construct => {
+                    coord
+                        .do_accept_construct(&state_owned, &org_id, &partition_id)
+                        .await
+                }
             };
             if let Err(e) = res {
                 tracing::error!(error = %e, partition_id = %partition_id, "auto-accept failed");

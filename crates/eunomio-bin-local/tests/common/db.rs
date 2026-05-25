@@ -37,11 +37,7 @@ pub async fn query_i64_no_params(state: &AppState, sql: &str) -> i64 {
     .unwrap()
 }
 
-pub async fn query_two_strings(
-    state: &AppState,
-    sql: &str,
-    id_param: &str,
-) -> (String, String) {
+pub async fn query_two_strings(state: &AppState, sql: &str, id_param: &str) -> (String, String) {
     let conn = open_db(state).await;
     conn.call({
         let id_param = id_param.to_string();

@@ -10,6 +10,7 @@ import {
 } from "@/lib/api";
 import { formatError } from "@/lib/errors";
 import {
+  useAllPartitionLifecycles,
   useConstructSubscription,
   useHydratePartition,
 } from "@/components/SessionEventsProvider";
@@ -84,6 +85,7 @@ export function useSessionData(sessionId: string): SessionData {
   );
 
   const hydratePartition = useHydratePartition();
+  const lifecycles = useAllPartitionLifecycles();
 
   useEffect(() => {
     if (view.kind !== "candidate") return;
@@ -103,8 +105,8 @@ export function useSessionData(sessionId: string): SessionData {
   );
 
   const partitionGlanceByNodeId = useMemo(
-    () => partitionGlanceByNode(partitions),
-    [partitions],
+    () => partitionGlanceByNode(partitions, lifecycles),
+    [partitions, lifecycles],
   );
 
   const layout = useMemo<SessionLayout | null>(() => {

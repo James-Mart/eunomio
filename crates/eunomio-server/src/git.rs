@@ -32,11 +32,7 @@ pub async fn ensure_repo(path: &Path) -> Result<()> {
 pub async fn merge_base(repo: &Path, base: &str, source: &str) -> Result<String> {
     let base = resolve_ref_name(repo, base).await?;
     let source = resolve_ref_name(repo, source).await?;
-    run(
-        repo,
-        &["merge-base", "--end-of-options", &base, &source],
-    )
-    .await
+    run(repo, &["merge-base", "--end-of-options", &base, &source]).await
 }
 
 /// Resolves `refname` in `repo`, mapping `origin/<branch>` to `<branch>` when needed (bare clones).
@@ -79,11 +75,7 @@ pub async fn diff_text(repo: &Path, from_tree: &str, to_tree: &str) -> Result<St
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
-pub async fn changed_files(
-    repo: &Path,
-    from_tree: &str,
-    to_tree: &str,
-) -> Result<Vec<FileBlob>> {
+pub async fn changed_files(repo: &Path, from_tree: &str, to_tree: &str) -> Result<Vec<FileBlob>> {
     let out = Command::new("git")
         .arg("-C")
         .arg(repo)
@@ -129,6 +121,72 @@ pub async fn changed_files(
     Ok(files)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TreeChangeStatus {
+    Added,
+    Modified,
+    Deleted,
+    Renamed,
+    Copied,
+    TypeChanged,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TreeChange {
+    pub status: TreeChangeStatus,
+    pub old_path: Option<String>,
+    pub new_path: Option<String>,
+}
+
+pub async fn changed_entries(
+    repo: &Path,
+    from_tree: &str,
+    to_tree: &str,
+) -> Result<Vec<TreeChange>> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args([
+            "diff",
+            "--name-status",
+            "-z",
+            "-M",
+            "--no-ext-diff",
+            "--end-of-options",
+            from_tree,
+            to_tree,
+        ])
+        .output()
+        .await?;
+    if !out.status.success() {
+        return Err(anyhow!(
+            "git diff --name-status {} {}: {}",
+            from_tree,
+            to_tree,
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    parse_name_status_z(&out.stdout)?
+        .into_iter()
+        .map(|entry| {
+            let status = match entry.status {
+                NameStatus::Added => TreeChangeStatus::Added,
+                NameStatus::Deleted => TreeChangeStatus::Deleted,
+                NameStatus::Modified => TreeChangeStatus::Modified,
+                NameStatus::Renamed => TreeChangeStatus::Renamed,
+                NameStatus::Copied => TreeChangeStatus::Copied,
+                NameStatus::TypeChanged => TreeChangeStatus::TypeChanged,
+                NameStatus::Other => return Err(anyhow!("unsupported tree change status")),
+            };
+            Ok(TreeChange {
+                status,
+                old_path: entry.old_path,
+                new_path: entry.new_path,
+            })
+        })
+        .collect()
+}
+
 #[derive(Debug, PartialEq, Eq)]
 enum NameStatus {
     Added,
@@ -149,7 +207,10 @@ struct NameStatusEntry {
 
 fn parse_name_status_z(bytes: &[u8]) -> Result<Vec<NameStatusEntry>> {
     let mut entries = Vec::new();
-    let mut iter = bytes.split(|&b| b == 0).filter(|s| !s.is_empty()).peekable();
+    let mut iter = bytes
+        .split(|&b| b == 0)
+        .filter(|s| !s.is_empty())
+        .peekable();
     while let Some(status_bytes) = iter.next() {
         let status_str = std::str::from_utf8(status_bytes)
             .map_err(|e| anyhow!("non-utf8 status in name-status output: {}", e))?;
@@ -222,6 +283,8 @@ pub(crate) async fn fetch_blob_text(repo: &Path, tree: &str, path: &str) -> Resu
 #[cfg(test)]
 mod name_status_tests {
     use super::*;
+    use std::path::Path;
+    use std::process::Command;
 
     #[test]
     fn parses_added_modified_deleted_entries() {
@@ -245,6 +308,56 @@ mod name_status_tests {
     #[test]
     fn empty_input_yields_no_entries() {
         assert!(parse_name_status_z(&[]).unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn changed_entries_reports_delete_and_rename() {
+        let dir = tempfile::tempdir().unwrap();
+        run_git(dir.path(), &["init", "-q", "-b", "main"]);
+        run_git(dir.path(), &["config", "user.email", "test@example.com"]);
+        run_git(dir.path(), &["config", "user.name", "Test"]);
+        std::fs::write(dir.path().join("a.txt"), "a\n").unwrap();
+        std::fs::write(dir.path().join("b.txt"), "b\n").unwrap();
+        run_git(dir.path(), &["add", "."]);
+        run_git(dir.path(), &["commit", "-q", "-m", "base"]);
+        let base_tree = run_git(dir.path(), &["rev-parse", "HEAD^{tree}"]);
+        run_git(dir.path(), &["mv", "a.txt", "c.txt"]);
+        std::fs::remove_file(dir.path().join("b.txt")).unwrap();
+        std::fs::write(dir.path().join("d.txt"), "d\n").unwrap();
+        run_git(dir.path(), &["add", "-A"]);
+        run_git(dir.path(), &["commit", "-q", "-m", "target"]);
+        let target_tree = run_git(dir.path(), &["rev-parse", "HEAD^{tree}"]);
+
+        let entries = changed_entries(dir.path(), &base_tree, &target_tree)
+            .await
+            .unwrap();
+        assert!(entries.iter().any(|e| {
+            e.status == TreeChangeStatus::Renamed
+                && e.old_path.as_deref() == Some("a.txt")
+                && e.new_path.as_deref() == Some("c.txt")
+        }));
+        assert!(entries.iter().any(|e| {
+            e.status == TreeChangeStatus::Deleted && e.old_path.as_deref() == Some("b.txt")
+        }));
+        assert!(entries.iter().any(|e| {
+            e.status == TreeChangeStatus::Added && e.new_path.as_deref() == Some("d.txt")
+        }));
+    }
+
+    fn run_git(repo: &Path, args: &[&str]) -> String {
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "git {:?}: {}",
+            args,
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
     }
 }
 
@@ -328,7 +441,11 @@ mod repo_name_tests {
 }
 
 pub async fn rev_parse(repo: &Path, refname: &str) -> Result<String> {
-    run(repo, &["rev-parse", "--verify", "--end-of-options", refname]).await
+    run(
+        repo,
+        &["rev-parse", "--verify", "--end-of-options", refname],
+    )
+    .await
 }
 
 pub async fn commit_tree(
@@ -373,6 +490,37 @@ pub async fn branch_create(repo: &Path, name: &str, commit: &str, force: bool) -
     args.push(commit);
     run(repo, &args).await?;
     Ok(())
+}
+
+pub async fn update_ref(repo: &Path, ref_name: &str, commit: &str) -> Result<()> {
+    run(repo, &["update-ref", ref_name, commit])
+        .await
+        .map(|_| ())
+}
+
+pub async fn delete_ref(repo: &Path, ref_name: &str) -> Result<()> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["update-ref", "-d", ref_name])
+        .output()
+        .await?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        if !stderr.contains("not found") {
+            return Err(anyhow!("git update-ref -d {}: {}", ref_name, stderr.trim()));
+        }
+    }
+    Ok(())
+}
+
+pub async fn commit_parents(repo: &Path, commit: &str) -> Result<Vec<String>> {
+    let line = run(repo, &["rev-list", "--parents", "-n", "1", commit]).await?;
+    let mut parts = line.split_whitespace();
+    let _commit = parts
+        .next()
+        .ok_or_else(|| anyhow!("empty rev-list output for {}", commit))?;
+    Ok(parts.map(str::to_string).collect())
 }
 
 pub async fn run_in(cwd: &Path, args: &[&str]) -> Result<String> {
@@ -494,7 +642,12 @@ pub async fn branch_exists(repo: &Path, name: &str) -> Result<bool> {
     let out = Command::new("git")
         .arg("-C")
         .arg(repo)
-        .args(["show-ref", "--verify", "--quiet", &format!("refs/heads/{name}")])
+        .args([
+            "show-ref",
+            "--verify",
+            "--quiet",
+            &format!("refs/heads/{name}"),
+        ])
         .output()
         .await?;
     Ok(out.status.success())
@@ -580,13 +733,15 @@ pub fn repo_display_parts(
 
 pub async fn detect_trunk_ref(repo: &Path) -> Option<String> {
     let _ = run(repo, &["remote", "set-head", "origin", "--auto"]).await;
-    let sym = run(repo, &["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"]).await.ok()?;
+    let sym = run(
+        repo,
+        &["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"],
+    )
+    .await
+    .ok()?;
     sym.strip_prefix("refs/remotes/origin/")
         .map(str::to_string)
-        .or_else(|| {
-            sym.strip_prefix("origin/")
-                .map(str::to_string)
-        })
+        .or_else(|| sym.strip_prefix("origin/").map(str::to_string))
 }
 
 pub async fn remote_set_url(repo: &Path, url: &str) -> Result<()> {
@@ -596,9 +751,7 @@ pub async fn remote_set_url(repo: &Path, url: &str) -> Result<()> {
 }
 
 pub async fn fetch_origin(repo: &Path) -> Result<()> {
-    run(repo, &["fetch", "--prune", "origin"])
-        .await
-        .map(|_| ())
+    run(repo, &["fetch", "--prune", "origin"]).await.map(|_| ())
 }
 
 pub async fn clone_bare(url: &str, path: &Path) -> Result<()> {

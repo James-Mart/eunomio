@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 
 export type NodePartitionGlance = {
   count: number;
-  status: "running" | "blocked";
+  status: "running" | "blocked" | "error";
 };
 
 export type NodeCardData = {
@@ -21,7 +21,8 @@ type NodeCardProps = NodeProps<Node<NodeCardData>>;
 function NodeCard({ data, selected }: NodeCardProps) {
   const { positionLabel, partitionGlance } = data;
   const count = partitionGlance?.count ?? 0;
-  const blocked = partitionGlance?.status === "blocked";
+  const status = partitionGlance?.status;
+  const needsAttention = status === "blocked" || status === "error";
 
   return (
     <>
@@ -29,9 +30,10 @@ function NodeCard({ data, selected }: NodeCardProps) {
       <Card
         className={cn(
           "w-[180px] shadow-md",
-          blocked && "ring-2 ring-danger/80",
+          status === "error" && "ring-2 ring-danger",
+          status === "blocked" && "ring-2 ring-danger/80",
           selected && "ring-offset-2 ring-offset-background",
-          selected && !blocked && "ring-2 ring-primary",
+          selected && !needsAttention && "ring-2 ring-primary",
         )}
       >
         <CardContent className="flex items-center justify-between gap-2 p-3">
@@ -56,21 +58,22 @@ function PartitionCountChip({
   status,
 }: {
   count: number;
-  status: "running" | "blocked";
+  status: "running" | "blocked" | "error";
 }) {
-  const blocked = status === "blocked";
   return (
     <span
       className={cn(
         "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
-        blocked
-          ? "text-danger ring-2 ring-danger/80"
-          : "animate-pulse bg-attention/15 text-attention",
+        status === "error" && "bg-danger/20 text-danger ring-2 ring-danger",
+        status === "blocked" && "text-danger ring-2 ring-danger/80",
+        status === "running" && "animate-pulse bg-attention/15 text-attention",
       )}
       aria-label={
-        blocked
-          ? `${count} partitions, one or more awaiting review`
-          : `${count} partitions in progress`
+        status === "error"
+          ? `${count} partitions, one or more failed`
+          : status === "blocked"
+            ? `${count} partitions, one or more awaiting review`
+            : `${count} partitions in progress`
       }
     >
       {count}

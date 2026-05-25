@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::{state::AppState, worktree, AppError};
 use eunomio_core::types::*;
-use crate::{AppError, state::AppState , worktree};
 use serde::Serialize;
 use std::path::PathBuf;
 
@@ -34,25 +34,32 @@ impl Coordinator {
         run_id: &str,
         raw: &str,
     ) -> Result<(), AppError> {
-        let row = state.datastore.partitions().get(org_id, partition_id).await?;
+        let row = state
+            .datastore
+            .partitions()
+            .get(org_id, partition_id)
+            .await?;
         let scope = PhaseScope::from_partition(org_id, &row);
-        let (_t, parent) = state.datastore.nodes().target_and_parent(&scope.org_id, &scope.session_id, &scope.target_node_id,
-        ).await?;
-        let parent =
-            parent.ok_or_else(|| AppError::BadRequest("no parent".into()))?;
+        let (_t, parent) = state
+            .datastore
+            .nodes()
+            .target_and_parent(&scope.org_id, &scope.session_id, &scope.target_node_id)
+            .await?;
+        let parent = parent.ok_or_else(|| AppError::BadRequest("no parent".into()))?;
         let plan_json = row
             .plan_json
             .as_deref()
             .ok_or_else(|| AppError::BadRequest("no plan".into()))?;
         let split = parse_split_plan(plan_json).map_err(|e| match e {
-            AppError::BadRequest(_) => AppError::BadRequest(
-                "constructor produced OK for an indivisible plan".into(),
-            ),
+            AppError::BadRequest(_) => {
+                AppError::BadRequest("constructor produced OK for an indivisible plan".into())
+            }
             other => other,
         })?;
         let slice_title = split.edges[0].title.clone();
 
-        let git_root = crate::repo_store::session_git_root(state, &scope.org_id, &scope.session_id).await?;
+        let git_root =
+            crate::repo_store::session_git_root(state, &scope.org_id, &scope.session_id).await?;
         let worktree_path = PathBuf::from(&row.worktree_path);
         let (tree_sha, commit_sha) = worktree::capture_slice_commit(
             &git_root,
@@ -66,14 +73,19 @@ impl Coordinator {
         let payload = ConstructOkPayload::new(tree_sha, commit_sha);
         let payload_json = serde_json::to_string(&payload)
             .map_err(|e| AppError::Internal(anyhow::anyhow!("construct-ok json: {e}")))?;
-        state.datastore.partitions().accept_constructor_ok(&scope.org_id,
-            &scope.partition_id,
-            payload.candidate_tree_sha.clone(),
-            payload.candidate_commit_sha.clone(),
-            run_id,
-            payload_json,
-            raw.to_string(),
-        ).await?;
+        state
+            .datastore
+            .partitions()
+            .accept_constructor_ok(
+                &scope.org_id,
+                &scope.partition_id,
+                payload.candidate_tree_sha.clone(),
+                payload.candidate_commit_sha.clone(),
+                run_id,
+                payload_json,
+                raw.to_string(),
+            )
+            .await?;
 
         self.handle_phase_terminal(
             state,
@@ -95,24 +107,35 @@ impl Coordinator {
         raw: &str,
         reason: &str,
     ) -> Result<(), AppError> {
-        let row = state.datastore.partitions().get(org_id, partition_id).await?;
+        let row = state
+            .datastore
+            .partitions()
+            .get(org_id, partition_id)
+            .await?;
         let scope = PhaseScope::from_partition(org_id, &row);
-        let (_t, parent) = state.datastore.nodes().target_and_parent(&scope.org_id, &scope.session_id, &scope.target_node_id,
-        ).await?;
-        let parent =
-            parent.ok_or_else(|| AppError::BadRequest("no parent".into()))?;
+        let (_t, parent) = state
+            .datastore
+            .nodes()
+            .target_and_parent(&scope.org_id, &scope.session_id, &scope.target_node_id)
+            .await?;
+        let parent = parent.ok_or_else(|| AppError::BadRequest("no parent".into()))?;
         let worktree_path = PathBuf::from(&row.worktree_path);
         worktree::reset_to_parent(&worktree_path, &parent.commit_sha, false).await?;
         let result_json = serde_json::json!({
             "outcome": "blocked",
             "reason": reason,
         });
-        state.datastore.partitions().accept_constructor_blocked(&scope.org_id,
-            &scope.partition_id,
-            run_id,
-            result_json.to_string(),
-            raw.to_string(),
-        ).await?;
+        state
+            .datastore
+            .partitions()
+            .accept_constructor_blocked(
+                &scope.org_id,
+                &scope.partition_id,
+                run_id,
+                result_json.to_string(),
+                raw.to_string(),
+            )
+            .await?;
         self.emit(
             &scope.session_id,
             SseEvent::Phase {

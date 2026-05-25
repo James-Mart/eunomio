@@ -36,10 +36,7 @@ async fn happy_path_create_rename_branch() {
     assert_eq!(edges.len(), 1, "expected one edge");
     assert_eq!(edges[0]["from"].as_str().unwrap(), base_node_id);
 
-    let final_node_id = nodes
-        .iter()
-        .find(|n| n["title"] == "final")
-        .unwrap()["nodeId"]
+    let final_node_id = nodes.iter().find(|n| n["title"] == "final").unwrap()["nodeId"]
         .as_str()
         .unwrap()
         .to_string();
@@ -65,16 +62,16 @@ async fn happy_path_create_rename_branch() {
         .await;
     assert_eq!(status, StatusCode::OK, "branch body: {body}");
 
-    let log = git(
-        &repo,
-        &["log", "--format=%H %T %s", "eunomio-test"],
-    );
+    let log = git(&repo, &["log", "--format=%H %T %s", "eunomio-test"]);
     let lines: Vec<&str> = log.lines().collect();
     assert_eq!(lines.len(), 2, "expected 2 commits, got: {log}");
 
     let tip_tree = lines[0].split(' ').nth(1).unwrap();
     let feature_tree = git(&repo, &["rev-parse", "feature^{tree}"]);
-    assert_eq!(tip_tree, feature_tree, "tip tree must equal feature^{{tree}}");
+    assert_eq!(
+        tip_tree, feature_tree,
+        "tip tree must equal feature^{{tree}}"
+    );
 
     let tip_subject = lines[0].splitn(3, ' ').nth(2).unwrap();
     assert_eq!(tip_subject, "final renamed");
@@ -88,7 +85,11 @@ async fn happy_path_create_rename_branch() {
             json!({ "branchName": "eunomio-test" }),
         )
         .await;
-    assert_eq!(status, StatusCode::CONFLICT, "expected conflict body: {body}");
+    assert_eq!(
+        status,
+        StatusCode::CONFLICT,
+        "expected conflict body: {body}"
+    );
 
     let (status, _body) = app
         .auth_json(

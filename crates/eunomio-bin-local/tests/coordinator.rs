@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use axum::http::StatusCode;
+use eunomio_core::{AppError, PhaseName, PhaseState, SseEvent};
 use eunomio_helper_protocol::{HelperEvent, RunHandle, RunRequest, SubagentRunner};
 use eunomio_server::cursor_bridge::FakeSubagentRunner;
-use eunomio_core::{AppError, PhaseName, PhaseState, SseEvent};
 use pretty_assertions::assert_eq;
 use serde_json::json;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, Mutex as TokioMutex};
@@ -69,20 +70,76 @@ fn construct_blocked_script(reason: &str) -> Vec<HelperEvent> {
     }]
 }
 
+enum EditingScript {
+    Events(Vec<HelperEvent>),
+    EditThenEvents(fn(&Path), Vec<HelperEvent>),
+}
+
+struct EditingRunner {
+    scripts: TokioMutex<Vec<EditingScript>>,
+}
+
+impl EditingRunner {
+    fn new(scripts: Vec<EditingScript>) -> Self {
+        Self {
+            scripts: TokioMutex::new(scripts),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl SubagentRunner for EditingRunner {
+    async fn run(
+        &self,
+        request: RunRequest,
+        tx: mpsc::Sender<HelperEvent>,
+    ) -> Result<RunHandle, AppError> {
+        let run_id = request.run_id.clone();
+        let script = self.scripts.lock().await.remove(0);
+        let events = match script {
+            EditingScript::Events(events) => events,
+            EditingScript::EditThenEvents(edit, events) => {
+                edit(&request.cwd);
+                events
+            }
+        };
+        let events: Vec<HelperEvent> = events
+            .into_iter()
+            .map(|e| e.with_run_id(run_id.clone()))
+            .collect();
+        tokio::spawn(async move {
+            for ev in events {
+                if tx.send(ev).await.is_err() {
+                    return;
+                }
+            }
+        });
+        Ok(RunHandle {
+            cancel: Box::new(|| {}),
+        })
+    }
+
+    async fn list_models(
+        &self,
+        _cursor_api_key: &str,
+    ) -> Result<Vec<eunomio_core::CursorModel>, AppError> {
+        Ok(vec![])
+    }
+}
+
 async fn create_session_and_pick_target(app: &TestApp) -> (String, String) {
-    let (status, body) = app.auth_json(
-        "POST",
-        "/api/sessions",
-        common::git::local_session_body(&app.repo_path(), "main", "feature"),
-    )
-    .await;
+    let (status, body) = app
+        .auth_json(
+            "POST",
+            "/api/sessions",
+            common::git::local_session_body(&app.repo_path(), "main", "feature"),
+        )
+        .await;
     assert_eq!(status, StatusCode::CREATED, "create body: {body}");
     let session_id = body["id"].as_str().unwrap().to_string();
-    let (_, graph) = app.auth_empty(
-        "GET",
-        &format!("/api/sessions/{session_id}/graph"),
-    )
-    .await;
+    let (_, graph) = app
+        .auth_empty("GET", &format!("/api/sessions/{session_id}/graph"))
+        .await;
     let target = graph["nodes"]
         .as_array()
         .unwrap()
@@ -95,9 +152,7 @@ async fn create_session_and_pick_target(app: &TestApp) -> (String, String) {
     (session_id, target)
 }
 
-async fn next_event(
-    rx: &mut tokio::sync::broadcast::Receiver<SseEvent>,
-) -> SseEvent {
+async fn next_event(rx: &mut tokio::sync::broadcast::Receiver<SseEvent>) -> SseEvent {
     timeout(Duration::from_secs(5), rx.recv())
         .await
         .expect("timed out waiting for SSE event")
@@ -131,11 +186,12 @@ async fn happy_path_drives_partition_to_accept() {
 
     let mut rx = app.state.coordinator.subscribe(&session_id);
 
-    let (status, body) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
+    let (status, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
     assert_eq!(status, StatusCode::CREATED, "begin body: {body}");
     let partition_id = body["id"].as_str().unwrap().to_string();
     let worktree_root = app
@@ -152,41 +208,43 @@ async fn happy_path_drives_partition_to_accept() {
     let started = next_event(&mut rx).await;
     assert!(matches!(started, SseEvent::Started { .. }));
 
-    let survey_review = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
+    let survey_review =
+        wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
     if let SseEvent::Phase { payload, .. } = &survey_review {
-        assert!(payload.is_some(), "survey awaiting_review must carry payload");
+        assert!(
+            payload.is_some(),
+            "survey awaiting_review must carry payload"
+        );
     }
 
-    let (_, runs) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{partition_id}/runs"),
-    )
-    .await;
+    let (_, runs) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
+        .await;
     let survey_run_id = finished_run_id(&runs, "survey");
 
-    let (status, _) = app.auth_json(
-        "POST",
-        &format!("/api/partitions/{partition_id}/survey/accept"),
-        json!({ "runId": survey_run_id }),
-    )
-    .await;
+    let (status, _) = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/survey/accept"),
+            json!({ "runId": survey_run_id }),
+        )
+        .await;
     assert_eq!(status, StatusCode::OK);
 
     let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
 
-    let (_, runs) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{partition_id}/runs"),
-    )
-    .await;
+    let (_, runs) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
+        .await;
     let plan_run_id = finished_run_id(&runs, "plan");
 
-    let (status, _) = app.auth_json(
-        "POST",
-        &format!("/api/partitions/{partition_id}/plan/accept"),
-        json!({ "runId": plan_run_id }),
-    )
-    .await;
+    let (status, _) = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/plan/accept"),
+            json!({ "runId": plan_run_id }),
+        )
+        .await;
     assert_eq!(status, StatusCode::OK);
 
     let construct_review =
@@ -200,22 +258,24 @@ async fn happy_path_drives_partition_to_accept() {
         panic!("expected phase event");
     }
 
-    let (_, partition_body) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{partition_id}"),
-    )
-    .await;
+    let (_, partition_body) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}"))
+        .await;
     assert_eq!(
-        partition_body["candidateSliceTreeSha"].as_str().unwrap().len(),
+        partition_body["candidateSliceTreeSha"]
+            .as_str()
+            .unwrap()
+            .len(),
         40,
         "candidate tree should be populated"
     );
 
-    let (status, body) = app.auth_empty(
-        "POST",
-        &format!("/api/partitions/{partition_id}/construct/accept"),
-    )
-    .await;
+    let (status, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/partitions/{partition_id}/construct/accept"),
+        )
+        .await;
     assert!(
         status == StatusCode::NO_CONTENT,
         "accept_construct expected 204, got {status}: {body}",
@@ -228,11 +288,9 @@ async fn happy_path_drives_partition_to_accept() {
         }
     }
 
-    let (_, graph) = app.auth_empty(
-        "GET",
-        &format!("/api/sessions/{session_id}/graph"),
-    )
-    .await;
+    let (_, graph) = app
+        .auth_empty("GET", &format!("/api/sessions/{session_id}/graph"))
+        .await;
     let nodes = graph["nodes"].as_array().unwrap();
     assert_eq!(nodes.len(), 3, "should have base + slice + final");
     let target_node = nodes
@@ -245,25 +303,210 @@ async fn happy_path_drives_partition_to_accept() {
         .find(|n| n["nodeId"].as_str().unwrap() != target_node_id && !n["parentNodeId"].is_null())
         .unwrap();
     assert_eq!(slice_node["title"].as_str().unwrap(), "Add b.txt");
+    assert_eq!(slice_node["hasShavingTrack"].as_bool(), Some(false));
+    let slice_node_id = slice_node["nodeId"].as_str().unwrap();
+    let (status, _) = app
+        .auth_empty(
+            "GET",
+            &format!("/api/sessions/{session_id}/nodes/{slice_node_id}/shaving-track"),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(
         target_node["parentNodeId"].as_str().unwrap(),
         slice_node["nodeId"].as_str().unwrap()
     );
 
-    assert!(!worktree_root.exists(), "worktree should be removed after accept");
+    assert!(
+        !worktree_root.exists(),
+        "worktree should be removed after accept"
+    );
 
-    let (status, body) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
-    assert_eq!(status, StatusCode::CREATED, "session lock should be released: {body}");
+    let (status, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "session lock should be released: {body}"
+    );
     let new_partition_id = body["id"].as_str().unwrap().to_string();
-    let (_, _) = app.auth_empty(
-        "POST",
-        &format!("/api/partitions/{new_partition_id}/abandon"),
-    )
-    .await;
+    let (_, _) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/partitions/{new_partition_id}/abandon"),
+        )
+        .await;
+}
+
+fn five_file_repo(path: &Path) {
+    common::git::git(path, &["init", "-q", "-b", "main"]);
+    common::git::git(path, &["config", "user.email", "test@example.com"]);
+    common::git::git(path, &["config", "user.name", "Test"]);
+    common::git::write(path, "delete-one.txt", "delete one\n");
+    common::git::write(path, "delete-two.txt", "delete two\n");
+    common::git::write(path, "keep.txt", "keep\n");
+    common::git::write(path, "rename-old.txt", "renamed content\n");
+    common::git::git(path, &["add", "."]);
+    common::git::git(path, &["commit", "-q", "-m", "base commit"]);
+    common::git::git(path, &["checkout", "-q", "-b", "feature"]);
+    apply_five_change_slice(path);
+    common::git::git(path, &["add", "."]);
+    common::git::git(path, &["commit", "-q", "-m", "five file slice"]);
+    common::git::git(path, &["checkout", "-q", "main"]);
+}
+
+fn apply_five_change_slice(path: &Path) {
+    std::fs::remove_file(path.join("delete-one.txt")).unwrap();
+    std::fs::remove_file(path.join("delete-two.txt")).unwrap();
+    std::fs::rename(path.join("rename-old.txt"), path.join("rename-new.txt")).unwrap();
+    common::git::write(path, "b.txt", "b\n");
+    common::git::write(path, "c.txt", "c\n");
+}
+
+#[tokio::test]
+async fn construct_accept_attaches_shaving_track_and_authorizes_step_diff() {
+    let runner = Arc::new(EditingRunner::new(vec![
+        EditingScript::Events(survey_script()),
+        EditingScript::Events(plan_script("synthetic")),
+        EditingScript::EditThenEvents(apply_five_change_slice, construct_ok_script()),
+    ]));
+    let mut app = TestApp::spawn_with_repo_and_runner(five_file_repo, runner).await;
+    app.cookie = Some(
+        common::http::login(
+            &app.router,
+            common::app::TEST_USERNAME,
+            common::app::TEST_CURSOR_KEY,
+        )
+        .await,
+    );
+    let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
+    let mut rx = app.state.coordinator.subscribe(&session_id);
+
+    let (status, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "begin body: {body}");
+    let partition_id = body["id"].as_str().unwrap().to_string();
+    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
+
+    let (_, runs) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
+        .await;
+    let survey_run_id = finished_run_id(&runs, "survey");
+    let (status, _) = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/survey/accept"),
+            json!({ "runId": survey_run_id }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
+    let (_, runs) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
+        .await;
+    let plan_run_id = finished_run_id(&runs, "plan");
+    let (status, _) = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/plan/accept"),
+            json!({ "runId": plan_run_id }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let _ = wait_for_phase(&mut rx, PhaseName::Construct, PhaseState::AwaitingReview).await;
+    let (status, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/partitions/{partition_id}/construct/accept"),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "accept body: {body}");
+
+    loop {
+        let ev = next_event(&mut rx).await;
+        if matches!(ev, SseEvent::Finished { .. }) {
+            break;
+        }
+    }
+
+    let (_, graph) = app
+        .auth_empty("GET", &format!("/api/sessions/{session_id}/graph"))
+        .await;
+    let slice_node = graph["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|n| n["nodeId"].as_str().unwrap() != target_node_id && !n["parentNodeId"].is_null())
+        .unwrap();
+    assert_eq!(slice_node["hasShavingTrack"].as_bool(), Some(true));
+    let slice_node_id = slice_node["nodeId"].as_str().unwrap();
+
+    let (status, track) = app
+        .auth_empty(
+            "GET",
+            &format!("/api/sessions/{session_id}/nodes/{slice_node_id}/shaving-track"),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "track body: {track}");
+    assert_eq!(track["steps"].as_array().unwrap().len(), 5);
+    assert_eq!(track["stepDiffs"].as_array().unwrap().len(), 5);
+
+    let parent_tree = track["parentTreeSha"].as_str().unwrap();
+    let head_tree = track["headTreeSha"].as_str().unwrap();
+    let first_step_tree = track["steps"][0]["treeSha"].as_str().unwrap();
+    assert_eq!(
+        track["stepDiffs"][0]["toTree"].as_str().unwrap(),
+        first_step_tree
+    );
+    let (status, body) = app
+        .auth_empty(
+            "GET",
+            &format!(
+                "/api/sessions/{session_id}/diff?fromTree={parent_tree}&toTree={first_step_tree}&beforeRef={parent_tree}&afterRef={head_tree}"
+            ),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "diff body: {body}");
+
+    let (status, _) = app
+        .auth_empty(
+            "GET",
+            &format!(
+                "/api/sessions/{session_id}/diff?fromTree={parent_tree}&toTree=0000000000000000000000000000000000000000&beforeRef={parent_tree}&afterRef={head_tree}"
+            ),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, _) = app
+        .auth_empty(
+            "GET",
+            &format!(
+                "/api/sessions/{session_id}/diff?fromTree={parent_tree}&toTree={first_step_tree}&beforeRef=0000000000000000000000000000000000000000&afterRef={head_tree}"
+            ),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, _) = app
+        .auth_empty(
+            "GET",
+            &format!(
+                "/api/sessions/{session_id}/diff?fromTree={parent_tree}&toTree={first_step_tree}&beforeRef={parent_tree}&afterRef=0000000000000000000000000000000000000000"
+            ),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
@@ -276,18 +519,20 @@ async fn parallel_begins_on_same_target_succeed() {
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
 
     let mut rx = app.state.coordinator.subscribe(&session_id);
-    let (status1, body1) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
+    let (status1, body1) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
     assert_eq!(status1, StatusCode::CREATED, "first begin body: {body1}");
 
-    let (status2, body2) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
+    let (status2, body2) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
     assert_eq!(status2, StatusCode::CREATED, "second begin body: {body2}");
     let pid1 = body1["id"].as_str().unwrap().to_string();
     let pid2 = body2["id"].as_str().unwrap().to_string();
@@ -330,38 +575,37 @@ async fn constructor_blocked_parks_at_review_and_can_re_run() {
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
 
     let mut rx = app.state.coordinator.subscribe(&session_id);
-    let (_, body) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
+    let (_, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
     let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
-    let (_, runs) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{partition_id}/runs"),
-    )
-    .await;
+    let (_, runs) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
+        .await;
     let survey_run_id = finished_run_id(&runs, "survey");
-    let _ = app.auth_json(
-        "POST",
-        &format!("/api/partitions/{partition_id}/survey/accept"),
-        json!({ "runId": survey_run_id }),
-    )
-    .await;
+    let _ = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/survey/accept"),
+            json!({ "runId": survey_run_id }),
+        )
+        .await;
     let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
-    let (_, runs) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{partition_id}/runs"),
-    )
-    .await;
+    let (_, runs) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
+        .await;
     let plan_run_id = finished_run_id(&runs, "plan");
-    let _ = app.auth_json(
-        "POST",
-        &format!("/api/partitions/{partition_id}/plan/accept"),
-        json!({ "runId": plan_run_id }),
-    )
-    .await;
+    let _ = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/plan/accept"),
+            json!({ "runId": plan_run_id }),
+        )
+        .await;
 
     let blocked = wait_for_phase(&mut rx, PhaseName::Construct, PhaseState::AwaitingReview).await;
     if let SseEvent::Phase { payload, .. } = &blocked {
@@ -370,12 +614,13 @@ async fn constructor_blocked_parks_at_review_and_can_re_run() {
         assert!(p["reason"].as_str().unwrap().contains("can't slice"));
     }
 
-    let (status, body) = app.auth_json(
-        "POST",
-        &format!("/api/partitions/{partition_id}/runs"),
-        json!({ "kind": "construct", "userFeedback": "try harder" }),
-    )
-    .await;
+    let (status, body) = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/runs"),
+            json!({ "kind": "construct", "userFeedback": "try harder" }),
+        )
+        .await;
     assert_eq!(status, StatusCode::CREATED, "re-run body: {body}");
 
     let ok = wait_for_phase(&mut rx, PhaseName::Construct, PhaseState::AwaitingReview).await;
@@ -396,11 +641,12 @@ async fn abandon_mid_run_cleans_up() {
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
 
     let mut rx = app.state.coordinator.subscribe(&session_id);
-    let (_, body) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
+    let (_, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
     let worktree_root = app
         .data
@@ -415,26 +661,26 @@ async fn abandon_mid_run_cleans_up() {
 
     let _ = next_event(&mut rx).await;
 
-    let (status, _) = app.auth_empty(
-        "POST",
-        &format!("/api/partitions/{partition_id}/abandon"),
-    )
-    .await;
+    let (status, _) = app
+        .auth_empty("POST", &format!("/api/partitions/{partition_id}/abandon"))
+        .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     assert!(!worktree_root.exists());
 
-    let (status, body) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
+    let (status, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
     assert_eq!(status, StatusCode::CREATED, "lock should be free: {body}");
     let new_partition_id = body["id"].as_str().unwrap().to_string();
-    let _ = app.auth_empty(
-        "POST",
-        &format!("/api/partitions/{new_partition_id}/abandon"),
-    )
-    .await;
+    let _ = app
+        .auth_empty(
+            "POST",
+            &format!("/api/partitions/{new_partition_id}/abandon"),
+        )
+        .await;
 }
 
 #[tokio::test]
@@ -447,29 +693,31 @@ async fn hitl_off_drives_full_chain_without_explicit_accepts() {
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
 
-    let (status, _) = app.auth_json(
-        "PATCH",
-        "/api/partition-settings",
-        json!({
-            "coordinator": {
-                "model": "composer-2",
-                "humanInTheLoop": {
-                    "afterSurvey": false,
-                    "afterPlanning": false,
-                    "afterConstruct": false
+    let (status, _) = app
+        .auth_json(
+            "PATCH",
+            "/api/partition-settings",
+            json!({
+                "coordinator": {
+                    "model": "composer-2",
+                    "humanInTheLoop": {
+                        "afterSurvey": false,
+                        "afterPlanning": false,
+                        "afterConstruct": false
+                    }
                 }
-            }
-        }),
-    )
-    .await;
+            }),
+        )
+        .await;
     assert_eq!(status, StatusCode::OK);
 
     let mut rx = app.state.coordinator.subscribe(&session_id);
-    let (status, body) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
+    let (status, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
     assert_eq!(status, StatusCode::CREATED, "begin body: {body}");
 
     let mut got_finished = false;
@@ -489,32 +737,31 @@ async fn hitl_off_drives_full_chain_without_explicit_accepts() {
     }
     assert!(got_finished, "did not see Finished event");
 
-    let (_, graph) = app.auth_empty(
-        "GET",
-        &format!("/api/sessions/{session_id}/graph"),
-    )
-    .await;
+    let (_, graph) = app
+        .auth_empty("GET", &format!("/api/sessions/{session_id}/graph"))
+        .await;
     assert_eq!(graph["nodes"].as_array().unwrap().len(), 3);
 }
 
 async fn set_surveyor_disabled_hitl_off(app: &TestApp) {
-    let (status, _) = app.auth_json(
-        "PATCH",
-        "/api/partition-settings",
-        json!({
-            "coordinator": {
-                "model": "composer-2",
-                "surveyorEnabled": false,
-                "humanInTheLoop": {
-                    "afterSurvey": false,
-                    "afterPlanning": false,
-                    "afterConstruct": false,
-                    "afterIndivisible": false,
+    let (status, _) = app
+        .auth_json(
+            "PATCH",
+            "/api/partition-settings",
+            json!({
+                "coordinator": {
+                    "model": "composer-2",
+                    "surveyorEnabled": false,
+                    "humanInTheLoop": {
+                        "afterSurvey": false,
+                        "afterPlanning": false,
+                        "afterConstruct": false,
+                        "afterIndivisible": false,
+                    }
                 }
-            }
-        }),
-    )
-    .await;
+            }),
+        )
+        .await;
     assert_eq!(status, StatusCode::OK);
 }
 
@@ -530,11 +777,12 @@ async fn surveyor_disabled_skips_to_plan() {
 
     let mut rx = app.state.coordinator.subscribe(&session_id);
 
-    let (status, body) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
+    let (status, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
     assert_eq!(status, StatusCode::CREATED, "begin body: {body}");
     let partition_id = body["id"].as_str().unwrap().to_string();
 
@@ -550,11 +798,9 @@ async fn surveyor_disabled_skips_to_plan() {
     assert_eq!(first_phase.0, PhaseName::Plan);
     assert_eq!(first_phase.1, PhaseState::Running);
 
-    let (_, runs) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{partition_id}/runs"),
-    )
-    .await;
+    let (_, runs) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
+        .await;
     assert!(
         !runs
             .as_array()
@@ -591,22 +837,23 @@ fn plan_indivisible_script(rationale: &str) -> Vec<HelperEvent> {
 }
 
 async fn set_hitl_all_off(app: &TestApp) {
-    let (status, _) = app.auth_json(
-        "PATCH",
-        "/api/partition-settings",
-        json!({
-            "coordinator": {
-                "model": "composer-2",
-                "humanInTheLoop": {
-                    "afterSurvey": false,
-                    "afterPlanning": false,
-                    "afterConstruct": false,
-                    "afterIndivisible": false,
+    let (status, _) = app
+        .auth_json(
+            "PATCH",
+            "/api/partition-settings",
+            json!({
+                "coordinator": {
+                    "model": "composer-2",
+                    "humanInTheLoop": {
+                        "afterSurvey": false,
+                        "afterPlanning": false,
+                        "afterConstruct": false,
+                        "afterIndivisible": false,
+                    }
                 }
-            }
-        }),
-    )
-    .await;
+            }),
+        )
+        .await;
     assert_eq!(status, StatusCode::OK);
 }
 
@@ -617,11 +864,9 @@ async fn poll_partition_phase(
     expected_state: &str,
 ) {
     for _ in 0..200 {
-        let (_, body) = app.auth_empty(
-            "GET",
-            &format!("/api/partitions/{partition_id}"),
-        )
-        .await;
+        let (_, body) = app
+            .auth_empty("GET", &format!("/api/partitions/{partition_id}"))
+            .await;
         if body["phase"].as_str() == Some(expected_phase)
             && body["phaseState"].as_str() == Some(expected_state)
         {
@@ -634,16 +879,11 @@ async fn poll_partition_phase(
     );
 }
 
-async fn drive_partition_to_construct_review(
-    app: &TestApp,
-    partition_id: &str,
-) {
+async fn drive_partition_to_construct_review(app: &TestApp, partition_id: &str) {
     poll_partition_phase(app, partition_id, "survey", "awaiting_review").await;
-    let (_, runs) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{partition_id}/runs"),
-    )
-    .await;
+    let (_, runs) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
+        .await;
     let survey_run_id = runs
         .as_array()
         .unwrap()
@@ -653,18 +893,17 @@ async fn drive_partition_to_construct_review(
         .as_str()
         .unwrap()
         .to_string();
-    let _ = app.auth_json(
-        "POST",
-        &format!("/api/partitions/{partition_id}/survey/accept"),
-        json!({ "runId": survey_run_id }),
-    )
-    .await;
+    let _ = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/survey/accept"),
+            json!({ "runId": survey_run_id }),
+        )
+        .await;
     poll_partition_phase(app, partition_id, "plan", "awaiting_review").await;
-    let (_, runs) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{partition_id}/runs"),
-    )
-    .await;
+    let (_, runs) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
+        .await;
     let plan_run_id = runs
         .as_array()
         .unwrap()
@@ -674,12 +913,13 @@ async fn drive_partition_to_construct_review(
         .as_str()
         .unwrap()
         .to_string();
-    let _ = app.auth_json(
-        "POST",
-        &format!("/api/partitions/{partition_id}/plan/accept"),
-        json!({ "runId": plan_run_id }),
-    )
-    .await;
+    let _ = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/plan/accept"),
+            json!({ "runId": plan_run_id }),
+        )
+        .await;
     poll_partition_phase(app, partition_id, "construct", "awaiting_review").await;
 }
 
@@ -694,28 +934,28 @@ async fn sibling_accept_auto_abandons_other() {
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
 
-    let (_, body_a) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
+    let (_, body_a) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
     let pid_a = body_a["id"].as_str().unwrap().to_string();
-    let (_, body_b) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
+    let (_, body_b) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
     let pid_b = body_b["id"].as_str().unwrap().to_string();
     assert_ne!(pid_a, pid_b);
 
     drive_partition_to_construct_review(&app, &pid_a).await;
     drive_partition_to_construct_review(&app, &pid_b).await;
 
-    let (status, body) = app.auth_empty(
-        "POST",
-        &format!("/api/partitions/{pid_a}/construct/accept"),
-    )
-    .await;
+    let (status, body) = app
+        .auth_empty("POST", &format!("/api/partitions/{pid_a}/construct/accept"))
+        .await;
     assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
 
     let mut saw_finished_a = false;
@@ -738,17 +978,13 @@ async fn sibling_accept_auto_abandons_other() {
     assert!(saw_finished_a, "no Finished for accepted partition");
     assert!(saw_cancelled_b, "no Cancelled for sibling partition");
 
-    let (status_a, _) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{pid_a}"),
-    )
-    .await;
+    let (status_a, _) = app
+        .auth_empty("GET", &format!("/api/partitions/{pid_a}"))
+        .await;
     assert_eq!(status_a, StatusCode::NOT_FOUND);
-    let (status_b, _) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{pid_b}"),
-    )
-    .await;
+    let (status_b, _) = app
+        .auth_empty("GET", &format!("/api/partitions/{pid_b}"))
+        .await;
     assert_eq!(status_b, StatusCode::NOT_FOUND);
 }
 
@@ -766,46 +1002,43 @@ async fn cancel_run_mid_construct_preserves_partition() {
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
 
-    let (_, body) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
+    let (_, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
 
     let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
-    let (_, runs) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{partition_id}/runs"),
-    )
-    .await;
+    let (_, runs) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
+        .await;
     let survey_run_id = finished_run_id(&runs, "survey");
-    let _ = app.auth_json(
-        "POST",
-        &format!("/api/partitions/{partition_id}/survey/accept"),
-        json!({ "runId": survey_run_id }),
-    )
-    .await;
+    let _ = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/survey/accept"),
+            json!({ "runId": survey_run_id }),
+        )
+        .await;
     let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
-    let (_, runs) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{partition_id}/runs"),
-    )
-    .await;
+    let (_, runs) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
+        .await;
     let plan_run_id = finished_run_id(&runs, "plan");
-    let _ = app.auth_json(
-        "POST",
-        &format!("/api/partitions/{partition_id}/plan/accept"),
-        json!({ "runId": plan_run_id }),
-    )
-    .await;
+    let _ = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/plan/accept"),
+            json!({ "runId": plan_run_id }),
+        )
+        .await;
 
     let _ = wait_for_phase(&mut rx, PhaseName::Construct, PhaseState::Running).await;
-    let (_, runs) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{partition_id}/runs"),
-    )
-    .await;
+    let (_, runs) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
+        .await;
     let running_run = runs
         .as_array()
         .unwrap()
@@ -814,24 +1047,21 @@ async fn cancel_run_mid_construct_preserves_partition() {
         .expect("expected running construct run");
     let construct_run_id = running_run["id"].as_str().unwrap().to_string();
 
-    let (status, _) = app.auth_empty(
-        "DELETE",
-        &format!("/api/partitions/{partition_id}/runs/{construct_run_id}"),
-    )
-    .await;
+    let (status, _) = app
+        .auth_empty(
+            "DELETE",
+            &format!("/api/partitions/{partition_id}/runs/{construct_run_id}"),
+        )
+        .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
 
-    let (_, partition_body) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{partition_id}"),
-    )
-    .await;
+    let (_, partition_body) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}"))
+        .await;
     assert_eq!(partition_body["phaseState"].as_str().unwrap(), "error");
-    let (_, runs) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{partition_id}/runs"),
-    )
-    .await;
+    let (_, runs) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
+        .await;
     let cancelled = runs
         .as_array()
         .unwrap()
@@ -840,11 +1070,9 @@ async fn cancel_run_mid_construct_preserves_partition() {
         .unwrap();
     assert_eq!(cancelled["status"].as_str().unwrap(), "cancelled");
 
-    let (status, _) = app.auth_empty(
-        "POST",
-        &format!("/api/partitions/{partition_id}/abandon"),
-    )
-    .await;
+    let (status, _) = app
+        .auth_empty("POST", &format!("/api/partitions/{partition_id}/abandon"))
+        .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
 }
 
@@ -855,18 +1083,17 @@ async fn cancel_run_on_non_running_returns_409() {
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
 
-    let (_, body) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
+    let (_, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
     let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
-    let (_, runs) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{partition_id}/runs"),
-    )
-    .await;
+    let (_, runs) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
+        .await;
     let finished_run = runs
         .as_array()
         .unwrap()
@@ -874,11 +1101,12 @@ async fn cancel_run_on_non_running_returns_409() {
         .find(|r| r["status"] == "finished")
         .unwrap();
     let run_id = finished_run["id"].as_str().unwrap().to_string();
-    let (status, body) = app.auth_empty(
-        "DELETE",
-        &format!("/api/partitions/{partition_id}/runs/{run_id}"),
-    )
-    .await;
+    let (status, body) = app
+        .auth_empty(
+            "DELETE",
+            &format!("/api/partitions/{partition_id}/runs/{run_id}"),
+        )
+        .await;
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"].as_str().unwrap(), "run_not_running");
 }
@@ -896,35 +1124,36 @@ async fn second_start_run_while_in_flight_returns_409() {
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
 
-    let (_, body) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
+    let (_, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
     let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
 
-    let _ = app.auth_json(
-        "POST",
-        &format!("/api/partitions/{partition_id}/runs"),
-        json!({ "kind": "survey" }),
-    )
-    .await;
+    let _ = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/runs"),
+            json!({ "kind": "survey" }),
+        )
+        .await;
 
-    let (status, body) = app.auth_json(
-        "POST",
-        &format!("/api/partitions/{partition_id}/runs"),
-        json!({ "kind": "survey" }),
-    )
-    .await;
+    let (status, body) = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/runs"),
+            json!({ "kind": "survey" }),
+        )
+        .await;
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"].as_str().unwrap(), "partition_run_in_flight");
 
-    let _ = app.auth_empty(
-        "POST",
-        &format!("/api/partitions/{partition_id}/abandon"),
-    )
-    .await;
+    let _ = app
+        .auth_empty("POST", &format!("/api/partitions/{partition_id}/abandon"))
+        .await;
 }
 
 #[tokio::test]
@@ -937,33 +1166,34 @@ async fn invalid_run_kind_returns_409() {
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
 
-    let (_, body) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
+    let (_, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
     let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
-    let (_, runs) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{partition_id}/runs"),
-    )
-    .await;
+    let (_, runs) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
+        .await;
     let survey_run_id = finished_run_id(&runs, "survey");
-    let _ = app.auth_json(
-        "POST",
-        &format!("/api/partitions/{partition_id}/survey/accept"),
-        json!({ "runId": survey_run_id }),
-    )
-    .await;
+    let _ = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/survey/accept"),
+            json!({ "runId": survey_run_id }),
+        )
+        .await;
     let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
 
-    let (status, body) = app.auth_json(
-        "POST",
-        &format!("/api/partitions/{partition_id}/runs"),
-        json!({ "kind": "construct" }),
-    )
-    .await;
+    let (status, body) = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/runs"),
+            json!({ "kind": "construct" }),
+        )
+        .await;
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(body["code"].as_str().unwrap(), "invalid_run_kind");
 }
@@ -980,58 +1210,59 @@ async fn back_edge_construct_to_plan_on_blocked_run() {
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
 
-    let (_, body) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
+    let (_, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
     let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
-    let (_, runs) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{partition_id}/runs"),
-    )
-    .await;
+    let (_, runs) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
+        .await;
     let survey_run_id = finished_run_id(&runs, "survey");
-    let _ = app.auth_json(
-        "POST",
-        &format!("/api/partitions/{partition_id}/survey/accept"),
-        json!({ "runId": survey_run_id }),
-    )
-    .await;
+    let _ = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/survey/accept"),
+            json!({ "runId": survey_run_id }),
+        )
+        .await;
     let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
-    let (_, runs) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{partition_id}/runs"),
-    )
-    .await;
+    let (_, runs) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
+        .await;
     let plan_run_id = finished_run_id(&runs, "plan");
-    let _ = app.auth_json(
-        "POST",
-        &format!("/api/partitions/{partition_id}/plan/accept"),
-        json!({ "runId": plan_run_id }),
-    )
-    .await;
+    let _ = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/plan/accept"),
+            json!({ "runId": plan_run_id }),
+        )
+        .await;
 
     let blocked = wait_for_phase(&mut rx, PhaseName::Construct, PhaseState::AwaitingReview).await;
     if let SseEvent::Phase { payload, .. } = &blocked {
-        assert_eq!(payload.as_ref().unwrap()["outcome"].as_str().unwrap(), "blocked");
+        assert_eq!(
+            payload.as_ref().unwrap()["outcome"].as_str().unwrap(),
+            "blocked"
+        );
     }
 
-    let (status, body) = app.auth_json(
-        "POST",
-        &format!("/api/partitions/{partition_id}/runs"),
-        json!({ "kind": "plan" }),
-    )
-    .await;
+    let (status, body) = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/runs"),
+            json!({ "kind": "plan" }),
+        )
+        .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
 
     let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
-    let (_, partition_body) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{partition_id}"),
-    )
-    .await;
+    let (_, partition_body) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}"))
+        .await;
     assert_eq!(partition_body["phase"].as_str().unwrap(), "plan");
     assert!(partition_body["candidateSliceTreeSha"].is_null());
 }
@@ -1048,28 +1279,28 @@ async fn back_edge_construct_to_plan_on_ok_candidate() {
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
 
-    let (_, body) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
+    let (_, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
     drive_partition_to_construct_review(&app, &partition_id).await;
 
-    let (status, body) = app.auth_json(
-        "POST",
-        &format!("/api/partitions/{partition_id}/runs"),
-        json!({ "kind": "plan" }),
-    )
-    .await;
+    let (status, body) = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/runs"),
+            json!({ "kind": "plan" }),
+        )
+        .await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
 
     let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
-    let (_, partition_body) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{partition_id}"),
-    )
-    .await;
+    let (_, partition_body) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}"))
+        .await;
     assert!(partition_body["candidateSliceTreeSha"].is_null());
     assert!(partition_body["strategy"].is_null());
 }
@@ -1084,25 +1315,25 @@ async fn indivisible_with_hitl_on_parks_at_review() {
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
 
-    let (_, body) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
+    let (_, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
     let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
-    let (_, runs) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{partition_id}/runs"),
-    )
-    .await;
+    let (_, runs) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
+        .await;
     let survey_run_id = finished_run_id(&runs, "survey");
-    let _ = app.auth_json(
-        "POST",
-        &format!("/api/partitions/{partition_id}/survey/accept"),
-        json!({ "runId": survey_run_id }),
-    )
-    .await;
+    let _ = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/survey/accept"),
+            json!({ "runId": survey_run_id }),
+        )
+        .await;
 
     let plan_review = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
     if let SseEvent::Phase { payload, .. } = &plan_review {
@@ -1111,11 +1342,9 @@ async fn indivisible_with_hitl_on_parks_at_review() {
         assert!(p["rationale"].as_str().unwrap().contains("tight"));
     }
 
-    let _ = app.auth_empty(
-        "POST",
-        &format!("/api/partitions/{partition_id}/abandon"),
-    )
-    .await;
+    let _ = app
+        .auth_empty("POST", &format!("/api/partitions/{partition_id}/abandon"))
+        .await;
 }
 
 #[tokio::test]
@@ -1129,17 +1358,21 @@ async fn indivisible_with_hitl_off_auto_abandons() {
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
 
-    let (_, body) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
+    let (_, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
 
     let mut got_cancelled = false;
     for _ in 0..40 {
         let ev = next_event(&mut rx).await;
-        if let SseEvent::Cancelled { partition_id: p, .. } = &ev {
+        if let SseEvent::Cancelled {
+            partition_id: p, ..
+        } = &ev
+        {
             if *p == partition_id {
                 got_cancelled = true;
                 break;
@@ -1157,11 +1390,9 @@ async fn indivisible_with_hitl_off_auto_abandons() {
     assert!(got_cancelled, "expected Cancelled event");
 
     for _ in 0..20 {
-        let (status, _) = app.auth_empty(
-            "GET",
-            &format!("/api/partitions/{partition_id}"),
-        )
-        .await;
+        let (status, _) = app
+            .auth_empty("GET", &format!("/api/partitions/{partition_id}"))
+            .await;
         if status == StatusCode::NOT_FOUND {
             return;
         }
@@ -1181,34 +1412,35 @@ async fn rerun_planner_from_indivisible_succeeds() {
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
 
-    let (_, body) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
+    let (_, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
     let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
-    let (_, runs) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{partition_id}/runs"),
-    )
-    .await;
+    let (_, runs) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
+        .await;
     let survey_run_id = finished_run_id(&runs, "survey");
-    let _ = app.auth_json(
-        "POST",
-        &format!("/api/partitions/{partition_id}/survey/accept"),
-        json!({ "runId": survey_run_id }),
-    )
-    .await;
+    let _ = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/survey/accept"),
+            json!({ "runId": survey_run_id }),
+        )
+        .await;
 
     let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
 
-    let (status, _) = app.auth_json(
-        "POST",
-        &format!("/api/partitions/{partition_id}/runs"),
-        json!({ "kind": "plan", "userFeedback": "split anyway" }),
-    )
-    .await;
+    let (status, _) = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/runs"),
+            json!({ "kind": "plan", "userFeedback": "split anyway" }),
+        )
+        .await;
     assert_eq!(status, StatusCode::CREATED);
 
     let plan_review = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
@@ -1247,7 +1479,8 @@ impl SubagentRunner for KindAwareRunner {
         request: RunRequest,
         tx: mpsc::Sender<HelperEvent>,
     ) -> Result<RunHandle, AppError> {
-        let bucket: &TokioMutex<Vec<Vec<HelperEvent>>> = if request.prompt.contains("**Surveyor**") {
+        let bucket: &TokioMutex<Vec<Vec<HelperEvent>>> = if request.prompt.contains("**Surveyor**")
+        {
             &self.surveys
         } else if request.prompt.contains("**Planner**") {
             &self.plans
@@ -1310,7 +1543,10 @@ impl SubagentRunner for KindAwareRunner {
         Ok(RunHandle { cancel })
     }
 
-    async fn list_models(&self, _cursor_api_key: &str) -> Result<Vec<eunomio_core::types::CursorModel>, AppError> {
+    async fn list_models(
+        &self,
+        _cursor_api_key: &str,
+    ) -> Result<Vec<eunomio_core::types::CursorModel>, AppError> {
         Ok(vec![])
     }
 }
@@ -1331,33 +1567,35 @@ async fn fanout_count_2_spawns_children_no_grandchildren() {
         ],
     ));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
-    let (status, _) = app.auth_json(
-        "PATCH",
-        "/api/partition-settings",
-        json!({
-            "coordinator": {
-                "model": "composer-2",
-                "humanInTheLoop": {
-                    "afterSurvey": false,
-                    "afterPlanning": false,
-                    "afterConstruct": false,
-                    "afterIndivisible": false,
-                },
-                "maxIterations": { "kind": "count", "count": 2 }
-            }
-        }),
-    )
-    .await;
+    let (status, _) = app
+        .auth_json(
+            "PATCH",
+            "/api/partition-settings",
+            json!({
+                "coordinator": {
+                    "model": "composer-2",
+                    "humanInTheLoop": {
+                        "afterSurvey": false,
+                        "afterPlanning": false,
+                        "afterConstruct": false,
+                        "afterIndivisible": false,
+                    },
+                    "maxIterations": { "kind": "count", "count": 2 }
+                }
+            }),
+        )
+        .await;
     assert_eq!(status, StatusCode::OK);
 
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
 
-    let (_, body) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
+    let (_, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
     let root_pid = body["id"].as_str().unwrap().to_string();
 
     let mut started_pids: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -1379,8 +1617,17 @@ async fn fanout_count_2_spawns_children_no_grandchildren() {
             break;
         }
     }
-    assert_eq!(finished_pids.len(), 3, "expected exactly root + 2 children to Finish");
-    assert_eq!(started_pids.len(), 3, "expected only root + 2 Started, got {:?}", started_pids);
+    assert_eq!(
+        finished_pids.len(),
+        3,
+        "expected exactly root + 2 children to Finish"
+    );
+    assert_eq!(
+        started_pids.len(),
+        3,
+        "expected only root + 2 Started, got {:?}",
+        started_pids
+    );
 }
 
 #[tokio::test]
@@ -1395,33 +1642,35 @@ async fn fanout_auto_cascading_indivisible() {
         vec![construct_ok_script()],
     ));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
-    let (status, _) = app.auth_json(
-        "PATCH",
-        "/api/partition-settings",
-        json!({
-            "coordinator": {
-                "model": "composer-2",
-                "humanInTheLoop": {
-                    "afterSurvey": false,
-                    "afterPlanning": false,
-                    "afterConstruct": false,
-                    "afterIndivisible": false,
-                },
-                "maxIterations": { "kind": "auto" }
-            }
-        }),
-    )
-    .await;
+    let (status, _) = app
+        .auth_json(
+            "PATCH",
+            "/api/partition-settings",
+            json!({
+                "coordinator": {
+                    "model": "composer-2",
+                    "humanInTheLoop": {
+                        "afterSurvey": false,
+                        "afterPlanning": false,
+                        "afterConstruct": false,
+                        "afterIndivisible": false,
+                    },
+                    "maxIterations": { "kind": "auto" }
+                }
+            }),
+        )
+        .await;
     assert_eq!(status, StatusCode::OK);
 
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
 
-    let (_, body) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
+    let (_, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
     let root_pid = body["id"].as_str().unwrap().to_string();
 
     let mut started: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -1448,17 +1697,22 @@ async fn fanout_auto_cascading_indivisible() {
         }
     }
     assert_eq!(finished.len(), 1, "expected root to Finish");
-    assert_eq!(cancelled.len(), 2, "expected 2 children to be auto-Abandoned");
+    assert_eq!(
+        cancelled.len(),
+        2,
+        "expected 2 children to be auto-Abandoned"
+    );
     assert_eq!(started.len(), 3, "expected root + 2 children Started");
 }
 
 async fn enable_transcripts(app: &TestApp) {
-    let (status, _) = app.auth_json(
-        "PATCH",
-        "/api/partition-settings",
-        json!({ "general": { "transcriptsEnabled": true } }),
-    )
-    .await;
+    let (status, _) = app
+        .auth_json(
+            "PATCH",
+            "/api/partition-settings",
+            json!({ "general": { "transcriptsEnabled": true } }),
+        )
+        .await;
     assert_eq!(status, StatusCode::OK);
 }
 
@@ -1497,26 +1751,26 @@ async fn transcripts_enabled_persists_prompt_and_transcript_text() {
 
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
-    let (_, body) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
+    let (_, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
     let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
 
-    let (_, runs) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{partition_id}/runs"),
-    )
-    .await;
+    let (_, runs) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
+        .await;
     let run_id = finished_run_id(&runs, "survey");
 
-    let (status, transcript) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{partition_id}/runs/{run_id}/transcript"),
-    )
-    .await;
+    let (status, transcript) = app
+        .auth_empty(
+            "GET",
+            &format!("/api/partitions/{partition_id}/runs/{run_id}/transcript"),
+        )
+        .await;
     assert_eq!(status, StatusCode::OK, "transcript body: {transcript}");
     let prompt = transcript["prompt"]
         .as_str()
@@ -1528,11 +1782,9 @@ async fn transcripts_enabled_persists_prompt_and_transcript_text() {
     assert!(text.contains("thinking 1"), "text: {text}");
     assert!(text.contains("[tool: ls]"), "text: {text}");
 
-    let _ = app.auth_empty(
-        "POST",
-        &format!("/api/partitions/{partition_id}/abandon"),
-    )
-    .await;
+    let _ = app
+        .auth_empty("POST", &format!("/api/partitions/{partition_id}/abandon"))
+        .await;
 }
 
 #[tokio::test]
@@ -1544,11 +1796,12 @@ async fn transcripts_disabled_still_persists_transcript_text_without_sse() {
 
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
-    let (_, body) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
+    let (_, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
 
     let mut saw_delta = false;
@@ -1573,18 +1826,17 @@ async fn transcripts_disabled_still_persists_transcript_text_without_sse() {
         "transcriptDelta must not be emitted when transcripts are disabled"
     );
 
-    let (_, runs) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{partition_id}/runs"),
-    )
-    .await;
+    let (_, runs) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
+        .await;
     let run_id = finished_run_id(&runs, "survey");
 
-    let (status, transcript) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{partition_id}/runs/{run_id}/transcript"),
-    )
-    .await;
+    let (status, transcript) = app
+        .auth_empty(
+            "GET",
+            &format!("/api/partitions/{partition_id}/runs/{run_id}/transcript"),
+        )
+        .await;
     assert_eq!(status, StatusCode::OK);
     let prompt = transcript["prompt"].as_str().unwrap();
     assert!(!prompt.is_empty());
@@ -1593,11 +1845,9 @@ async fn transcripts_disabled_still_persists_transcript_text_without_sse() {
         .expect("transcriptText should be captured even when toggle is off");
     assert!(text.contains("thinking"), "text: {text}");
 
-    let _ = app.auth_empty(
-        "POST",
-        &format!("/api/partitions/{partition_id}/abandon"),
-    )
-    .await;
+    let _ = app
+        .auth_empty("POST", &format!("/api/partitions/{partition_id}/abandon"))
+        .await;
 }
 
 #[tokio::test]
@@ -1622,11 +1872,12 @@ async fn transcripts_cleaned_up_on_accept_construct() {
 
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
-    let (_, body) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
+    let (_, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
     drive_partition_to_construct_review(&app, &partition_id).await;
 
@@ -1635,11 +1886,12 @@ async fn transcripts_cleaned_up_on_accept_construct() {
         "expected captured transcript before accept"
     );
 
-    let (status, body) = app.auth_empty(
-        "POST",
-        &format!("/api/partitions/{partition_id}/construct/accept"),
-    )
-    .await;
+    let (status, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/partitions/{partition_id}/construct/accept"),
+        )
+        .await;
     assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
 
     loop {
@@ -1666,11 +1918,12 @@ async fn transcripts_cleaned_up_on_abandon() {
 
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
-    let (_, body) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
+    let (_, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
     let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
 
@@ -1679,11 +1932,9 @@ async fn transcripts_cleaned_up_on_abandon() {
         "expected captured transcript before abandon"
     );
 
-    let (status, _) = app.auth_empty(
-        "POST",
-        &format!("/api/partitions/{partition_id}/abandon"),
-    )
-    .await;
+    let (status, _) = app
+        .auth_empty("POST", &format!("/api/partitions/{partition_id}/abandon"))
+        .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
 
     assert_eq!(
@@ -1693,7 +1944,11 @@ async fn transcripts_cleaned_up_on_abandon() {
     );
 }
 
-fn partition_worktree_path(app: &TestApp, session_id: &str, partition_id: &str) -> std::path::PathBuf {
+fn partition_worktree_path(
+    app: &TestApp,
+    session_id: &str,
+    partition_id: &str,
+) -> std::path::PathBuf {
     app.data
         .path()
         .canonicalize()
@@ -1716,41 +1971,40 @@ async fn construct_spawn_resets_dirty_worktree() {
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
 
-    let (_, body) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
+    let (_, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
     let worktree_root = partition_worktree_path(&app, &session_id, &partition_id);
 
     let _ = next_event(&mut rx).await;
     let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
-    let (_, runs) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{partition_id}/runs"),
-    )
-    .await;
+    let (_, runs) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
+        .await;
     let survey_run_id = finished_run_id(&runs, "survey");
-    let _ = app.auth_json(
-        "POST",
-        &format!("/api/partitions/{partition_id}/survey/accept"),
-        json!({ "runId": survey_run_id }),
-    )
-    .await;
+    let _ = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/survey/accept"),
+            json!({ "runId": survey_run_id }),
+        )
+        .await;
     let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
-    let (_, runs) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{partition_id}/runs"),
-    )
-    .await;
+    let (_, runs) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
+        .await;
     let plan_run_id = finished_run_id(&runs, "plan");
-    let _ = app.auth_json(
-        "POST",
-        &format!("/api/partitions/{partition_id}/plan/accept"),
-        json!({ "runId": plan_run_id }),
-    )
-    .await;
+    let _ = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/plan/accept"),
+            json!({ "runId": plan_run_id }),
+        )
+        .await;
     let _ = wait_for_phase(&mut rx, PhaseName::Construct, PhaseState::AwaitingReview).await;
 
     common::git::write(&worktree_root, "dirty-junk.txt", "junk\n");
@@ -1761,12 +2015,13 @@ async fn construct_spawn_resets_dirty_worktree() {
         "worktree should be dirty before re-run: {dirty_status:?}"
     );
 
-    let (status, _) = app.auth_json(
-        "POST",
-        &format!("/api/partitions/{partition_id}/runs"),
-        json!({ "kind": "construct", "userFeedback": "revise slice" }),
-    )
-    .await;
+    let (status, _) = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/runs"),
+            json!({ "kind": "construct", "userFeedback": "revise slice" }),
+        )
+        .await;
     assert_eq!(status, StatusCode::CREATED);
 
     let _ = wait_for_phase(&mut rx, PhaseName::Construct, PhaseState::Running).await;
@@ -1799,11 +2054,9 @@ async fn get_subagent_prompts_returns_embedded_bodies() {
 async fn node_session_lookup_returns_session_id() {
     let app = TestApp::spawn_authenticated().await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
-    let (status, body) = app.auth_empty(
-        "GET",
-        &format!("/api/nodes/{target_node_id}/session"),
-    )
-    .await;
+    let (status, body) = app
+        .auth_empty("GET", &format!("/api/nodes/{target_node_id}/session"))
+        .await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
     assert_eq!(body["sessionId"].as_str().unwrap(), session_id);
 }
@@ -1811,11 +2064,12 @@ async fn node_session_lookup_returns_session_id() {
 #[tokio::test]
 async fn node_session_lookup_unknown_returns_404() {
     let app = TestApp::spawn_authenticated().await;
-    let (status, _) = app.auth_empty(
-        "GET",
-        "/api/nodes/00000000-0000-0000-0000-000000000000/session",
-    )
-    .await;
+    let (status, _) = app
+        .auth_empty(
+            "GET",
+            "/api/nodes/00000000-0000-0000-0000-000000000000/session",
+        )
+        .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
@@ -1825,20 +2079,22 @@ async fn invalid_prompt_override_returns_400() {
     let app = TestApp::spawn_authenticated_with_runner(runner).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
-    let (_, body) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
+    let (_, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
     let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
 
-    let (status, _) = app.auth_json(
-        "POST",
-        &format!("/api/partitions/{partition_id}/runs"),
-        json!({ "kind": "survey", "promptOverride": "hello {{NOPE}}" }),
-    )
-    .await;
+    let (status, _) = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/runs"),
+            json!({ "kind": "survey", "promptOverride": "hello {{NOPE}}" }),
+        )
+        .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
@@ -1852,29 +2108,32 @@ async fn prompt_override_appears_in_transcript_prompt() {
     let app = TestApp::spawn_authenticated_with_runner(runner).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
-    let (_, body) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
+    let (_, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
     let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
 
-    let (status, run) = app.auth_json(
-        "POST",
-        &format!("/api/partitions/{partition_id}/runs"),
-        json!({ "kind": "survey", "promptOverride": custom }),
-    )
-    .await;
+    let (status, run) = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/runs"),
+            json!({ "kind": "survey", "promptOverride": custom }),
+        )
+        .await;
     assert_eq!(status, StatusCode::CREATED, "run body: {run}");
     let run_id = run["id"].as_str().unwrap().to_string();
     let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
 
-    let (status, transcript) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{partition_id}/runs/{run_id}/transcript"),
-    )
-    .await;
+    let (status, transcript) = app
+        .auth_empty(
+            "GET",
+            &format!("/api/partitions/{partition_id}/runs/{run_id}/transcript"),
+        )
+        .await;
     assert_eq!(status, StatusCode::OK);
     let prompt = transcript["prompt"].as_str().unwrap();
     assert!(
@@ -1895,11 +2154,12 @@ async fn subagent_run_cli_smoke() {
     let app = TestApp::spawn_authenticated_with_runner(runner).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
-    let (_, body) = app.auth_empty(
-        "POST",
-        &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-    )
-    .await;
+    let (_, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
     let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
 
@@ -1923,11 +2183,9 @@ async fn subagent_run_cli_smoke() {
 
     let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
 
-    let (_, runs) = app.auth_empty(
-        "GET",
-        &format!("/api/partitions/{partition_id}/runs"),
-    )
-    .await;
+    let (_, runs) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
+        .await;
     let latest = runs
         .as_array()
         .unwrap()

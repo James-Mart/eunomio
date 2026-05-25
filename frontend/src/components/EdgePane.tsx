@@ -9,6 +9,7 @@ import { ChevronDownIcon, ChevronRightIcon } from "@primer/octicons-react";
 import {
   ApiError,
   api,
+  type Diff,
   type FileBlob,
   type SynthesizedRanges,
 } from "@/lib/api";
@@ -50,6 +51,7 @@ type Props = ViewedProps &
         toTree: string;
         beforeRef?: string;
         afterRef?: string;
+        loadedEdge?: Diff;
       }
   );
 
@@ -71,7 +73,8 @@ export default function EdgePane(props: Props) {
   const toTree = "toTree" in props ? props.toTree : undefined;
   const beforeRef = "beforeRef" in props ? props.beforeRef : undefined;
   const afterRef = "afterRef" in props ? props.afterRef : undefined;
-  const [edge, setEdge] = useState<LoadedEdge | null>(null);
+  const loadedEdge = "loadedEdge" in props ? props.loadedEdge : undefined;
+  const [fetchedEdge, setFetchedEdge] = useState<LoadedEdge | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [diffStyle, setDiffStyle] = useState<DiffStyle>("unified");
   const [overflow, setOverflow] = useState<Overflow>("scroll");
@@ -111,8 +114,13 @@ export default function EdgePane(props: Props) {
   }, [pendingScrollTo, collapsedFiles]);
 
   useEffect(() => {
+    if (loadedEdge) {
+      setFetchedEdge(null);
+      setError(null);
+      return;
+    }
     let cancelled = false;
-    setEdge(null);
+    setFetchedEdge(null);
     setError(null);
     const fetch = targetNodeId !== undefined
       ? api
@@ -131,7 +139,7 @@ export default function EdgePane(props: Props) {
           }));
     fetch
       .then((e) => {
-        if (!cancelled) setEdge(e);
+        if (!cancelled) setFetchedEdge(e);
       })
       .catch((e) => {
         if (cancelled) return;
@@ -144,7 +152,9 @@ export default function EdgePane(props: Props) {
     return () => {
       cancelled = true;
     };
-  }, [sessionId, targetNodeId, fromTree, toTree, beforeRef, afterRef]);
+  }, [sessionId, targetNodeId, fromTree, toTree, beforeRef, afterRef, loadedEdge]);
+
+  const edge = loadedEdge ?? fetchedEdge;
 
   // Parse each file individually with `processFile`, handing it the full
   // `oldFile`/`newFile` blob contents so the library's "N unmodified lines"

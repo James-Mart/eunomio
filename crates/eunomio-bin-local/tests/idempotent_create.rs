@@ -74,6 +74,12 @@ async fn repeated_create_returns_existing_session() {
     let arr = body.as_array().unwrap();
     assert_eq!(arr.len(), 2);
     let ids: Vec<&str> = arr.iter().map(|v| v["id"].as_str().unwrap()).collect();
-    assert!(ids.contains(&first_id.as_str()), "missing first session: {ids:?}");
-    assert!(ids.contains(&second_id.as_str()), "missing second session: {ids:?}");
+    assert!(
+        ids.contains(&first_id.as_str()),
+        "missing first session: {ids:?}"
+    );
+    assert!(
+        ids.contains(&second_id.as_str()),
+        "missing second session: {ids:?}"
+    );
 }

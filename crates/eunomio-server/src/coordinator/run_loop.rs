@@ -7,12 +7,10 @@ use eunomio_core::types::*;
 // user_id.
 use crate::{
     cursor_bridge::{HelperEvent, RunRequest},
-    AppError,
     partition_settings::{load_for_partition, resolve_model},
     state::AppState,
     subagents::{self, constructor::ConstructOutput},
-     
-    worktree,
+    worktree, AppError,
 };
 use anyhow::anyhow;
 use serde::Serialize;
@@ -46,8 +44,15 @@ impl Coordinator {
                 message: "this partition already has a run in flight".into(),
             });
         }
-        let row = state.datastore.partitions().get(org_id, partition_id).await?;
-        if !matches!(row.phase_state, PhaseState::AwaitingReview | PhaseState::Error) {
+        let row = state
+            .datastore
+            .partitions()
+            .get(org_id, partition_id)
+            .await?;
+        if !matches!(
+            row.phase_state,
+            PhaseState::AwaitingReview | PhaseState::Error
+        ) {
             return Err(AppError::Conflict {
                 code: "not_at_gate".into(),
                 message: "partition is not currently at a review gate or in error state".into(),
@@ -86,13 +91,19 @@ impl Coordinator {
         partition_id: &str,
         row: &PartitionRow,
     ) -> Result<(), AppError> {
-        let (_, parent_node) = state.datastore.nodes().target_and_parent(org_id, &row.session_id, &row.target_node_id,
-        ).await?;
-        let parent =
-            parent_node.ok_or_else(|| AppError::BadRequest("no parent node".into()))?;
+        let (_, parent_node) = state
+            .datastore
+            .nodes()
+            .target_and_parent(org_id, &row.session_id, &row.target_node_id)
+            .await?;
+        let parent = parent_node.ok_or_else(|| AppError::BadRequest("no parent node".into()))?;
         let worktree_path = PathBuf::from(&row.worktree_path);
         worktree::reset_to_parent(&worktree_path, &parent.commit_sha, false).await?;
-        state.datastore.partitions().clear_plan_and_slice(org_id, partition_id).await?;
+        state
+            .datastore
+            .partitions()
+            .clear_plan_and_slice(org_id, partition_id)
+            .await?;
         Ok(())
     }
 
@@ -113,9 +124,17 @@ impl Coordinator {
                 message: "run is not in running state".into(),
             });
         }
-        let row = state.datastore.partitions().get(org_id, partition_id).await?;
+        let row = state
+            .datastore
+            .partitions()
+            .get(org_id, partition_id)
+            .await?;
         self.inner.runs.take_and_cancel(partition_id).await;
-        state.datastore.partitions().cancel_run(org_id, partition_id, run_id).await?;
+        state
+            .datastore
+            .partitions()
+            .cancel_run(org_id, partition_id, run_id)
+            .await?;
         self.emit(
             &row.session_id,
             SseEvent::Cancelled {
@@ -146,20 +165,22 @@ impl Coordinator {
     ) -> Result<Run, AppError> {
         let kind = req.kind;
         self.inner.quota.check_can_start_run(&org_id).await?;
-        let partition = state.datastore.partitions().get(&org_id, &partition_id).await?;
+        let partition = state
+            .datastore
+            .partitions()
+            .get(&org_id, &partition_id)
+            .await?;
         if kind == RunKind::Construct {
-            let (_, parent_node) = state.datastore.nodes().target_and_parent(&org_id, &partition.session_id, &partition.target_node_id,
-            ).await?;
+            let (_, parent_node) = state
+                .datastore
+                .nodes()
+                .target_and_parent(&org_id, &partition.session_id, &partition.target_node_id)
+                .await?;
             let parent =
                 parent_node.ok_or_else(|| AppError::BadRequest("no parent node".into()))?;
             let worktree_path = PathBuf::from(&partition.worktree_path);
             worktree::reset_to_parent(&worktree_path, &parent.commit_sha, true).await?;
-            worktree::verify_baseline(
-                &worktree_path,
-                &parent.commit_sha,
-                &parent.tree_sha,
-            )
-            .await?;
+            worktree::verify_baseline(&worktree_path, &parent.commit_sha, &parent.tree_sha).await?;
         }
         let prompt = self
             .build_prompt(
@@ -171,8 +192,7 @@ impl Coordinator {
                 req.prompt_override.as_deref(),
             )
             .await?;
-        let settings =
-            load_for_partition(&state, &partition.org_id, &partition.session_id).await?;
+        let settings = load_for_partition(&state, &partition.org_id, &partition.session_id).await?;
         let model = resolve_model(&settings, kind.phase());
         let transcripts_enabled = settings.general.transcripts_enabled;
         let prompt_for_helper = prompt.clone();
@@ -182,16 +202,17 @@ impl Coordinator {
             .get(&partition.user_id)
             .await
             .map_err(|e| AppError::Internal(anyhow!("reading cursor api key: {e}")))?
-            .ok_or_else(|| {
-                AppError::Unrecoverable {
-                    status: axum::http::StatusCode::SERVICE_UNAVAILABLE,
-                    code: "cursor_sdk_unavailable".into(),
-                    message: "Cursor API key not configured".into(),
-                }
+            .ok_or_else(|| AppError::Unrecoverable {
+                status: axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                code: "cursor_sdk_unavailable".into(),
+                message: "Cursor API key not configured".into(),
             })?;
 
         let now = eunomio_core::unix_seconds();
-        let run_id = state.datastore.runs().start(NewRunInsert {
+        let run_id = state
+            .datastore
+            .runs()
+            .start(NewRunInsert {
                 org_id: org_id.clone(),
                 user_id: partition.user_id.clone(),
                 partition_id: partition_id.clone(),
@@ -201,13 +222,16 @@ impl Coordinator {
                 parent_run_id: req.parent_run_id,
                 prompt_text: prompt,
                 started_at: now,
-            },
-        )
-        .await?;
+            })
+            .await?;
 
         let session_id = partition.session_id.clone();
         let target_node_id = partition.target_node_id.clone();
-        state.datastore.partitions().set_phase_running(&org_id, &partition_id, kind.phase()).await?;
+        state
+            .datastore
+            .partitions()
+            .set_phase_running(&org_id, &partition_id, kind.phase())
+            .await?;
         self.emit(
             &session_id,
             SseEvent::Phase {
@@ -247,7 +271,8 @@ impl Coordinator {
                     kind,
                     transcripts_enabled,
                     rx: rx_helper,
-                }).await;
+                })
+                .await;
         });
 
         Ok(Run {
@@ -272,7 +297,12 @@ impl Coordinator {
             transcripts_enabled,
             mut rx,
         } = ctx;
-        let Ok(partition_row) = state.datastore.partitions().get(&org_id, &partition_id).await else {
+        let Ok(partition_row) = state
+            .datastore
+            .partitions()
+            .get(&org_id, &partition_id)
+            .await
+        else {
             return;
         };
         let active = ActiveRun::new(org_id.clone(), &partition_row, run_id.clone(), kind);
@@ -293,8 +323,11 @@ impl Coordinator {
         let org_id_writer = org_id.clone();
         let transcript_writer = tokio::spawn(async move {
             while let Some(chunk) = chunk_rx.recv().await {
-                if let Err(e) = state_for_writer.datastore.runs().append_transcript_text(&org_id_writer, &run_id_writer, &chunk,
-                ).await
+                if let Err(e) = state_for_writer
+                    .datastore
+                    .runs()
+                    .append_transcript_text(&org_id_writer, &run_id_writer, &chunk)
+                    .await
                 {
                     tracing::warn!(error = %e, run_id = %run_id_writer, "persisting transcript_text failed");
                 }
@@ -350,8 +383,13 @@ impl Coordinator {
         }
 
         let Some(raw) = final_result else {
-            self.finalize_error(&state, &active, "helper_exited", "no terminal event from helper")
-                .await;
+            self.finalize_error(
+                &state,
+                &active,
+                "helper_exited",
+                "no terminal event from helper",
+            )
+            .await;
             return;
         };
 
@@ -369,8 +407,17 @@ impl Coordinator {
         code: &str,
         message: &str,
     ) {
-        let _ = state.datastore.partitions().fail_run(&active.scope.org_id, &active.scope.partition_id, &active.run_id, message.to_string(), None,
-        ).await;
+        let _ = state
+            .datastore
+            .partitions()
+            .fail_run(
+                &active.scope.org_id,
+                &active.scope.partition_id,
+                &active.run_id,
+                message.to_string(),
+                None,
+            )
+            .await;
         self.emit_run_error(active, code, message);
     }
 
@@ -381,13 +428,17 @@ impl Coordinator {
         raw: &str,
         msg: &str,
     ) {
-        let _ = state.datastore.partitions().fail_run(
-            &active.scope.org_id,
-            &active.scope.partition_id,
-            &active.run_id,
-            msg.to_string(),
-            Some(raw.to_string()),
-        ).await;
+        let _ = state
+            .datastore
+            .partitions()
+            .fail_run(
+                &active.scope.org_id,
+                &active.scope.partition_id,
+                &active.run_id,
+                msg.to_string(),
+                Some(raw.to_string()),
+            )
+            .await;
         self.emit_run_error(active, "parse_error", msg);
     }
 
@@ -485,12 +536,16 @@ impl Coordinator {
             Ok(out) => {
                 let json = serde_json::to_string(&out)
                     .map_err(|e| AppError::Internal(anyhow!("{json_label}: {e}")))?;
-                state.datastore.runs().finish_success(
-                    &active.scope.org_id,
-                    &active.run_id,
-                    json.clone(),
-                    Some(raw.to_string()),
-                ).await?;
+                state
+                    .datastore
+                    .runs()
+                    .finish_success(
+                        &active.scope.org_id,
+                        &active.run_id,
+                        json.clone(),
+                        Some(raw.to_string()),
+                    )
+                    .await?;
                 self.handle_phase_terminal(
                     state,
                     &active.scope,

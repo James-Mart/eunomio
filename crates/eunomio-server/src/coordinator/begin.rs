@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use eunomio_core::types::*;
 use crate::{
-    AppError, partition_settings::load_for_partition, repo_store, state::AppState ,
-    worktree,
+    partition_settings::load_for_partition, repo_store, state::AppState, worktree, AppError,
 };
+use eunomio_core::types::*;
 
 use super::Coordinator;
 
@@ -64,14 +63,25 @@ impl Coordinator {
         });
         let first_kind = first_run_kind(&settings);
 
-        let (_, parent_node) =
-            state.datastore.nodes().target_and_parent(org_id, session_id, target_node_id).await?;
+        let (_, parent_node) = state
+            .datastore
+            .nodes()
+            .target_and_parent(org_id, session_id, target_node_id)
+            .await?;
         let parent = parent_node.ok_or_else(|| {
             AppError::BadRequest("base node has no incoming edge to partition".into())
         })?;
 
-        let user_id = state.datastore.sessions().user_id(org_id, session_id).await?;
-        let fields = state.datastore.sessions().repo_fields(org_id, session_id).await?;
+        let user_id = state
+            .datastore
+            .sessions()
+            .user_id(org_id, session_id)
+            .await?;
+        let fields = state
+            .datastore
+            .sessions()
+            .repo_fields(org_id, session_id)
+            .await?;
         repo_store::fetch_for_session(
             &state.data_dir,
             &fields.normalized_remote,
@@ -108,7 +118,11 @@ impl Coordinator {
         {
             Ok(p) => p,
             Err(e) => {
-                let _ = state.datastore.partitions().delete(org_id, &inserted_id).await;
+                let _ = state
+                    .datastore
+                    .partitions()
+                    .delete(org_id, &inserted_id)
+                    .await;
                 return Err(e);
             }
         };
@@ -132,7 +146,11 @@ impl Coordinator {
             },
         );
 
-        let row = state.datastore.partitions().get(org_id, &inserted_id).await?;
+        let row = state
+            .datastore
+            .partitions()
+            .get(org_id, &inserted_id)
+            .await?;
         let partition: Partition = row.into();
 
         self.spawn_run_boxed(

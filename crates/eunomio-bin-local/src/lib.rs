@@ -9,8 +9,8 @@ use eunomio_core::traits::{
 use eunomio_helper_protocol::SubagentRunner;
 use eunomio_keystore_file::FileKeyStore;
 use eunomio_sandbox_linux::LinuxSandboxRuntime;
-use eunomio_server::{build_state, AppState, BuildStateOptions};
 use eunomio_server::cursor_bridge::CursorHelperRunner;
+use eunomio_server::{build_state, AppState, BuildStateOptions};
 use eunomio_sqlite::SqliteDatastore;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -24,7 +24,8 @@ pub async fn build_local_state(
 ) -> anyhow::Result<AppState> {
     let datastore: Arc<dyn Datastore> =
         Arc::new(SqliteDatastore::open(&data_dir.join("eunomio.db")).await?);
-    let keystore: Arc<dyn KeyStore> = Arc::new(FileKeyStore::new(data_dir.clone(), launch_key_hint));
+    let keystore: Arc<dyn KeyStore> =
+        Arc::new(FileKeyStore::new(data_dir.clone(), launch_key_hint));
     let auth: Arc<dyn AuthProvider> = Arc::new(LocalAuthProvider::new(
         datastore.clone(),
         keystore.clone(),

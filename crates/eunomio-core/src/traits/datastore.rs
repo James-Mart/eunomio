@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{
-    error::AppError,
-    principal::AuthSessionRow,
-    types::*,
-};
+use crate::{error::AppError, principal::AuthSessionRow, types::*};
 use async_trait::async_trait;
 
 #[async_trait]
@@ -202,11 +198,7 @@ pub trait PartitionRepo: Send + Sync {
         partition_ids: Vec<String>,
     ) -> Result<(), AppError>;
     async fn insert_pending(&self, row: NewPartitionInsert) -> Result<String, AppError>;
-    async fn clear_plan_and_slice(
-        &self,
-        org_id: &str,
-        partition_id: &str,
-    ) -> Result<(), AppError>;
+    async fn clear_plan_and_slice(&self, org_id: &str, partition_id: &str) -> Result<(), AppError>;
     async fn accept_survey(
         &self,
         org_id: &str,
@@ -305,11 +297,7 @@ pub trait RunRepo: Send + Sync {
         partition_id: &str,
     ) -> Result<Vec<RunRow>, AppError>;
     async fn start(&self, row: NewRunInsert) -> Result<String, AppError>;
-    async fn get_prompt(
-        &self,
-        org_id: &str,
-        run_id: &str,
-    ) -> Result<Option<String>, AppError>;
+    async fn get_prompt(&self, org_id: &str, run_id: &str) -> Result<Option<String>, AppError>;
     async fn append_transcript_text(
         &self,
         org_id: &str,
@@ -365,6 +353,33 @@ pub trait EdgeFileViewedRepo: Send + Sync {
     ) -> Result<(), AppError>;
 }
 
+#[async_trait]
+pub trait ShavingTrackRepo: Send + Sync {
+    async fn insert(&self, row: NewShavingTrackInsert) -> Result<(), AppError>;
+    async fn get(
+        &self,
+        org_id: &str,
+        session_id: &str,
+        slice_node_id: &str,
+    ) -> Result<Option<ShavingTrack>, AppError>;
+    async fn delete(
+        &self,
+        org_id: &str,
+        session_id: &str,
+        slice_node_id: &str,
+    ) -> Result<(), AppError>;
+}
+
+#[async_trait]
+pub trait DiffAuthorizationRepo: Send + Sync {
+    async fn trees_authorized_for_diff(
+        &self,
+        org_id: &str,
+        session_id: &str,
+        trees: &[&str],
+    ) -> Result<bool, AppError>;
+}
+
 /// Umbrella datastore trait.
 pub trait Datastore: Send + Sync {
     fn orgs(&self) -> &dyn OrgRepo;
@@ -376,4 +391,6 @@ pub trait Datastore: Send + Sync {
     fn partitions(&self) -> &dyn PartitionRepo;
     fn runs(&self) -> &dyn RunRepo;
     fn edge_file_viewed(&self) -> &dyn EdgeFileViewedRepo;
+    fn shaving_tracks(&self) -> &dyn ShavingTrackRepo;
+    fn diff_authorization(&self) -> &dyn DiffAuthorizationRepo;
 }

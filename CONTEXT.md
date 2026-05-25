@@ -56,6 +56,10 @@ A Partition that exists as a row in the `partitions` table — i.e. has been Beg
 The single new Node a Partition adds. Built by the Constructor; parented on the prior parent of the target Node. Its Title comes from the Planner's description of the slice Edge.
 _Avoid_: intermediate, sub-edge.
 
+**Shaving**:
+A hidden implementation step inside a Slice's Edge — an intermediate tree between that Edge's parent and the Slice Node, used only for timeline diff playback. Shavings are not Nodes, Partitions, or PR units.
+_Avoid_: shaving track, sub-slice, micro-commit.
+
 **Strategy**:
 One of three slicing modes a Partition uses — `Synthetic`, `Vertical`, or `Horizontal`. The Planner chooses the strategy on its first run (always starting from `auto`); the user can override the strategy for a specific Partition at the Plan Review gate when asking for a re-plan. The strategy frames the Constructor's scope rules and the slice/leftover boundary.
 
@@ -74,7 +78,7 @@ The diff-view rendering concept: word-level marks on an Edge's diff showing cont
 _Avoid_: defining synthesized content relative to `final.tree` alone; "transient", "synthetic content" (collides with the **Synthetic** Strategy).
 
 **Reference pair**:
-The two trees an Edge's synthesized marks are computed against: `(beforeRef, afterRef)`. Canonical Edges default to `(base.tree, final.tree)`; candidate Edges use the Partition's `(BeforeTree, TargetTree)`.
+The two trees an Edge's synthesized marks are computed against: `(beforeRef, afterRef)`. Canonical Edges default to `(base.tree, final.tree)`; candidate Edges use the Partition's `(BeforeTree, TargetTree)`; timeline scrubbing of a Slice's Shavings uses that Slice Edge's `(parent.tree, slice.tree)`.
 
 **Canonical view**:
 The default graph view showing the accepted Node chain (`base → 1 → … → final`). Each Edge's synthesized marks use Reference pair `(base.tree, final.tree)`.
@@ -137,6 +141,7 @@ The tenancy axis. Every tenant-scoped row carries an `org_id`; a request's princ
 - Each pending **Partition** owns exactly one **Partition worktree** for the duration of its existence.
 - A **Partition** row exists only between Begin and a terminal action (Acceptance or Abandon). The Slice it produced and the rewrite of the target Node persist after Acceptance; Run rows live alongside the Partition row and are deleted with it at the terminal action.
 - Many **Partitions** can be pending in a Session at any moment, including **Sibling Partitions** on the same target.
+- A **Slice** may have zero or more **Shavings** ordered from the Slice Edge's parent tree toward the Slice Node's tree.
 
 ## Flagged ambiguities
 

@@ -140,6 +140,21 @@ CREATE TABLE IF NOT EXISTS edge_file_viewed (
 );
 CREATE INDEX IF NOT EXISTS edge_file_viewed_by_session
   ON edge_file_viewed (session_id, org_id);
+
+CREATE TABLE IF NOT EXISTS shaving_tracks (
+  session_id TEXT NOT NULL,
+  slice_node_id TEXT NOT NULL,
+  org_id TEXT NOT NULL REFERENCES orgs(id),
+  parent_tree_sha TEXT NOT NULL,
+  head_tree_sha TEXT NOT NULL,
+  steps_json TEXT NOT NULL,
+  ref_name TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (session_id, slice_node_id),
+  FOREIGN KEY (session_id, slice_node_id) REFERENCES nodes(session_id, node_id)
+);
+CREATE INDEX IF NOT EXISTS shaving_tracks_by_org_session
+  ON shaving_tracks (org_id, session_id);
 "#;
 
 pub async fn open(db_path: &Path) -> Result<Connection> {

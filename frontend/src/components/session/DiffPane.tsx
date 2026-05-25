@@ -100,7 +100,7 @@ export function DiffPane({
   return (
     <CanonicalEdgePane
       sessionId={sessionId}
-      targetNodeId={selectedCanonicalNode.nodeId}
+      node={selectedCanonicalNode}
     />
   );
 }

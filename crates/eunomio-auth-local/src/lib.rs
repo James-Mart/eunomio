@@ -319,9 +319,10 @@ impl AuthProvider for LocalAuthProvider {
     }
 
     fn refresh_session_cookie(&self, cookie_header: &str) -> Option<String> {
-        parse_cookie(cookie_header)
-            .map(|session_id| self.serialize_cookie(&session_id))
+        parse_cookie(cookie_header).map(|session_id| self.serialize_cookie(&session_id))
     }
 }
 
-pub use eunomio_core::traits::{LoginRequest as AuthLoginRequest, PatchCredentialsRequest as AuthPatchCredentialsRequest};
+pub use eunomio_core::traits::{
+    LoginRequest as AuthLoginRequest, PatchCredentialsRequest as AuthPatchCredentialsRequest,
+};

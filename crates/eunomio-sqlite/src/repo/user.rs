@@ -37,7 +37,8 @@ impl UserRepo for SqliteUserRepo {
                     Ok(None)
                 }
             })
-            .await.map_err(crate::repo::map_sqlite_err)?;
+            .await
+            .map_err(crate::repo::map_sqlite_err)?;
         Ok(row)
     }
 
@@ -46,8 +47,8 @@ impl UserRepo for SqliteUserRepo {
         let row: Option<UserRow> = self
             .conn
             .call(move |conn| {
-                let mut stmt = conn
-                    .prepare("SELECT id, username, created_at FROM users WHERE username = ?1")?;
+                let mut stmt =
+                    conn.prepare("SELECT id, username, created_at FROM users WHERE username = ?1")?;
                 let mut rows = stmt.query(tokio_rusqlite::params![username])?;
                 if let Some(row) = rows.next()? {
                     Ok(Some(UserRow {
@@ -59,7 +60,8 @@ impl UserRepo for SqliteUserRepo {
                     Ok(None)
                 }
             })
-            .await.map_err(crate::repo::map_sqlite_err)?;
+            .await
+            .map_err(crate::repo::map_sqlite_err)?;
         Ok(row)
     }
 
@@ -80,7 +82,8 @@ impl UserRepo for SqliteUserRepo {
                     created_at: now,
                 })
             })
-            .await.map_err(crate::repo::map_sqlite_err)?;
+            .await
+            .map_err(crate::repo::map_sqlite_err)?;
         Ok(row)
     }
 
@@ -126,7 +129,8 @@ impl UserRepo for SqliteUserRepo {
                     Ok(None)
                 }
             })
-            .await.map_err(crate::repo::map_sqlite_err)?;
+            .await
+            .map_err(crate::repo::map_sqlite_err)?;
         Ok(role)
     }
 }

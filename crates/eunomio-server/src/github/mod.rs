@@ -29,9 +29,9 @@ pub fn parse_github_pull_url(input: &str) -> Result<ParsedPullUrl, AppError> {
                 .into(),
         )
     })?;
-    let number: u64 = caps[3].parse().map_err(|_| {
-        AppError::BadRequest("invalid pull request number in URL".into())
-    })?;
+    let number: u64 = caps[3]
+        .parse()
+        .map_err(|_| AppError::BadRequest("invalid pull request number in URL".into()))?;
     Ok(ParsedPullUrl {
         owner: caps[1].to_string(),
         repo: caps[2].to_string(),
@@ -67,10 +67,7 @@ fn map_pull_response(
         ));
     }
     Ok(ResolvedPullRequest {
-        remote_url: format!(
-            "https://github.com/{}/{}.git",
-            parsed.owner, parsed.repo
-        ),
+        remote_url: format!("https://github.com/{}/{}.git", parsed.owner, parsed.repo),
         source_ref: pull.head.ref_name,
         base_ref: pull.base.ref_name,
     })
@@ -126,8 +123,8 @@ mod tests {
 
     #[test]
     fn parse_valid_pull_url() {
-        let parsed = parse_github_pull_url("https://github.com/gofractally/psibase/pull/1870")
-            .unwrap();
+        let parsed =
+            parse_github_pull_url("https://github.com/gofractally/psibase/pull/1870").unwrap();
         assert_eq!(parsed.owner, "gofractally");
         assert_eq!(parsed.repo, "psibase");
         assert_eq!(parsed.number, 1870);
@@ -135,15 +132,13 @@ mod tests {
 
     #[test]
     fn parse_pull_url_with_trailing_slash() {
-        let parsed =
-            parse_github_pull_url("https://github.com/org/repo/pull/42/").unwrap();
+        let parsed = parse_github_pull_url("https://github.com/org/repo/pull/42/").unwrap();
         assert_eq!(parsed.number, 42);
     }
 
     #[test]
     fn parse_pull_url_with_git_suffix() {
-        let parsed =
-            parse_github_pull_url("https://github.com/org/repo.git/pull/7").unwrap();
+        let parsed = parse_github_pull_url("https://github.com/org/repo.git/pull/7").unwrap();
         assert_eq!(parsed.repo, "repo");
     }
 

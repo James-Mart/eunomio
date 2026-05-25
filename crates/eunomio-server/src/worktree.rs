@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{AppError, git};
+use crate::{git, AppError};
 use anyhow::anyhow;
 use std::path::{Path, PathBuf};
 

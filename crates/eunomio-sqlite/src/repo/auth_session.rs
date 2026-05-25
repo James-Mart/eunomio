@@ -3,11 +3,7 @@
 use super::auth_event::record_in_tx;
 use crate::db;
 use async_trait::async_trait;
-use eunomio_core::{
-    principal::AuthSessionRow,
-    traits::AuthSessionRepo,
-    AppError,
-};
+use eunomio_core::{principal::AuthSessionRow, traits::AuthSessionRepo, AppError};
 use std::sync::Arc;
 use tokio_rusqlite::Connection;
 
@@ -59,7 +55,8 @@ impl AuthSessionRepo for SqliteAuthSessionRepo {
                 )?;
                 Ok(())
             })
-            .await.map_err(crate::repo::map_sqlite_err)?;
+            .await
+            .map_err(crate::repo::map_sqlite_err)?;
         Ok(())
     }
 
@@ -73,7 +70,8 @@ impl AuthSessionRepo for SqliteAuthSessionRepo {
                 )?;
                 Ok(())
             })
-            .await.map_err(crate::repo::map_sqlite_err)?;
+            .await
+            .map_err(crate::repo::map_sqlite_err)?;
         Ok(())
     }
 
@@ -173,7 +171,8 @@ impl AuthSessionRepo for SqliteAuthSessionRepo {
                 tx.commit()?;
                 Ok(())
             })
-            .await.map_err(crate::repo::map_sqlite_err)?;
+            .await
+            .map_err(crate::repo::map_sqlite_err)?;
         Ok(())
     }
 }
@@ -212,9 +211,17 @@ mod tests {
         .await
         .unwrap();
 
-        repo.rotate_with_audit("u1", "local", "sess-1", 9999999999, "127.0.0.1", "ua", "alice")
-            .await
-            .unwrap();
+        repo.rotate_with_audit(
+            "u1",
+            "local",
+            "sess-1",
+            9999999999,
+            "127.0.0.1",
+            "ua",
+            "alice",
+        )
+        .await
+        .unwrap();
 
         let types = events.list_by_event_type("login_success").await.unwrap();
         assert_eq!(types.len(), 1);
@@ -223,9 +230,7 @@ mod tests {
 
         let order: Vec<String> = conn
             .call(|c| {
-                let mut stmt = c.prepare(
-                    "SELECT event_type FROM auth_events ORDER BY id",
-                )?;
+                let mut stmt = c.prepare("SELECT event_type FROM auth_events ORDER BY id")?;
                 let rows = stmt
                     .query_map([], |row| row.get::<_, String>(0))?
                     .collect::<Result<Vec<_>, _>>()?;

@@ -58,11 +58,7 @@ async fn run_word_diff(repo: &Path, a: &str, b: &str) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
-async fn parse_side(
-    repo: &Path,
-    raw: &str,
-    side_tree: &str,
-) -> Result<Vec<FileLineRanges>> {
+async fn parse_side(repo: &Path, raw: &str, side_tree: &str) -> Result<Vec<FileLineRanges>> {
     let mut files = Vec::new();
     for tokenized in tokenize_porcelain(raw) {
         let Some(content) = crate::git::fetch_blob_text(repo, side_tree, &tokenized.path).await?
@@ -88,9 +84,7 @@ fn parse_hunk_header(line: &str) -> Option<HunkHeader> {
     let rest = line.strip_prefix("@@ -")?;
     let (old_part, rest) = rest.split_once(' ')?;
     rest.strip_prefix('+')?;
-    let parse_start = |part: &str| -> Option<u32> {
-        part.split(',').next()?.parse::<u32>().ok()
-    };
+    let parse_start = |part: &str| -> Option<u32> { part.split(',').next()?.parse::<u32>().ok() };
     Some(HunkHeader {
         old_start: parse_start(old_part)?,
     })
@@ -270,7 +264,11 @@ fn find_next_at_or_after(
     if text.is_empty() {
         return Some((after_line, after_col));
     }
-    for (li, line_text) in lines.iter().enumerate().skip(after_line.saturating_sub(1) as usize) {
+    for (li, line_text) in lines
+        .iter()
+        .enumerate()
+        .skip(after_line.saturating_sub(1) as usize)
+    {
         let lnum = (li + 1) as u32;
         let start_col = if lnum == after_line { after_col } else { 0 };
         if let Some(col) = find_in_line_from_col(line_text, start_col, text) {
@@ -487,7 +485,11 @@ mod tests {
             "~\n",
         );
         let result = anchor_porcelain(raw, side);
-        let lines: Vec<_> = result[0].lines.iter().map(|l| (l.line, l.spans.clone())).collect();
+        let lines: Vec<_> = result[0]
+            .lines
+            .iter()
+            .map(|l| (l.line, l.spans.clone()))
+            .collect();
         assert_eq!(lines[0], (1, vec![(0, 44)]));
         assert_eq!(lines[1], (2, vec![(0, 26)]));
         assert_eq!(lines[2], (3, vec![(0, 35)]));
@@ -581,7 +583,10 @@ mod tests {
                 std::fs::write(&full, contents.as_ref()).expect("write");
             }
             run_git(&self.path, &["add", "-A"]);
-            run_git(&self.path, &["commit", "-q", "--allow-empty", "-m", message]);
+            run_git(
+                &self.path,
+                &["commit", "-q", "--allow-empty", "-m", message],
+            );
             run_git(&self.path, &["rev-parse", "HEAD^{tree}"])
         }
     }
@@ -609,8 +614,9 @@ mod tests {
         let slice = repo.commit_tree([("a.txt", "a\n"), ("b.txt", "x\n")], "slice");
         let final_tree = repo.commit_tree([("a.txt", "z\n"), ("b.txt", "x\n")], "final");
 
-        let slice_edge =
-            compute(&repo.path, &base, &slice, &base, &final_tree).await.expect("slice edge");
+        let slice_edge = compute(&repo.path, &base, &slice, &base, &final_tree)
+            .await
+            .expect("slice edge");
         assert!(
             slice_edge.parent.is_empty(),
             "slice edge: parent == beforeRef → no parent marks"
@@ -622,10 +628,15 @@ mod tests {
             "slice edge: child differs from after_ref on a.txt only"
         );
 
-        let leftover_edge =
-            compute(&repo.path, &slice, &final_tree, &base, &final_tree).await.expect("leftover");
+        let leftover_edge = compute(&repo.path, &slice, &final_tree, &base, &final_tree)
+            .await
+            .expect("leftover");
         assert!(leftover_edge.child.is_empty());
-        let parent_paths: Vec<&str> = leftover_edge.parent.iter().map(|f| f.path.as_str()).collect();
+        let parent_paths: Vec<&str> = leftover_edge
+            .parent
+            .iter()
+            .map(|f| f.path.as_str())
+            .collect();
         assert_eq!(parent_paths, vec!["b.txt"]);
     }
 

@@ -5,12 +5,13 @@ pub mod display;
 pub mod repo;
 
 use eunomio_core::traits::{
-    AuthEventRepo, AuthSessionRepo, Datastore, EdgeFileViewedRepo, NodeRepo, OrgRepo,
-    PartitionRepo, RunRepo, SessionRepo, UserRepo,
+    AuthEventRepo, AuthSessionRepo, Datastore, DiffAuthorizationRepo, EdgeFileViewedRepo, NodeRepo,
+    OrgRepo, PartitionRepo, RunRepo, SessionRepo, ShavingTrackRepo, UserRepo,
 };
 use repo::{
-    SqliteAuthEventRepo, SqliteAuthSessionRepo, SqliteEdgeFileViewedRepo, SqliteNodeRepo,
-    SqliteOrgRepo, SqlitePartitionRepo, SqliteRunRepo, SqliteSessionRepo, SqliteUserRepo,
+    SqliteAuthEventRepo, SqliteAuthSessionRepo, SqliteDiffAuthorizationRepo,
+    SqliteEdgeFileViewedRepo, SqliteNodeRepo, SqliteOrgRepo, SqlitePartitionRepo, SqliteRunRepo,
+    SqliteSessionRepo, SqliteShavingTrackRepo, SqliteUserRepo,
 };
 use std::{path::Path, sync::Arc};
 use tokio_rusqlite::Connection;
@@ -25,6 +26,8 @@ pub struct SqliteDatastore {
     partitions: Arc<SqlitePartitionRepo>,
     runs: Arc<SqliteRunRepo>,
     edge_file_viewed: Arc<SqliteEdgeFileViewedRepo>,
+    shaving_tracks: Arc<SqliteShavingTrackRepo>,
+    diff_authorization: Arc<SqliteDiffAuthorizationRepo>,
 }
 
 impl SqliteDatastore {
@@ -43,7 +46,9 @@ impl SqliteDatastore {
             nodes: Arc::new(SqliteNodeRepo::new(conn.clone())),
             partitions: Arc::new(SqlitePartitionRepo::new(conn.clone())),
             runs: Arc::new(SqliteRunRepo::new(conn.clone())),
-            edge_file_viewed: Arc::new(SqliteEdgeFileViewedRepo::new(conn)),
+            edge_file_viewed: Arc::new(SqliteEdgeFileViewedRepo::new(conn.clone())),
+            shaving_tracks: Arc::new(SqliteShavingTrackRepo::new(conn.clone())),
+            diff_authorization: Arc::new(SqliteDiffAuthorizationRepo::new(conn)),
         }
     }
 }
@@ -83,5 +88,13 @@ impl Datastore for SqliteDatastore {
 
     fn edge_file_viewed(&self) -> &dyn EdgeFileViewedRepo {
         self.edge_file_viewed.as_ref()
+    }
+
+    fn shaving_tracks(&self) -> &dyn ShavingTrackRepo {
+        self.shaving_tracks.as_ref()
+    }
+
+    fn diff_authorization(&self) -> &dyn DiffAuthorizationRepo {
+        self.diff_authorization.as_ref()
     }
 }

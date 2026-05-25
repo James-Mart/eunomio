@@ -6,17 +6,22 @@ use eunomio_auth_local::LocalAuthProvider;
 use eunomio_core::traits::{
     AuthProvider, Datastore, KeyStore, NoopQuotaEnforcer, QuotaEnforcer, SandboxRuntime,
 };
+use eunomio_helper_protocol::SubagentRunner;
 use eunomio_keystore_file::FileKeyStore;
 use eunomio_sandbox_linux::LinuxSandboxRuntime;
-use eunomio_server::{build_state, BuildStateOptions};
 use eunomio_server::cursor_bridge::CursorHelperRunner;
-use eunomio_helper_protocol::SubagentRunner;
+use eunomio_server::{build_state, BuildStateOptions};
 use eunomio_sqlite::SqliteDatastore;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 #[derive(Parser, Debug)]
-#[command(name = "eunomio", version, about = "Eunomio commit-review server", args_conflicts_with_subcommands = true)]
+#[command(
+    name = "eunomio",
+    version,
+    about = "Eunomio commit-review server",
+    args_conflicts_with_subcommands = true
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -87,7 +92,10 @@ async fn serve(args: ServeArgs) -> Result<()> {
         for suffix in ["", "-wal", "-shm"] {
             let p = db_path.with_file_name(format!(
                 "{}{}",
-                db_path.file_name().and_then(|n| n.to_str()).unwrap_or("eunomio.db"),
+                db_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("eunomio.db"),
                 suffix
             ));
             match tokio::fs::remove_file(&p).await {
@@ -113,7 +121,8 @@ async fn serve(args: ServeArgs) -> Result<()> {
 
     let datastore: Arc<dyn Datastore> =
         Arc::new(SqliteDatastore::open(&data_dir.join("eunomio.db")).await?);
-    let keystore: Arc<dyn KeyStore> = Arc::new(FileKeyStore::new(data_dir.clone(), launch_key_hint));
+    let keystore: Arc<dyn KeyStore> =
+        Arc::new(FileKeyStore::new(data_dir.clone(), launch_key_hint));
     let auth: Arc<dyn AuthProvider> = Arc::new(LocalAuthProvider::new(
         datastore.clone(),
         keystore.clone(),

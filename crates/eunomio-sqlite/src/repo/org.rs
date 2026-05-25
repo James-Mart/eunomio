@@ -30,7 +30,8 @@ impl OrgRepo for SqliteOrgRepo {
                 )?;
                 Ok(())
             })
-            .await.map_err(crate::repo::map_sqlite_err)?;
+            .await
+            .map_err(crate::repo::map_sqlite_err)?;
         Ok(())
     }
 }

@@ -21,6 +21,7 @@ export type GraphNode = {
   title: string;
   description: string;
   strategy: PartitionStrategy | null;
+  hasShavingTrack: boolean;
 };
 
 export type GraphEdge = { from: string; to: string };
@@ -67,6 +68,16 @@ export type Diff = {
   diff: string;
   files: FileBlob[];
   synthesized: SynthesizedRanges;
+};
+
+export type ShavingStep = { treeSha: string; commitSha: string };
+
+export type ShavingTrack = {
+  sliceNodeId: string;
+  parentTreeSha: string;
+  headTreeSha: string;
+  steps: ShavingStep[];
+  stepDiffs: Diff[];
 };
 
 export type BranchResult = { branchName: string; commitSha: string };
@@ -307,6 +318,11 @@ export const api = {
   getGraph: (id: string) => request<Graph>("GET", `/sessions/${id}/graph`),
   getEdge: (sessionId: string, targetNodeId: string) =>
     request<Edge>("GET", `/sessions/${sessionId}/edges/${targetNodeId}`),
+  getShavingTrack: (sessionId: string, nodeId: string) =>
+    request<ShavingTrack>(
+      "GET",
+      `/sessions/${sessionId}/nodes/${nodeId}/shaving-track`,
+    ),
   getEdgeViewedFiles: (sessionId: string, targetNodeId: string) =>
     request<EdgeViewedFiles>(
       "GET",

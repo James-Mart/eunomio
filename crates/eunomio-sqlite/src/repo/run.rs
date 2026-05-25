@@ -4,7 +4,11 @@ use super::partition::SqlitePartitionRepo;
 use super::{require_affected_sqlite, DbResultExt};
 use crate::db;
 use async_trait::async_trait;
-use eunomio_core::{traits::{PartitionRepo, RunRepo}, types::*, AppError};
+use eunomio_core::{
+    traits::{PartitionRepo, RunRepo},
+    types::*,
+    AppError,
+};
 use std::sync::Arc;
 use tokio_rusqlite::Connection;
 use uuid::Uuid;
@@ -57,7 +61,8 @@ impl RunRepo for SqliteRunRepo {
                     Ok(None)
                 }
             })
-            .await.map_err(crate::repo::map_sqlite_err)?;
+            .await
+            .map_err(crate::repo::map_sqlite_err)?;
         row.ok_or(AppError::NotFound)
     }
 
@@ -143,7 +148,8 @@ impl RunRepo for SqliteRunRepo {
                     Ok(None)
                 }
             })
-            .await.map_err(crate::repo::map_sqlite_err)?;
+            .await
+            .map_err(crate::repo::map_sqlite_err)?;
         Ok(prompt)
     }
 
@@ -225,11 +231,14 @@ impl RunRepo for SqliteRunRepo {
                 let mut stmt =
                     conn.prepare("SELECT id FROM runs WHERE org_id = ?1 AND status = 'running'")?;
                 let rows = stmt
-                    .query_map(tokio_rusqlite::params![org_id], |row| row.get::<_, String>(0))?
+                    .query_map(tokio_rusqlite::params![org_id], |row| {
+                        row.get::<_, String>(0)
+                    })?
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(rows)
             })
-            .await.map_err(crate::repo::map_sqlite_err)?;
+            .await
+            .map_err(crate::repo::map_sqlite_err)?;
         Ok(ids)
     }
 
@@ -247,10 +256,25 @@ impl RunRepo for SqliteRunRepo {
         self.conn
             .call(move |conn| {
                 let tx = conn.transaction()?;
+                let mut partition_ids: Vec<String> = Vec::new();
                 for id in &run_ids {
+                    let partition_id: String = tx.query_row(
+                        "SELECT partition_id FROM runs WHERE id = ?1 AND org_id = ?2",
+                        tokio_rusqlite::params![id, org_id],
+                        |row| row.get(0),
+                    )?;
+                    if !partition_ids.iter().any(|p| p == &partition_id) {
+                        partition_ids.push(partition_id);
+                    }
                     tx.execute(
                         "UPDATE runs SET status = 'error', error_message = ?1, finished_at = ?2 WHERE id = ?3 AND org_id = ?4",
                         tokio_rusqlite::params![error_message, now, id, org_id],
+                    )?;
+                }
+                for partition_id in &partition_ids {
+                    tx.execute(
+                        "UPDATE partitions SET phase_state = 'error' WHERE id = ?1 AND org_id = ?2",
+                        tokio_rusqlite::params![partition_id, org_id],
                     )?;
                 }
                 tx.commit()?;

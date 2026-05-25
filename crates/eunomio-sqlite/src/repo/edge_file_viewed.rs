@@ -153,6 +153,10 @@ mod tests {
         repo.set_viewed("local", "u1", "s1", "n1", "src/a.rs", false, 1)
             .await
             .unwrap();
-        assert!(repo.list_paths("local", "u1", "s1", "n1").await.unwrap().is_empty());
+        assert!(repo
+            .list_paths("local", "u1", "s1", "n1")
+            .await
+            .unwrap()
+            .is_empty());
     }
 }

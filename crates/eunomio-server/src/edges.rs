@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{AppError, git, state::AppState, synthesized_content, Edge, FileBlob, SynthesizedRanges};
+use crate::{
+    git, state::AppState, synthesized_content, AppError, Edge, FileBlob, SynthesizedRanges,
+};
 use std::path::Path;
 
 pub async fn render_edge_diff(
@@ -12,14 +14,9 @@ pub async fn render_edge_diff(
 ) -> Result<(String, Vec<FileBlob>, SynthesizedRanges), AppError> {
     let diff = git::diff_text(repo_root, parent_tree, child_tree).await?;
     let files = git::changed_files(repo_root, parent_tree, child_tree).await?;
-    let synthesized = synthesized_content::compute(
-        repo_root,
-        parent_tree,
-        child_tree,
-        before_ref,
-        after_ref,
-    )
-    .await?;
+    let synthesized =
+        synthesized_content::compute(repo_root, parent_tree, child_tree, before_ref, after_ref)
+            .await?;
     Ok((diff, files, synthesized))
 }
 
@@ -29,10 +26,16 @@ pub async fn load_edge_for_target(
     session_id: &str,
     target_node_id: String,
 ) -> Result<Edge, AppError> {
-    let (base_tree, final_tree) =
-        state.datastore.sessions().seed_trees(org_id, session_id).await?;
-    let lookup =
-        state.datastore.nodes().target_tree_and_parent(org_id, session_id, &target_node_id).await?;
+    let (base_tree, final_tree) = state
+        .datastore
+        .sessions()
+        .seed_trees(org_id, session_id)
+        .await?;
+    let lookup = state
+        .datastore
+        .nodes()
+        .target_tree_and_parent(org_id, session_id, &target_node_id)
+        .await?;
     let Some((target_tree, parent_node_id, parent_tree)) = lookup else {
         return Err(AppError::NotFound);
     };

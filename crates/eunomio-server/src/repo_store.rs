@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{AppError, git, RepoHints};
+use crate::{git, AppError, RepoHints};
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -71,9 +71,9 @@ pub fn parse_remote_url(input: &str) -> Result<ParsedRemote, AppError> {
 fn resolve_local_literal(input: &str) -> Result<String, AppError> {
     let path_str = input.strip_prefix("file://").unwrap_or(input);
     let path = std::path::Path::new(path_str);
-    let canonical = path.canonicalize().map_err(|e| {
-        AppError::BadRequest(format!("invalid local path {path_str}: {e}"))
-    })?;
+    let canonical = path
+        .canonicalize()
+        .map_err(|e| AppError::BadRequest(format!("invalid local path {path_str}: {e}")))?;
     Ok(canonical.to_string_lossy().into_owned())
 }
 
@@ -117,7 +117,12 @@ pub async fn materialize_git_root(
     if parsed.is_local {
         git::ensure_repo(Path::new(&parsed.literal_remote))
             .await
-            .map_err(|e| AppError::BadRequest(format!("{} is not a git repository: {e}", parsed.literal_remote)))?;
+            .map_err(|e| {
+                AppError::BadRequest(format!(
+                    "{} is not a git repository: {e}",
+                    parsed.literal_remote
+                ))
+            })?;
         return Ok(PathBuf::from(&parsed.literal_remote));
     }
 
@@ -182,9 +187,10 @@ pub async fn maybe_remove_clone(
             .await
             .map_err(|e| AppError::Internal(anyhow!("remove clone dir: {e}")))?;
     }
-    let lock_path = data_dir
-        .join("repos")
-        .join(format!("{}.lock", git::slug_from_identity(normalized_remote)));
+    let lock_path = data_dir.join("repos").join(format!(
+        "{}.lock",
+        git::slug_from_identity(normalized_remote)
+    ));
     let _ = tokio::fs::remove_file(lock_path).await;
     Ok(())
 }

@@ -88,12 +88,16 @@ pub async fn run(args: SubagentRunArgs) -> Result<()> {
             .await
             .context("decoding runs list")?;
 
-        let Some(run) = runs.iter().find(|r| r["id"].as_str() == Some(run_id.as_str())) else {
-            bail!("run {run_id} disappeared from partition {}", args.partition_id);
+        let Some(run) = runs
+            .iter()
+            .find(|r| r["id"].as_str() == Some(run_id.as_str()))
+        else {
+            bail!(
+                "run {run_id} disappeared from partition {}",
+                args.partition_id
+            );
         };
-        let status = run["status"]
-            .as_str()
-            .context("run missing status")?;
+        let status = run["status"].as_str().context("run missing status")?;
         match status {
             "running" => continue,
             "finished" | "error" | "cancelled" => break,

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use axum::http::{header, Request, StatusCode};
 use axum::body::Body;
-use eunomio_auth_local::{ABSOLUTE_LIFETIME_SECS, IDLE_LIFETIME_SECS};
+use axum::http::{header, Request, StatusCode};
 use eunomio_auth_local::COOKIE_NAME;
+use eunomio_auth_local::{ABSOLUTE_LIFETIME_SECS, IDLE_LIFETIME_SECS};
 use eunomio_sqlite::db;
 use pretty_assertions::assert_eq;
 
@@ -201,8 +201,7 @@ async fn login_requires_key_for_new_user() {
 async fn me_after_login_returns_principal() {
     let app = TestApp::spawn().await;
     let cookie = login(&app.router, TEST_USERNAME, TEST_CURSOR_KEY).await;
-    let (status, body) =
-        authenticated_empty_request(&app.router, &cookie, "GET", "/api/me").await;
+    let (status, body) = authenticated_empty_request(&app.router, &cookie, "GET", "/api/me").await;
     assert_eq!(status, StatusCode::OK);
     assert!(body["userId"].is_string());
     assert_eq!(body["orgId"].as_str().unwrap(), "local");
@@ -234,8 +233,7 @@ async fn logout_clears_session() {
         authenticated_empty_request(&app.router, &cookie, "POST", "/api/auth/logout").await;
     assert_eq!(status, StatusCode::OK);
 
-    let (status, body) =
-        authenticated_empty_request(&app.router, &cookie, "GET", "/api/me").await;
+    let (status, body) = authenticated_empty_request(&app.router, &cookie, "GET", "/api/me").await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(body["code"].as_str().unwrap(), "unauthenticated");
     assert_eq!(count_auth_sessions(&app.state).await, 0);
@@ -279,12 +277,7 @@ async fn csrf_rejects_mutating_without_header() {
         .header("content-type", "application/json")
         .header(header::COOKIE, &cookie)
         .body(Body::from(
-            serde_json::to_vec(&local_session_body(
-                &app.repo_path(),
-                "main",
-                "feature",
-            ))
-            .unwrap(),
+            serde_json::to_vec(&local_session_body(&app.repo_path(), "main", "feature")).unwrap(),
         ))
         .unwrap();
     let (status, _, body) = request_with_headers(&app.router, req).await;
@@ -359,8 +352,7 @@ async fn session_idle_expiry_returns_401() {
     )
     .await;
 
-    let (status, body) =
-        authenticated_empty_request(&app.router, &cookie, "GET", "/api/me").await;
+    let (status, body) = authenticated_empty_request(&app.router, &cookie, "GET", "/api/me").await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(body["code"].as_str().unwrap(), "unauthenticated");
 }
@@ -383,8 +375,7 @@ async fn session_absolute_expiry_returns_401() {
     )
     .await;
 
-    let (status, body) =
-        authenticated_empty_request(&app.router, &cookie, "GET", "/api/me").await;
+    let (status, body) = authenticated_empty_request(&app.router, &cookie, "GET", "/api/me").await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(body["code"].as_str().unwrap(), "unauthenticated");
 }

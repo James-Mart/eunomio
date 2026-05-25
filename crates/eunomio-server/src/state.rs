@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::{
-    coordinator::Coordinator,
-    launch::LaunchIntent,
-    subagents::load_subagents,
+    coordinator::Coordinator, launch::LaunchIntent, subagents::load_subagents,
     tunnel::TunnelRegistry,
 };
 use anyhow::{Context, Result};

@@ -45,8 +45,18 @@ async fn per_user_settings_isolated() {
     .await;
     assert_eq!(status, StatusCode::OK);
 
-    let path_a = app.data.path().join("users").join(user_a).join("settings.json");
-    let path_b = app.data.path().join("users").join(user_b).join("settings.json");
+    let path_a = app
+        .data
+        .path()
+        .join("users")
+        .join(user_a)
+        .join("settings.json");
+    let path_b = app
+        .data
+        .path()
+        .join("users")
+        .join(user_b)
+        .join("settings.json");
     let text_a = std::fs::read_to_string(&path_a).unwrap();
     let text_b = std::fs::read_to_string(&path_b).unwrap();
     assert_ne!(text_a, text_b);
@@ -54,8 +64,7 @@ async fn per_user_settings_isolated() {
     assert!(text_b.contains("model-b"));
 
     let (status, body) =
-        authenticated_empty_request(&app.router, &cookie_b, "GET", "/api/partition-settings")
-            .await;
+        authenticated_empty_request(&app.router, &cookie_b, "GET", "/api/partition-settings").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["coordinator"]["model"].as_str().unwrap(), "model-b");
     assert_ne!(body["coordinator"]["model"].as_str().unwrap(), "model-a");
@@ -104,10 +113,7 @@ async fn surveyor_enabled_defaults_true_and_patches() {
     let (status, body) =
         authenticated_empty_request(&app.router, &cookie, "GET", "/api/partition-settings").await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        body["coordinator"]["surveyorEnabled"].as_bool(),
-        Some(true)
-    );
+    assert_eq!(body["coordinator"]["surveyorEnabled"].as_bool(), Some(true));
 
     let (status, body) = authenticated_json_request(
         &app.router,

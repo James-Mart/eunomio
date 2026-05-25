@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{AppError, git, state::AppState};
+use crate::{git, state::AppState, AppError};
 
 pub async fn branch_from_node(
     state: &AppState,
@@ -14,8 +14,16 @@ pub async fn branch_from_node(
         return Err(AppError::BadRequest("branchName is required".into()));
     }
 
-    state.datastore.sessions().ensure(org_id, session_id).await?;
-    let fields = state.datastore.sessions().repo_fields(org_id, session_id).await?;
+    state
+        .datastore
+        .sessions()
+        .ensure(org_id, session_id)
+        .await?;
+    let fields = state
+        .datastore
+        .sessions()
+        .repo_fields(org_id, session_id)
+        .await?;
     if !fields.is_local {
         return Err(AppError::BadRequest(
             "branch creation is only supported for local repository sessions".into(),
@@ -23,7 +31,11 @@ pub async fn branch_from_node(
     }
     let git_root = crate::repo_store::session_git_root(state, org_id, session_id).await?;
 
-    let walk = state.datastore.nodes().walk_to_base(org_id, session_id, node_id).await?;
+    let walk = state
+        .datastore
+        .nodes()
+        .walk_to_base(org_id, session_id, node_id)
+        .await?;
     if walk.is_empty() {
         return Err(AppError::NotFound);
     }

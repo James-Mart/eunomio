@@ -27,6 +27,7 @@ fn graph_node_mapper(row: &rusqlite::Row<'_>) -> rusqlite::Result<GraphNode> {
         strategy: row
             .get::<_, Option<String>>(6)?
             .and_then(|s| PartitionStrategy::parse(&s)),
+        has_shaving_track: row.get::<_, i64>(7)? != 0,
     })
 }
 
@@ -43,8 +44,9 @@ impl NodeRepo for SqliteNodeRepo {
             .conn
             .call(move |conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT node_id, parent_node_id, tree_sha, commit_sha, title, description, strategy \
-                 FROM nodes WHERE org_id = ?1 AND session_id = ?2 ORDER BY created_at",
+                    "SELECT n.node_id, n.parent_node_id, n.tree_sha, n.commit_sha, n.title, n.description, n.strategy, \
+                         EXISTS(SELECT 1 FROM shaving_tracks st WHERE st.org_id = n.org_id AND st.session_id = n.session_id AND st.slice_node_id = n.node_id) \
+                     FROM nodes n WHERE n.org_id = ?1 AND n.session_id = ?2 ORDER BY n.created_at",
                 )?;
                 let rows = stmt
                     .query_map(
@@ -71,8 +73,9 @@ impl NodeRepo for SqliteNodeRepo {
             .conn
             .call(move |conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT node_id, parent_node_id, tree_sha, commit_sha, title, description, strategy \
-                 FROM nodes WHERE org_id = ?1 AND session_id = ?2 AND node_id = ?3",
+                    "SELECT n.node_id, n.parent_node_id, n.tree_sha, n.commit_sha, n.title, n.description, n.strategy, \
+                         EXISTS(SELECT 1 FROM shaving_tracks st WHERE st.org_id = n.org_id AND st.session_id = n.session_id AND st.slice_node_id = n.node_id) \
+                     FROM nodes n WHERE n.org_id = ?1 AND n.session_id = ?2 AND n.node_id = ?3",
                 )?;
                 let mut rows =
                     stmt.query(tokio_rusqlite::params![org_id, session_id, node_id])?;
@@ -194,8 +197,9 @@ impl NodeRepo for SqliteNodeRepo {
                 )?;
                 require_affected_sqlite(n)?;
                 let mut stmt = conn.prepare(
-                    "SELECT node_id, parent_node_id, tree_sha, commit_sha, title, description, strategy \
-                 FROM nodes WHERE org_id = ?1 AND session_id = ?2 AND node_id = ?3",
+                    "SELECT n.node_id, n.parent_node_id, n.tree_sha, n.commit_sha, n.title, n.description, n.strategy, \
+                         EXISTS(SELECT 1 FROM shaving_tracks st WHERE st.org_id = n.org_id AND st.session_id = n.session_id AND st.slice_node_id = n.node_id) \
+                     FROM nodes n WHERE n.org_id = ?1 AND n.session_id = ?2 AND n.node_id = ?3",
                 )?;
                 let mut rows = stmt.query(tokio_rusqlite::params![org_id, session_id, node_id])?;
                 if let Some(row) = rows.next()? {
@@ -246,7 +250,8 @@ impl NodeRepo for SqliteNodeRepo {
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(rows)
             })
-            .await.map_err(crate::repo::map_sqlite_err)?;
+            .await
+            .map_err(crate::repo::map_sqlite_err)?;
         Ok(walk)
     }
 

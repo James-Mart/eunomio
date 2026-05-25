@@ -31,9 +31,7 @@ pub fn public_launch_routes() -> Router<AppState> {
     Router::new().route("/api/launch/pull-request", get(get_launch_pull_request))
 }
 
-async fn get_launch_pull_request(
-    State(state): State<AppState>,
-) -> Json<LaunchPullRequestResponse> {
+async fn get_launch_pull_request(State(state): State<AppState>) -> Json<LaunchPullRequestResponse> {
     Json(LaunchPullRequestResponse {
         pull_request_url: state.launch.take_pull_request(),
     })

@@ -50,7 +50,8 @@ impl SessionRepo for SqliteSessionRepo {
                 let mut rows = stmt.query(tokio_rusqlite::params![session_id, org_id])?;
                 Ok(rows.next()?.is_some())
             })
-            .await.map_err(crate::repo::map_sqlite_err)?;
+            .await
+            .map_err(crate::repo::map_sqlite_err)?;
         Ok(exists)
     }
 
@@ -77,7 +78,8 @@ impl SessionRepo for SqliteSessionRepo {
                     Ok(None)
                 }
             })
-            .await.map_err(crate::repo::map_sqlite_err)?;
+            .await
+            .map_err(crate::repo::map_sqlite_err)?;
         row.ok_or(AppError::NotFound)
     }
 
@@ -163,7 +165,8 @@ impl SessionRepo for SqliteSessionRepo {
                     Ok(None)
                 }
             })
-            .await.map_err(crate::repo::map_sqlite_err)?;
+            .await
+            .map_err(crate::repo::map_sqlite_err)?;
         Ok(row)
     }
 
@@ -182,7 +185,8 @@ impl SessionRepo for SqliteSessionRepo {
                     Ok(None)
                 }
             })
-            .await.map_err(crate::repo::map_sqlite_err)?;
+            .await
+            .map_err(crate::repo::map_sqlite_err)?;
         Ok(row)
     }
 
@@ -206,7 +210,8 @@ impl SessionRepo for SqliteSessionRepo {
                     Ok(None)
                 }
             })
-            .await.map_err(crate::repo::map_sqlite_err)?;
+            .await
+            .map_err(crate::repo::map_sqlite_err)?;
         row.ok_or(AppError::NotFound)
     }
 
@@ -264,7 +269,8 @@ impl SessionRepo for SqliteSessionRepo {
                 let count: i64 = row.get(0)?;
                 Ok(count)
             })
-            .await.map_err(crate::repo::map_sqlite_err)?;
+            .await
+            .map_err(crate::repo::map_sqlite_err)?;
         Ok(count)
     }
 
@@ -361,7 +367,8 @@ impl SessionRepo for SqliteSessionRepo {
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(rows)
             })
-            .await.map_err(crate::repo::map_sqlite_err)?;
+            .await
+            .map_err(crate::repo::map_sqlite_err)?;
         Ok(rows)
     }
 
@@ -460,20 +467,24 @@ mod tests {
         let counts: (i64, i64, i64, i64, i64) = conn
             .call(|c| {
                 let sessions: i64 =
-                    c.query_row("SELECT COUNT(*) FROM sessions WHERE id = 's1'", [], |r| r.get(0))?;
-                let nodes: i64 =
-                    c.query_row("SELECT COUNT(*) FROM nodes WHERE session_id = 's1'", [], |r| {
+                    c.query_row("SELECT COUNT(*) FROM sessions WHERE id = 's1'", [], |r| {
                         r.get(0)
                     })?;
+                let nodes: i64 = c.query_row(
+                    "SELECT COUNT(*) FROM nodes WHERE session_id = 's1'",
+                    [],
+                    |r| r.get(0),
+                )?;
                 let partitions: i64 = c.query_row(
                     "SELECT COUNT(*) FROM partitions WHERE session_id = 's1'",
                     [],
                     |r| r.get(0),
                 )?;
-                let runs: i64 =
-                    c.query_row("SELECT COUNT(*) FROM runs WHERE session_id = 's1'", [], |r| {
-                        r.get(0)
-                    })?;
+                let runs: i64 = c.query_row(
+                    "SELECT COUNT(*) FROM runs WHERE session_id = 's1'",
+                    [],
+                    |r| r.get(0),
+                )?;
                 let viewed: i64 = c.query_row(
                     "SELECT COUNT(*) FROM edge_file_viewed WHERE session_id = 's1'",
                     [],
