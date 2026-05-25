@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   Background,
   ReactFlow,
@@ -9,6 +9,7 @@ import {
   type Node,
   type NodeMouseHandler,
   type NodeTypes,
+  type Viewport,
 } from "@xyflow/react";
 
 import type { Partition } from "@/lib/api";
@@ -45,11 +46,51 @@ type Props = {
   onNodeClick: NodeMouseHandler;
 };
 
-function CandidateFitView({ fingerprint }: { fingerprint: string }) {
-  const { fitView } = useReactFlow();
+const FIT_VIEW_OPTIONS = { padding: 0.2 } as const;
+
+/**
+ * - Fit when entering original or candidate layouts.
+ * - On first canonical load, fit once.
+ * - When returning to canonical, restore pan/zoom from before leaving.
+ */
+function GraphViewportFit({ layout }: { layout: SessionLayout }) {
+  const { fitView, getViewport, setViewport } = useReactFlow();
+  const canonicalViewportRef = useRef<Viewport | null>(null);
+  const didInitialCanonicalFit = useRef(false);
+
+  const enterTrigger =
+    layout.kind === "candidate"
+      ? candidateLayoutFingerprint(layout)
+      : layout.kind === "original"
+        ? "original"
+        : null;
+
   useEffect(() => {
-    void fitView({ padding: 0.2 });
-  }, [fingerprint, fitView]);
+    return () => {
+      if (layout.kind === "canonical") {
+        canonicalViewportRef.current = getViewport();
+      }
+    };
+  }, [layout.kind, getViewport]);
+
+  useEffect(() => {
+    if (enterTrigger !== null) {
+      void fitView(FIT_VIEW_OPTIONS);
+      return;
+    }
+    if (layout.kind !== "canonical") return;
+
+    const saved = canonicalViewportRef.current;
+    if (saved) {
+      void setViewport(saved);
+      return;
+    }
+    if (!didInitialCanonicalFit.current) {
+      didInitialCanonicalFit.current = true;
+      void fitView(FIT_VIEW_OPTIONS);
+    }
+  }, [enterTrigger, layout.kind, fitView, setViewport]);
+
   return null;
 }
 
@@ -70,24 +111,18 @@ function GraphFlow({
     [layout, selectedNodeId],
   );
 
-  const fitFingerprint =
-    layout.kind === "candidate" ? candidateLayoutFingerprint(layout) : null;
-
   return (
     <ReactFlow
       nodes={nodes}
       edges={layout.edges}
       nodeTypes={nodeTypes}
       colorMode="dark"
-      fitView={fitFingerprint === null}
       nodesDraggable={false}
       proOptions={{ hideAttribution: true }}
       onNodeClick={onNodeClick}
     >
       <Background />
-      {fitFingerprint !== null ? (
-        <CandidateFitView fingerprint={fitFingerprint} />
-      ) : null}
+      <GraphViewportFit layout={layout} />
     </ReactFlow>
   );
 }
@@ -116,7 +151,7 @@ export function GraphPane({
   );
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
         <span className="text-xs text-muted-foreground">View</span>
         <Select value={viewSelectValue} onValueChange={onSelectView}>

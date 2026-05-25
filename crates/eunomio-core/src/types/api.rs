@@ -85,6 +85,18 @@ pub struct Graph {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct EdgeViewedFiles {
+    pub paths: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetEdgeFileViewedRequest {
+    pub viewed: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Edge {
     pub target_node_id: String,
     pub parent_node_id: Option<String>,

@@ -2,6 +2,7 @@
 
 import type { Graph, GraphNode } from "@/lib/api";
 import EdgePane from "@/components/EdgePane";
+import { CanonicalEdgePane } from "@/components/session/CanonicalEdgePane";
 
 import {
   CANDIDATE_SLICE_ID,
@@ -97,8 +98,7 @@ export function DiffPane({
 
   if (!selectedCanonicalNode) return <DiffPaneEmpty />;
   return (
-    <EdgePane
-      key={selectedCanonicalNode.nodeId}
+    <CanonicalEdgePane
       sessionId={sessionId}
       targetNodeId={selectedCanonicalNode.nodeId}
     />

@@ -30,7 +30,7 @@ Split `backend/` into a Cargo workspace of eight crates matching `HOSTED_DEPLOYM
 - **Per-entity traits as separate `AppState` fields** — rejected with flat trait: same mockability problem at the wiring layer; umbrella + accessors group by entity without exploding `AppState`.
 - **Runtime `DeploymentMode` flag** — rejected: trait extraction removes the need; invites `if hosted` branches in shared code.
 - **`IntoResponse for AppError` in `eunomio-core`** — rejected despite orphan rules making a sqlite-side `From` look like the obvious fix: any `IntoResponse` impl in core would force every leaf crate to transitively compile axum. `ServerError` newtype in `eunomio-server` solves HTTP mapping without that dependency leak.
-- **sqlx driver swap now** — deferred (not rejected) to `TASKS.md`: bundled with the multi-crate split would conflate refactor failure modes; `Datastore` surface is stable enough to swap drivers later.
+- **sqlx driver swap now** — deferred (not rejected) to [`tasks/sqlite-sqlx-driver.md`](../../tasks/sqlite-sqlx-driver.md): bundled with the multi-crate split would conflate refactor failure modes; `Datastore` surface is stable enough to swap drivers later.
 
 ## Consequences
 

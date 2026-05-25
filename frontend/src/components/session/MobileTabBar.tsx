@@ -12,6 +12,10 @@ import { cn } from "@/lib/utils";
 
 import type { ActiveTab } from "./useSessionActiveTab";
 
+/** Reserve space below mobile session panels for the fixed tab bar. */
+export const mobileTabBarInsetClass =
+  "pb-[calc(4rem+env(safe-area-inset-bottom,0px))]";
+
 type IconComponent = React.ComponentType<IconProps>;
 
 const TABS: { value: ActiveTab; label: string; icon: IconComponent }[] = [
@@ -36,8 +40,8 @@ export function TabPanel({
       aria-labelledby={`session-tab-${id}`}
       aria-hidden={!active}
       className={cn(
-        "absolute inset-0",
-        !active && "invisible pointer-events-none",
+        "absolute inset-0 flex min-h-0 flex-col overflow-hidden",
+        active ? "z-10 bg-background" : "hidden",
       )}
     >
       {children}
@@ -56,7 +60,7 @@ export function BottomTabBar({
     <nav
       role="tablist"
       aria-label="Session view"
-      className="flex h-16 shrink-0 items-stretch border-t bg-background pb-[env(safe-area-inset-bottom)]"
+      className="fixed inset-x-0 bottom-0 z-40 flex h-16 shrink-0 items-stretch border-t bg-background pb-[env(safe-area-inset-bottom)]"
     >
       {TABS.map(({ value: tabValue, label, icon: Icon }) => {
         const isActive = tabValue === value;

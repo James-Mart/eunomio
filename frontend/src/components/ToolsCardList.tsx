@@ -16,7 +16,7 @@ export default function ToolsCardList(ctx: ToolsContext) {
   const showCards = showNodeTools(ctx);
 
   return (
-    <div className="flex h-full flex-col gap-4 overflow-y-auto bg-background p-4">
+    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-y-contain bg-background p-4">
       <Card>
         <CardHeader className="p-4 pb-2">
           <CardTitle className="text-base font-semibold">Partition</CardTitle>

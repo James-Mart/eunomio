@@ -17,7 +17,7 @@ export function DiffPaneSkeleton() {
   });
 
   return (
-    <div className="h-full min-h-0 w-full">
+    <div className="h-full min-h-0 w-full bg-background">
       <ResizablePanelGroup
         orientation="horizontal"
         defaultLayout={treeSplitLayout.defaultLayout}

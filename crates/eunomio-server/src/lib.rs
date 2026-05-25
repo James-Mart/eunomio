@@ -5,6 +5,7 @@ pub mod branching;
 pub mod coordinator;
 pub mod cursor_bridge;
 pub mod edges;
+pub mod edge_file_viewed;
 pub mod embed;
 pub mod git;
 pub mod github;

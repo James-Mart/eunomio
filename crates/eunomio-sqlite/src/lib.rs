@@ -5,12 +5,12 @@ pub mod display;
 pub mod repo;
 
 use eunomio_core::traits::{
-    AuthEventRepo, AuthSessionRepo, Datastore, NodeRepo, OrgRepo, PartitionRepo, RunRepo,
-    SessionRepo, UserRepo,
+    AuthEventRepo, AuthSessionRepo, Datastore, EdgeFileViewedRepo, NodeRepo, OrgRepo,
+    PartitionRepo, RunRepo, SessionRepo, UserRepo,
 };
 use repo::{
-    SqliteAuthEventRepo, SqliteAuthSessionRepo, SqliteNodeRepo, SqliteOrgRepo, SqlitePartitionRepo,
-    SqliteRunRepo, SqliteSessionRepo, SqliteUserRepo,
+    SqliteAuthEventRepo, SqliteAuthSessionRepo, SqliteEdgeFileViewedRepo, SqliteNodeRepo,
+    SqliteOrgRepo, SqlitePartitionRepo, SqliteRunRepo, SqliteSessionRepo, SqliteUserRepo,
 };
 use std::{path::Path, sync::Arc};
 use tokio_rusqlite::Connection;
@@ -24,6 +24,7 @@ pub struct SqliteDatastore {
     nodes: Arc<SqliteNodeRepo>,
     partitions: Arc<SqlitePartitionRepo>,
     runs: Arc<SqliteRunRepo>,
+    edge_file_viewed: Arc<SqliteEdgeFileViewedRepo>,
 }
 
 impl SqliteDatastore {
@@ -41,7 +42,8 @@ impl SqliteDatastore {
             sessions: Arc::new(SqliteSessionRepo::new(conn.clone())),
             nodes: Arc::new(SqliteNodeRepo::new(conn.clone())),
             partitions: Arc::new(SqlitePartitionRepo::new(conn.clone())),
-            runs: Arc::new(SqliteRunRepo::new(conn)),
+            runs: Arc::new(SqliteRunRepo::new(conn.clone())),
+            edge_file_viewed: Arc::new(SqliteEdgeFileViewedRepo::new(conn)),
         }
     }
 }
@@ -77,5 +79,9 @@ impl Datastore for SqliteDatastore {
 
     fn runs(&self) -> &dyn RunRepo {
         self.runs.as_ref()
+    }
+
+    fn edge_file_viewed(&self) -> &dyn EdgeFileViewedRepo {
+        self.edge_file_viewed.as_ref()
     }
 }

@@ -113,7 +113,7 @@ fn default_true() -> bool {
 }
 
 fn default_model() -> String {
-    "composer-2".to_string()
+    "composer-2.5".to_string()
 }
 
 #[derive(Debug, Deserialize, Default)]

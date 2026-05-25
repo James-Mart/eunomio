@@ -41,9 +41,18 @@
     color-scheme: dark;
   }
 
+  html,
+  body {
+    @apply h-full overflow-hidden overscroll-none;
+  }
+
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-sans);
+  }
+
+  #root {
+    @apply h-full overflow-hidden;
   }
 
   .ui-checkbox {

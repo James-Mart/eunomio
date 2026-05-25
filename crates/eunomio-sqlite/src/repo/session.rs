@@ -380,6 +380,10 @@ impl SessionRepo for SqliteSessionRepo {
                     tokio_rusqlite::params![session_id, org_id],
                 )?;
                 tx.execute(
+                    "DELETE FROM edge_file_viewed WHERE session_id = ?1 AND org_id = ?2",
+                    tokio_rusqlite::params![session_id, org_id],
+                )?;
+                tx.execute(
                     "DELETE FROM nodes WHERE session_id = ?1 AND org_id = ?2",
                     tokio_rusqlite::params![session_id, org_id],
                 )?;
@@ -440,6 +444,12 @@ mod tests {
                  VALUES ('r1', 'local', 'u1', 'p1', 's1', 'n1', 'survey', 'running', 1)",
                 [],
             )?;
+            c.execute(
+                "INSERT INTO edge_file_viewed \
+                 (org_id, user_id, session_id, target_node_id, file_path, viewed_at) \
+                 VALUES ('local', 'u1', 's1', 'n1', 'src/a.rs', 1)",
+                [],
+            )?;
             Ok(())
         })
         .await
@@ -447,7 +457,7 @@ mod tests {
 
         repo.delete_cascade("local", "s1").await.unwrap();
 
-        let counts: (i64, i64, i64, i64) = conn
+        let counts: (i64, i64, i64, i64, i64) = conn
             .call(|c| {
                 let sessions: i64 =
                     c.query_row("SELECT COUNT(*) FROM sessions WHERE id = 's1'", [], |r| r.get(0))?;
@@ -464,10 +474,15 @@ mod tests {
                     c.query_row("SELECT COUNT(*) FROM runs WHERE session_id = 's1'", [], |r| {
                         r.get(0)
                     })?;
-                Ok((sessions, nodes, partitions, runs))
+                let viewed: i64 = c.query_row(
+                    "SELECT COUNT(*) FROM edge_file_viewed WHERE session_id = 's1'",
+                    [],
+                    |r| r.get(0),
+                )?;
+                Ok((sessions, nodes, partitions, runs, viewed))
             })
             .await
             .unwrap();
-        assert_eq!(counts, (0, 0, 0, 0));
+        assert_eq!(counts, (0, 0, 0, 0, 0));
     }
 }

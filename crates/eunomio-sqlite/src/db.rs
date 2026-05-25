@@ -127,6 +127,19 @@ CREATE TABLE IF NOT EXISTS runs (
 CREATE INDEX IF NOT EXISTS runs_by_edge ON runs (session_id, target_node_id);
 CREATE INDEX IF NOT EXISTS runs_by_partition ON runs (partition_id);
 CREATE INDEX IF NOT EXISTS runs_by_org ON runs (org_id);
+
+CREATE TABLE IF NOT EXISTS edge_file_viewed (
+  org_id TEXT NOT NULL REFERENCES orgs(id),
+  user_id TEXT NOT NULL REFERENCES users(id),
+  session_id TEXT NOT NULL,
+  target_node_id TEXT NOT NULL,
+  file_path TEXT NOT NULL,
+  viewed_at INTEGER NOT NULL,
+  PRIMARY KEY (org_id, user_id, session_id, target_node_id, file_path),
+  FOREIGN KEY (session_id, target_node_id) REFERENCES nodes(session_id, node_id)
+);
+CREATE INDEX IF NOT EXISTS edge_file_viewed_by_session
+  ON edge_file_viewed (session_id, org_id);
 "#;
 
 pub async fn open(db_path: &Path) -> Result<Connection> {

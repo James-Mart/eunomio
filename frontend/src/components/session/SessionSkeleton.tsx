@@ -8,8 +8,13 @@ import {
   useDefaultLayout,
 } from "@/components/ui/resizable";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 
-import { BottomTabBar, TabPanel } from "./MobileTabBar";
+import {
+  BottomTabBar,
+  mobileTabBarInsetClass,
+  TabPanel,
+} from "./MobileTabBar";
 import { useSessionActiveTab } from "./useSessionActiveTab";
 
 function SessionGraphSkeleton() {
@@ -102,8 +107,13 @@ export function SessionSkeleton() {
         </ResizablePanelGroup>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col md:hidden">
-        <div className="relative min-h-0 flex-1">
+      <div
+        className={cn(
+          "flex min-h-0 flex-1 flex-col overflow-hidden md:hidden",
+          mobileTabBarInsetClass,
+        )}
+      >
+        <div className="relative min-h-0 flex-1 overflow-hidden">
           <TabPanel id="graph" active={activeTab === "graph"}>
             <SessionGraphSkeleton />
           </TabPanel>

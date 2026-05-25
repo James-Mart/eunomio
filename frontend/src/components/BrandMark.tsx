@@ -7,7 +7,7 @@ type Props = {
 };
 
 const MARK_X = 16;
-const MARK_Y = 16.5;
+const MARK_Y = 13.5;
 
 export function BrandMark({ className }: Props) {
   return (

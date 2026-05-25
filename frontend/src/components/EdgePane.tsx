@@ -28,23 +28,30 @@ import { DiffPaneSkeleton } from "@/components/session/DiffPaneSkeleton";
 import { useIsDesktop } from "@/lib/useIsDesktop";
 import { cn, cssEscape } from "@/lib/utils";
 
-type Props =
-  | {
-      sessionId: string;
-      targetNodeId: string;
-      fromTree?: undefined;
-      toTree?: undefined;
-      beforeRef?: undefined;
-      afterRef?: undefined;
-    }
-  | {
-      sessionId: string;
-      targetNodeId?: undefined;
-      fromTree: string;
-      toTree: string;
-      beforeRef?: string;
-      afterRef?: string;
-    };
+type ViewedProps = {
+  viewedPaths?: ReadonlySet<string>;
+  onToggleViewed?: (path: string, viewed: boolean) => void;
+};
+
+type Props = ViewedProps &
+  (
+    | {
+        sessionId: string;
+        targetNodeId: string;
+        fromTree?: undefined;
+        toTree?: undefined;
+        beforeRef?: undefined;
+        afterRef?: undefined;
+      }
+    | {
+        sessionId: string;
+        targetNodeId?: undefined;
+        fromTree: string;
+        toTree: string;
+        beforeRef?: string;
+        afterRef?: string;
+      }
+  );
 
 type LoadedEdge = {
   diff: string;
@@ -58,7 +65,7 @@ type Overflow = "scroll" | "wrap";
 const FILE_DATA_ATTR = "data-edge-file-path";
 
 export default function EdgePane(props: Props) {
-  const { sessionId } = props;
+  const { sessionId, viewedPaths, onToggleViewed } = props;
   const targetNodeId = "targetNodeId" in props ? props.targetNodeId : undefined;
   const fromTree = "fromTree" in props ? props.fromTree : undefined;
   const toTree = "toTree" in props ? props.toTree : undefined;
@@ -196,6 +203,46 @@ export default function EdgePane(props: Props) {
 
   const paths = useMemo(() => fileDiffs.map((f) => f.name), [fileDiffs]);
 
+  const viewedPathsInDiff = useMemo(() => {
+    if (!viewedPaths) return undefined;
+    const inDiff = new Set(paths);
+    return new Set([...viewedPaths].filter((p) => inDiff.has(p)));
+  }, [viewedPaths, paths]);
+
+  const viewedInDiff = viewedPathsInDiff?.size ?? 0;
+
+  useEffect(() => {
+    if (!viewedPathsInDiff || viewedPathsInDiff.size === 0) return;
+    setCollapsedFiles((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const p of viewedPathsInDiff) {
+        if (!next.has(p)) {
+          next.add(p);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [viewedPathsInDiff]);
+
+  const handleToggleViewed = useCallback(
+    (path: string, viewed: boolean) => {
+      onToggleViewed?.(path, viewed);
+      setCollapsedFiles((prev) => {
+        const next = new Set(prev);
+        if (viewed) {
+          next.add(path);
+          setPendingScrollTo(path);
+        } else {
+          next.delete(path);
+        }
+        return next;
+      });
+    },
+    [onToggleViewed],
+  );
+
   const scrollFileIntoView = useCallback((path: string) => {
     const root = rootRef.current;
     if (!root) return;
@@ -270,6 +317,11 @@ export default function EdgePane(props: Props) {
   const diffBody = (
     <div className="flex h-full min-w-0 flex-col">
       <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-b px-3 py-1.5 pr-12 md:pr-3">
+        {viewedPathsInDiff && paths.length > 0 ? (
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {viewedInDiff}/{paths.length} viewed
+          </span>
+        ) : null}
         <SegmentedToggle
           value={diffStyle}
           onChange={setDiffStyle}
@@ -288,20 +340,27 @@ export default function EdgePane(props: Props) {
         />
       </div>
       <Virtualizer
-        className="flex-1 min-w-0 h-full overflow-y-auto overflow-x-hidden touch-pan-y"
+        className="flex-1 min-w-0 h-full overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y"
         contentClassName="px-3"
       >
         {fileDiffs.map((file, i) => {
           const isCollapsed = collapsedFiles.has(file.name);
+          const isViewed = viewedPathsInDiff?.has(file.name) ?? false;
           const onWrapperClick = (e: React.MouseEvent) => {
             const path = e.nativeEvent.composedPath();
+            const clickedViewed = path.some(
+              (n) =>
+                n instanceof Element &&
+                typeof n.closest === "function" &&
+                n.closest("[data-edge-viewed-control]") !== null,
+            );
             const inHeader = path.some(
               (n) =>
                 n instanceof Element &&
                 typeof n.matches === "function" &&
                 n.matches("[data-diffs-header]"),
             );
-            if (inHeader) {
+            if (inHeader && !clickedViewed) {
               toggleCollapsed(file.name);
               selectFileInTree(file.name);
             }
@@ -314,6 +373,7 @@ export default function EdgePane(props: Props) {
               className={cn(
                 "my-2 overflow-hidden rounded-md",
                 activeFilePath === file.name && "border-2 border-link",
+                isViewed && "opacity-80",
               )}
             >
               <FileDiff
@@ -338,6 +398,32 @@ export default function EdgePane(props: Props) {
                     )}
                   </span>
                 )}
+                renderHeaderMetadata={() =>
+                  onToggleViewed ? (
+                    <label
+                      data-edge-viewed-control
+                      className="inline-flex cursor-pointer items-center gap-1.5 pl-2 text-xs text-muted-foreground"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isViewed}
+                        className="h-4 w-4 rounded border-border"
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label={
+                          isViewed
+                            ? `Mark ${file.name} as not viewed`
+                            : `Mark ${file.name} as viewed`
+                        }
+                        onChange={(e) =>
+                          handleToggleViewed(file.name, e.target.checked)
+                        }
+                      />
+                      Viewed
+                    </label>
+                  ) : null
+                }
               />
             </div>
           );
@@ -347,7 +433,7 @@ export default function EdgePane(props: Props) {
   );
 
   return (
-    <div ref={rootRef} className="h-full min-h-0 w-full">
+    <div ref={rootRef} className="h-full min-h-0 w-full overflow-hidden">
       <ResizablePanelGroup
         orientation="horizontal"
         defaultLayout={treeSplitLayout.defaultLayout}

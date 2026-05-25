@@ -8,6 +8,7 @@ pub(crate) fn map_sqlite_err(e: tokio_rusqlite::Error) -> AppError {
 
 pub mod auth_event;
 pub mod auth_session;
+pub mod edge_file_viewed;
 pub mod node;
 pub mod org;
 pub mod partition;
@@ -17,6 +18,7 @@ pub mod user;
 
 pub use auth_event::SqliteAuthEventRepo;
 pub use auth_session::SqliteAuthSessionRepo;
+pub use edge_file_viewed::SqliteEdgeFileViewedRepo;
 pub use node::SqliteNodeRepo;
 pub use org::SqliteOrgRepo;
 pub use partition::SqlitePartitionRepo;

@@ -344,6 +344,27 @@ pub trait RunRepo: Send + Sync {
     async fn cancel(&self, org_id: &str, run_id: &str) -> Result<(), AppError>;
 }
 
+#[async_trait]
+pub trait EdgeFileViewedRepo: Send + Sync {
+    async fn list_paths(
+        &self,
+        org_id: &str,
+        user_id: &str,
+        session_id: &str,
+        target_node_id: &str,
+    ) -> Result<Vec<String>, AppError>;
+    async fn set_viewed(
+        &self,
+        org_id: &str,
+        user_id: &str,
+        session_id: &str,
+        target_node_id: &str,
+        file_path: &str,
+        viewed: bool,
+        viewed_at: i64,
+    ) -> Result<(), AppError>;
+}
+
 /// Umbrella datastore trait.
 pub trait Datastore: Send + Sync {
     fn orgs(&self) -> &dyn OrgRepo;
@@ -354,4 +375,5 @@ pub trait Datastore: Send + Sync {
     fn nodes(&self) -> &dyn NodeRepo;
     fn partitions(&self) -> &dyn PartitionRepo;
     fn runs(&self) -> &dyn RunRepo;
+    fn edge_file_viewed(&self) -> &dyn EdgeFileViewedRepo;
 }

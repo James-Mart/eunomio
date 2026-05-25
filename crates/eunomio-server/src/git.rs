@@ -199,7 +199,7 @@ fn path_from_bytes(bytes: &[u8]) -> Result<String> {
         .map_err(|e| anyhow!("non-utf8 path in name-status output: {}", e))
 }
 
-async fn fetch_blob_text(repo: &Path, tree: &str, path: &str) -> Result<Option<String>> {
+pub(crate) async fn fetch_blob_text(repo: &Path, tree: &str, path: &str) -> Result<Option<String>> {
     let spec = format!("{}:{}", tree, path);
     let out = Command::new("git")
         .arg("-C")

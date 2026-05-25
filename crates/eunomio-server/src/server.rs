@@ -4,7 +4,7 @@ use eunomio_core::types::*;
 use crate::{
     auth::{auth_routes, public_auth_routes, require_csrf_header, require_principal, CurrentPrincipal},
     launch::public_launch_routes,
-    branching, edges, embed,
+    branching, edge_file_viewed, edges, embed,
     ServerError,
     AppError,
     middleware::host_guard,
@@ -18,7 +18,7 @@ use axum::{
     http::StatusCode,
     middleware::{from_fn, from_fn_with_state},
     response::{sse::Event, IntoResponse, Sse},
-    routing::{delete, get, patch, post},
+    routing::{delete, get, patch, post, put},
     Json, Router,
 };
 use futures::stream::Stream;
@@ -37,6 +37,14 @@ fn protected_routes() -> Router<AppState> {
         )
         .route("/api/sessions/:id/graph", get(get_graph))
         .route("/api/sessions/:id/edges/:target_node_id", get(get_edge))
+        .route(
+            "/api/sessions/:id/edges/:target_node_id/viewed",
+            get(edge_file_viewed::get_edge_viewed),
+        )
+        .route(
+            "/api/sessions/:id/edges/:target_node_id/viewed/:file_path",
+            put(edge_file_viewed::put_edge_file_viewed),
+        )
         .route("/api/sessions/:id/diff", get(get_diff))
         .route("/api/sessions/:id/nodes/:node_id", patch(rename_node))
         .route(

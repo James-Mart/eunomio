@@ -2,6 +2,7 @@
 
 use anyhow::{anyhow, Result};
 use eunomio_core::{FileLineRanges, LineRanges, SynthesizedRanges};
+use std::collections::BTreeMap;
 use std::path::Path;
 use tokio::process::Command;
 
@@ -18,14 +19,14 @@ pub async fn compute(
         Vec::new()
     } else {
         let raw = run_word_diff(repo, child_tree, after_ref).await?;
-        parse_porcelain(&raw)
+        parse_side(repo, &raw, child_tree).await?
     };
 
     let parent = if parent_tree == before_ref {
         Vec::new()
     } else {
         let raw = run_word_diff(repo, parent_tree, before_ref).await?;
-        parse_porcelain(&raw)
+        parse_side(repo, &raw, parent_tree).await?
     };
 
     Ok(SynthesizedRanges { child, parent })
@@ -57,6 +58,28 @@ async fn run_word_diff(repo: &Path, a: &str, b: &str) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+async fn parse_side(
+    repo: &Path,
+    raw: &str,
+    side_tree: &str,
+) -> Result<Vec<FileLineRanges>> {
+    let mut files = Vec::new();
+    for tokenized in tokenize_porcelain(raw) {
+        let Some(content) = crate::git::fetch_blob_text(repo, side_tree, &tokenized.path).await?
+        else {
+            continue;
+        };
+        let lines = anchor_file(&content, &tokenized.hunks);
+        if !lines.is_empty() {
+            files.push(FileLineRanges {
+                path: tokenized.path,
+                lines,
+            });
+        }
+    }
+    Ok(files)
+}
+
 struct HunkHeader {
     old_start: u32,
 }
@@ -73,46 +96,52 @@ fn parse_hunk_header(line: &str) -> Option<HunkHeader> {
     })
 }
 
-fn utf16_len(s: &str) -> u32 {
-    s.chars().map(|c| c.len_utf16() as u32).sum()
+enum OldToken {
+    Context,
+    Deleted(String),
 }
 
-fn parse_porcelain(raw: &str) -> Vec<FileLineRanges> {
-    let mut files: Vec<FileLineRanges> = Vec::new();
+struct TokenizedHunk {
+    old_start: u32,
+    tokens: Vec<OldToken>,
+}
+
+struct TokenizedFile {
+    path: String,
+    hunks: Vec<TokenizedHunk>,
+}
+
+fn tokenize_porcelain(raw: &str) -> Vec<TokenizedFile> {
+    let mut files: Vec<TokenizedFile> = Vec::new();
     let mut current_path: Option<String> = None;
-    let mut current_lines: Vec<LineRanges> = Vec::new();
+    let mut current_hunks: Vec<TokenizedHunk> = Vec::new();
     let mut binary = false;
-
-    // `compute` always runs `git diff <side> <reference>`, so the side we want
-    // to mark is the "old" side of the porcelain output. We track only old
-    // line/column.
     let mut in_hunk = false;
-    let mut old_line: u32 = 0;
-    let mut old_col: u32 = 0;
-    let mut old_active = false;
-    let mut current_line_spans: Vec<(u32, u32)> = Vec::new();
+    let mut current_hunk: Option<TokenizedHunk> = None;
 
-    let push_file =
-        |files: &mut Vec<FileLineRanges>, path: &mut Option<String>, lines: &mut Vec<LineRanges>| {
-            let taken_path = path.take();
-            let taken_lines = std::mem::take(lines);
-            if let Some(p) = taken_path {
-                if !taken_lines.is_empty() {
-                    files.push(FileLineRanges {
-                        path: p,
-                        lines: taken_lines,
-                    });
-                }
+    let push_file = |files: &mut Vec<TokenizedFile>,
+                     path: &mut Option<String>,
+                     hunks: &mut Vec<TokenizedHunk>| {
+        if let Some(p) = path.take() {
+            if !hunks.is_empty() {
+                files.push(TokenizedFile {
+                    path: p,
+                    hunks: std::mem::take(hunks),
+                });
             }
-        };
+        }
+    };
 
     for line in raw.lines() {
         if line.starts_with("diff --git ") {
-            push_file(&mut files, &mut current_path, &mut current_lines);
+            if let Some(hunk) = current_hunk.take() {
+                if !hunk.tokens.is_empty() {
+                    current_hunks.push(hunk);
+                }
+            }
+            push_file(&mut files, &mut current_path, &mut current_hunks);
             in_hunk = false;
             binary = false;
-            current_line_spans.clear();
-            old_active = false;
             continue;
         }
 
@@ -134,42 +163,40 @@ fn parse_porcelain(raw: &str) -> Vec<FileLineRanges> {
                     continue;
                 }
                 in_hunk = true;
-                old_line = h.old_start;
-                old_col = 0;
-                old_active = false;
-                current_line_spans.clear();
+                if let Some(hunk) = current_hunk.take() {
+                    if !hunk.tokens.is_empty() {
+                        current_hunks.push(hunk);
+                    }
+                }
+                current_hunk = Some(TokenizedHunk {
+                    old_start: h.old_start,
+                    tokens: Vec::new(),
+                });
                 continue;
             }
             continue;
         }
 
         if let Some(h) = parse_hunk_header(line) {
-            if !current_line_spans.is_empty() {
-                current_lines.push(LineRanges {
-                    line: old_line,
-                    spans: std::mem::take(&mut current_line_spans),
-                });
+            if let Some(hunk) = current_hunk.take() {
+                if !hunk.tokens.is_empty() {
+                    current_hunks.push(hunk);
+                }
             }
-            old_line = h.old_start;
-            old_col = 0;
-            old_active = false;
+            current_hunk = Some(TokenizedHunk {
+                old_start: h.old_start,
+                tokens: Vec::new(),
+            });
             continue;
         }
 
         if line == "~" {
-            if !current_line_spans.is_empty() {
-                current_lines.push(LineRanges {
-                    line: old_line,
-                    spans: std::mem::take(&mut current_line_spans),
-                });
-            }
-            if old_active {
-                old_line += 1;
-            }
-            old_col = 0;
-            old_active = false;
             continue;
         }
+
+        let Some(hunk) = current_hunk.as_mut() else {
+            continue;
+        };
 
         let (prefix, word) = match line.as_bytes().first() {
             Some(b' ') => (b' ', &line[1..]),
@@ -177,31 +204,113 @@ fn parse_porcelain(raw: &str) -> Vec<FileLineRanges> {
             Some(b'+') => (b'+', &line[1..]),
             _ => continue,
         };
-        let len = utf16_len(word);
         match prefix {
-            b' ' => {
-                old_col += len;
-                old_active = true;
-            }
-            b'-' => {
-                current_line_spans.push((old_col, old_col + len));
-                old_col += len;
-                old_active = true;
-            }
+            b' ' => hunk.tokens.push(OldToken::Context),
+            b'-' => hunk.tokens.push(OldToken::Deleted(word.to_string())),
             b'+' => {}
             _ => {}
         }
     }
 
-    if !current_line_spans.is_empty() {
-        current_lines.push(LineRanges {
-            line: old_line,
-            spans: current_line_spans,
-        });
+    if let Some(hunk) = current_hunk.take() {
+        if !hunk.tokens.is_empty() {
+            current_hunks.push(hunk);
+        }
     }
-    push_file(&mut files, &mut current_path, &mut current_lines);
+    push_file(&mut files, &mut current_path, &mut current_hunks);
 
     files
+}
+
+fn utf16_len(s: &str) -> u32 {
+    s.chars().map(|c| c.len_utf16() as u32).sum()
+}
+
+fn file_lines(content: &str) -> Vec<&str> {
+    if content.is_empty() {
+        return vec![""];
+    }
+    let mut lines: Vec<&str> = content.split('\n').collect();
+    if content.ends_with('\n') {
+        lines.pop();
+    }
+    lines
+}
+
+fn utf16_to_byte_idx(s: &str, utf16_col: u32) -> usize {
+    let mut pos = 0u32;
+    for (byte_idx, c) in s.char_indices() {
+        if pos >= utf16_col {
+            return byte_idx;
+        }
+        pos += c.len_utf16() as u32;
+    }
+    s.len()
+}
+
+fn byte_idx_to_utf16(s: &str, byte_idx: usize) -> u32 {
+    s[..byte_idx].chars().map(|c| c.len_utf16() as u32).sum()
+}
+
+fn find_in_line_from_col(line_text: &str, col: u32, text: &str) -> Option<u32> {
+    if text.is_empty() {
+        return Some(col);
+    }
+    let byte_start = utf16_to_byte_idx(line_text, col);
+    let rel = line_text[byte_start..].find(text)?;
+    Some(byte_idx_to_utf16(line_text, byte_start + rel))
+}
+
+fn find_next_at_or_after(
+    lines: &[&str],
+    after_line: u32,
+    after_col: u32,
+    text: &str,
+) -> Option<(u32, u32)> {
+    if text.is_empty() {
+        return Some((after_line, after_col));
+    }
+    for (li, line_text) in lines.iter().enumerate().skip(after_line.saturating_sub(1) as usize) {
+        let lnum = (li + 1) as u32;
+        let start_col = if lnum == after_line { after_col } else { 0 };
+        if let Some(col) = find_in_line_from_col(line_text, start_col, text) {
+            return Some((lnum, col));
+        }
+    }
+    None
+}
+
+fn anchor_file(file_text: &str, hunks: &[TokenizedHunk]) -> Vec<LineRanges> {
+    let lines = file_lines(file_text);
+    let mut spans_by_line: BTreeMap<u32, Vec<(u32, u32)>> = BTreeMap::new();
+
+    for hunk in hunks {
+        let mut after_line = hunk.old_start;
+        let mut after_col = 0u32;
+
+        for token in &hunk.tokens {
+            let OldToken::Deleted(text) = token else {
+                continue;
+            };
+            let Some((found_line, found_col)) =
+                find_next_at_or_after(&lines, after_line, after_col, text)
+            else {
+                continue;
+            };
+            let end_col = found_col + utf16_len(text);
+            spans_by_line
+                .entry(found_line)
+                .or_default()
+                .push((found_col, end_col));
+            after_line = found_line;
+            after_col = end_col;
+        }
+    }
+
+    spans_by_line
+        .into_iter()
+        .map(|(line, spans)| LineRanges { line, spans })
+        .collect()
 }
 
 #[cfg(test)]
@@ -219,11 +328,19 @@ mod tests {
         }
     }
 
+    fn anchor_porcelain(raw: &str, side_content: &str) -> Vec<FileLineRanges> {
+        tokenize_porcelain(raw)
+            .into_iter()
+            .map(|tf| {
+                let lines = anchor_file(side_content, &tf.hunks);
+                file(&tf.path, lines)
+            })
+            .filter(|f| !f.lines.is_empty())
+            .collect()
+    }
+
     #[test]
     fn parses_pure_deletions_and_modifies() {
-        // Rust's `\<newline>+whitespace` continuation eats the leading-space
-        // prefix that porcelain uses to mark context words, so fixtures use
-        // `concat!` with explicit newlines.
         let raw = concat!(
             "diff --git a/a.txt b/a.txt\n",
             "index aaa..bbb 100644\n",
@@ -243,7 +360,7 @@ mod tests {
             "~\n",
         );
         assert_eq!(
-            parse_porcelain(raw),
+            anchor_porcelain(raw, "A\nB\nC\nD\nE"),
             vec![file(
                 "a.txt",
                 vec![
@@ -271,17 +388,13 @@ mod tests {
             "Binary files a/b.dat and b/b.dat differ\n",
         );
         assert_eq!(
-            parse_porcelain(raw),
+            anchor_porcelain(raw, "old"),
             vec![file("a.txt", vec![line(1, vec![(0, 3)])])]
         );
     }
 
     #[test]
     fn intra_line_word_marks() {
-        // Mirror real `--word-diff=porcelain` output: each line's first byte is
-        // the prefix; the rest is the word. Leading whitespace inside the word
-        // (e.g. ` baz`) is preserved, so the fixture has `  baz` for prefix
-        // space + word " baz".
         let raw = concat!(
             "diff --git a/a.txt b/a.txt\n",
             "--- a/a.txt\n",
@@ -294,8 +407,8 @@ mod tests {
             "~\n",
         );
         assert_eq!(
-            parse_porcelain(raw),
-            vec![file("a.txt", vec![line(1, vec![(4, 7)])])]
+            anchor_porcelain(raw, " foo bar  baz"),
+            vec![file("a.txt", vec![line(1, vec![(5, 8)])])]
         );
     }
 
@@ -313,18 +426,16 @@ mod tests {
             "+stay\n",
             "~\n",
         );
-        assert_eq!(parse_porcelain(raw)[0].path, "old/path.txt");
+        assert_eq!(tokenize_porcelain(raw)[0].path, "old/path.txt");
     }
 
     #[test]
     fn empty_for_no_changes() {
-        assert_eq!(parse_porcelain(""), vec![]);
+        assert!(tokenize_porcelain("").is_empty());
     }
 
     #[test]
     fn handles_dev_null_old_side() {
-        // New file: old side is /dev/null. We don't key by it; resulting file
-        // has no old-side path so we drop it (no left-side spans possible).
         let raw = concat!(
             "diff --git a/new.txt b/new.txt\n",
             "new file mode 100644\n",
@@ -334,7 +445,98 @@ mod tests {
             "+hello\n",
             "~\n",
         );
-        assert!(parse_porcelain(raw).is_empty());
+        assert!(tokenize_porcelain(raw).is_empty());
+    }
+
+    #[test]
+    fn merges_spans_on_same_line() {
+        let raw = concat!(
+            "diff --git a/a.txt b/a.txt\n",
+            "--- a/a.txt\n",
+            "+++ b/a.txt\n",
+            "@@ -1 +1 @@\n",
+            "-aa\n",
+            "-bb\n",
+            "~\n",
+        );
+        let result = anchor_porcelain(raw, "aabb");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].lines.len(), 1);
+        assert_eq!(result[0].lines[0].spans, vec![(0, 2), (2, 4)]);
+    }
+
+    #[test]
+    fn anchors_deletions_when_porcelain_interleaves_additions() {
+        let side = concat!(
+            "        use host:types/types.{error, claim};\n",
+            "        use types.{proof};\n",
+            "        on-user-auth-claim: func();\n",
+        );
+        let raw = concat!(
+            "diff --git a/world.wit b/world.wit\n",
+            "--- a/world.wit\n",
+            "+++ b/world.wit\n",
+            "@@ -1,3 +1,1 @@\n",
+            "-        use host:types/types.{error, claim};\n",
+            "~\n",
+            "-        use types.{proof};\n",
+            "+login\n",
+            "~\n",
+            "-        on-user-auth-claim: func();\n",
+            "+done\n",
+            "~\n",
+        );
+        let result = anchor_porcelain(raw, side);
+        let lines: Vec<_> = result[0].lines.iter().map(|l| (l.line, l.spans.clone())).collect();
+        assert_eq!(lines[0], (1, vec![(0, 44)]));
+        assert_eq!(lines[1], (2, vec![(0, 26)]));
+        assert_eq!(lines[2], (3, vec![(0, 35)]));
+    }
+
+    #[test]
+    fn anchors_spans_on_structural_rewrite() {
+        let side = concat!(
+            "world hook-user-auth {\n",
+            "    export transact-hook-user-auth: interface {\n",
+            "        use host:types/types.{error, claim};\n",
+            "        use types.{proof};\n",
+            "    }\n",
+            "}\n",
+        );
+        let raw = concat!(
+            "diff --git a/world.wit b/world.wit\n",
+            "--- a/world.wit\n",
+            "+++ b/world.wit\n",
+            "@@ -1,6 +1,2 @@\n",
+            "-world hook-user-auth {\n",
+            "~\n",
+            "-    export transact-hook-user-auth: interface {\n",
+            "~\n",
+            "-        use host:types/types.{error, claim};\n",
+            "~\n",
+            "-        use types.{proof};\n",
+            "+interface login {\n",
+            "~\n",
+            "-    }\n",
+            "-}\n",
+            "+}\n",
+            "~\n",
+        );
+        let result = anchor_porcelain(raw, side);
+        let proof_line = result[0]
+            .lines
+            .iter()
+            .find(|l| {
+                side.lines()
+                    .nth(l.line as usize - 1)
+                    .is_some_and(|text| text.contains("use types.{proof}"))
+            })
+            .expect("proof line marked");
+        assert_eq!(
+            proof_line.spans,
+            vec![(0, 26)],
+            "full proof import line should be marked"
+        );
     }
 
     struct TestRepo {
@@ -425,5 +627,41 @@ mod tests {
         assert!(leftover_edge.child.is_empty());
         let parent_paths: Vec<&str> = leftover_edge.parent.iter().map(|f| f.path.as_str()).collect();
         assert_eq!(parent_paths, vec!["b.txt"]);
+    }
+
+    #[tokio::test]
+    async fn structural_rewrite_via_compute() {
+        let repo = TestRepo::new();
+        let reference = repo.commit_tree([("world.wit", "interface login {\n}\n")], "reference");
+        let child = repo.commit_tree(
+            [(
+                "world.wit",
+                concat!(
+                    "world hook-user-auth {\n",
+                    "    export transact-hook-user-auth: interface {\n",
+                    "        use host:types/types.{error, claim};\n",
+                    "        use types.{proof};\n",
+                    "    }\n",
+                    "}\n",
+                ),
+            )],
+            "child",
+        );
+
+        let result = compute(&repo.path, &reference, &child, &reference, &reference)
+            .await
+            .expect("compute");
+        assert!(result.parent.is_empty());
+        let file = result
+            .child
+            .iter()
+            .find(|f| f.path == "world.wit")
+            .expect("world.wit marks");
+        let proof_line = file
+            .lines
+            .iter()
+            .find(|l| l.spans.iter().any(|(s, e)| e - s == 26))
+            .expect("full proof import line marked");
+        assert_eq!(proof_line.spans, vec![(0, 26)]);
     }
 }

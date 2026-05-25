@@ -532,7 +532,7 @@ function CoordinatorPanel({
     };
   const disabled = !settings;
   const surveyorEnabled = settings?.coordinator.surveyorEnabled ?? true;
-  const selected = settings?.coordinator.model ?? "composer-2";
+  const selected = settings?.coordinator.model ?? "composer-2.5";
   const iterations = settings?.coordinator.maxIterations;
   const iterationsOption = iterationLimitToOption(iterations);
   return (
@@ -680,7 +680,7 @@ function SubagentPanel({
         <Label htmlFor={`${role}-model`}>Model</Label>
         <ModelSelect
           id={`${role}-model`}
-          value={cur?.model ?? "composer-2"}
+          value={cur?.model ?? "composer-2.5"}
           models={models}
           disabled={!settings || !enabled}
           onChange={onModelChange}

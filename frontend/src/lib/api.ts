@@ -57,6 +57,10 @@ export type Edge = {
   synthesized: SynthesizedRanges;
 };
 
+export type EdgeViewedFiles = {
+  paths: string[];
+};
+
 export type Diff = {
   fromTree: string;
   toTree: string;
@@ -303,6 +307,22 @@ export const api = {
   getGraph: (id: string) => request<Graph>("GET", `/sessions/${id}/graph`),
   getEdge: (sessionId: string, targetNodeId: string) =>
     request<Edge>("GET", `/sessions/${sessionId}/edges/${targetNodeId}`),
+  getEdgeViewedFiles: (sessionId: string, targetNodeId: string) =>
+    request<EdgeViewedFiles>(
+      "GET",
+      `/sessions/${sessionId}/edges/${targetNodeId}/viewed`,
+    ),
+  setEdgeFileViewed: (
+    sessionId: string,
+    targetNodeId: string,
+    filePath: string,
+    viewed: boolean,
+  ) =>
+    request<void>(
+      "PUT",
+      `/sessions/${sessionId}/edges/${targetNodeId}/viewed/${encodeURIComponent(filePath)}`,
+      { viewed },
+    ),
   getDiff: (
     sessionId: string,
     fromTree: string,

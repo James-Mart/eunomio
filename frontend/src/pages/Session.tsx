@@ -21,6 +21,7 @@ import { DiffPane } from "@/components/session/DiffPane";
 import { GraphPane } from "@/components/session/GraphPane";
 import {
   BottomTabBar,
+  mobileTabBarInsetClass,
   TabPanel,
 } from "@/components/session/MobileTabBar";
 import { SessionSkeleton } from "@/components/session/SessionSkeleton";
@@ -35,6 +36,7 @@ import { useSessionData } from "@/components/session/useSessionData";
 import { useSessionSelection } from "@/components/session/useSessionSelection";
 import { sessionNotFoundHomePath } from "@/lib/sessionNotFound";
 import { api } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 export default function Session() {
   const { id } = useParams<{ id: string }>();
@@ -277,8 +279,13 @@ function SessionInner({ sessionId }: { sessionId: string }) {
         </ResizablePanelGroup>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col md:hidden">
-        <div className="relative flex-1 min-h-0">
+      <div
+        className={cn(
+          "flex min-h-0 flex-1 flex-col overflow-hidden md:hidden",
+          mobileTabBarInsetClass,
+        )}
+      >
+        <div className="relative min-h-0 flex-1 overflow-hidden">
           <TabPanel id="graph" active={activeTab === "graph"}>
             {graphPane}
           </TabPanel>
