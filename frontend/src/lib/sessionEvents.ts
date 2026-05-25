@@ -39,6 +39,11 @@ export type SessionEvent =
       partitionId: string;
     }
   | {
+      type: "shavingReady";
+      sessionId: string;
+      targetNodeId: string;
+    }
+  | {
       type: "cancelled";
       sessionId: string;
       targetNodeId: string;

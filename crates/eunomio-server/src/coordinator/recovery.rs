@@ -16,10 +16,36 @@ impl Coordinator {
     /// one logged a warning.
     pub async fn process_startup_recovery(&self, state: &AppState) -> Result<(), AppError> {
         repair_stuck_runs(state).await?;
+        repair_stuck_shaver_runs(state).await?;
         let alive = prune_dead_partition_rows(state).await?;
         sweep_orphan_worktree_dirs(state, &alive).await;
         Ok(())
     }
+}
+
+async fn repair_stuck_shaver_runs(state: &AppState) -> Result<(), AppError> {
+    let stuck = state
+        .datastore
+        .shaver_runs()
+        .list_running(LOCAL_ORG_ID)
+        .await?;
+    for row in &stuck {
+        if let Ok(git_root) =
+            crate::repo_store::session_git_root(state, &row.org_id, &row.session_id).await
+        {
+            worktree::teardown(&git_root, Path::new(&row.worktree_path)).await;
+        }
+    }
+    state
+        .datastore
+        .shaver_runs()
+        .mark_errored(
+            LOCAL_ORG_ID,
+            stuck.into_iter().map(|row| row.id).collect(),
+            "process_restart",
+        )
+        .await?;
+    Ok(())
 }
 
 async fn repair_stuck_runs(state: &AppState) -> Result<(), AppError> {

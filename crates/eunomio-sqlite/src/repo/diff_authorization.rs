@@ -135,23 +135,25 @@ mod tests {
             }
             conn.execute(
                 "INSERT INTO shaving_tracks (
-                  session_id, slice_node_id, org_id, parent_tree_sha, head_tree_sha,
+                  session_id, target_node_id, org_id, parent_tree_sha, head_tree_sha,
                   steps_json, ref_name, created_at
                 ) VALUES ('session-a', 'slice', 'org', 'base-session-a', 'head-session-a', ?1, 'ref-a', 1)",
                 [serde_json::to_string(&vec![ShavingStep {
                     tree_sha: "step-session-a".to_string(),
                     commit_sha: "commit-a".to_string(),
+                    label: None,
                 }])
                 .unwrap()],
             )?;
             conn.execute(
                 "INSERT INTO shaving_tracks (
-                  session_id, slice_node_id, org_id, parent_tree_sha, head_tree_sha,
+                  session_id, target_node_id, org_id, parent_tree_sha, head_tree_sha,
                   steps_json, ref_name, created_at
                 ) VALUES ('session-b', 'slice', 'org', 'base-session-b', 'head-session-b', ?1, 'ref-b', 1)",
                 [serde_json::to_string(&vec![ShavingStep {
                     tree_sha: "step-session-b".to_string(),
                     commit_sha: "commit-b".to_string(),
+                    label: None,
                 }])
                 .unwrap()],
             )?;

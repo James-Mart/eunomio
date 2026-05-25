@@ -333,6 +333,37 @@ pub trait RunRepo: Send + Sync {
 }
 
 #[async_trait]
+pub trait ShaverRunRepo: Send + Sync {
+    async fn start(&self, row: NewShaverRunInsert) -> Result<String, AppError>;
+    async fn append_transcript_text(
+        &self,
+        org_id: &str,
+        run_id: &str,
+        chunk: &str,
+    ) -> Result<(), AppError>;
+    async fn finish_success(
+        &self,
+        org_id: &str,
+        run_id: &str,
+        result_json: String,
+        result_text: Option<String>,
+    ) -> Result<(), AppError>;
+    async fn finish_error(
+        &self,
+        org_id: &str,
+        run_id: &str,
+        error_message: String,
+    ) -> Result<(), AppError>;
+    async fn list_running(&self, org_id: &str) -> Result<Vec<RunningShaverRun>, AppError>;
+    async fn mark_errored(
+        &self,
+        org_id: &str,
+        run_ids: Vec<String>,
+        error_message: &'static str,
+    ) -> Result<(), AppError>;
+}
+
+#[async_trait]
 pub trait EdgeFileViewedRepo: Send + Sync {
     async fn list_paths(
         &self,
@@ -360,13 +391,13 @@ pub trait ShavingTrackRepo: Send + Sync {
         &self,
         org_id: &str,
         session_id: &str,
-        slice_node_id: &str,
+        target_node_id: &str,
     ) -> Result<Option<ShavingTrack>, AppError>;
     async fn delete(
         &self,
         org_id: &str,
         session_id: &str,
-        slice_node_id: &str,
+        target_node_id: &str,
     ) -> Result<(), AppError>;
 }
 
@@ -390,6 +421,7 @@ pub trait Datastore: Send + Sync {
     fn nodes(&self) -> &dyn NodeRepo;
     fn partitions(&self) -> &dyn PartitionRepo;
     fn runs(&self) -> &dyn RunRepo;
+    fn shaver_runs(&self) -> &dyn ShaverRunRepo;
     fn edge_file_viewed(&self) -> &dyn EdgeFileViewedRepo;
     fn shaving_tracks(&self) -> &dyn ShavingTrackRepo;
     fn diff_authorization(&self) -> &dyn DiffAuthorizationRepo;

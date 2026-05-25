@@ -37,6 +37,11 @@ pub enum SseEvent {
         partition_id: String,
     },
     #[serde(rename_all = "camelCase")]
+    ShavingReady {
+        session_id: String,
+        target_node_id: String,
+    },
+    #[serde(rename_all = "camelCase")]
     Cancelled {
         session_id: String,
         target_node_id: String,

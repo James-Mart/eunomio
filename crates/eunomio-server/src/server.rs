@@ -87,6 +87,10 @@ fn protected_routes() -> Router<AppState> {
             "/api/partitions/:partition_id/abandon",
             post(abandon_partition),
         )
+        .route(
+            "/api/partitions/:partition_id/finish",
+            post(finish_partition),
+        )
         .route("/api/sessions/:id/events", get(session_events))
         .route("/api/cursor-models", get(get_cursor_models))
         .route("/api/subagent-prompts", get(get_subagent_prompts))
@@ -228,27 +232,47 @@ async fn get_shaving_track(
 
     let git_root =
         crate::repo_store::session_git_root(&state, &principal.org_id, &session_id).await?;
-    let mut step_diffs = Vec::with_capacity(track.steps.len());
-    for step in &track.steps {
+    let mut step_diffs = Vec::with_capacity(track.steps.len() + 1);
+    for (idx, step) in track.steps.iter().enumerate() {
+        let from_tree = if idx == 0 {
+            track.parent_tree_sha.as_str()
+        } else {
+            track.steps[idx - 1].tree_sha.as_str()
+        };
         let (diff, files, synthesized) = edges::render_edge_diff(
             &git_root,
-            &track.parent_tree_sha,
+            from_tree,
             &step.tree_sha,
             &track.parent_tree_sha,
             &track.head_tree_sha,
         )
         .await?;
         step_diffs.push(Diff {
-            from_tree: track.parent_tree_sha.clone(),
+            from_tree: from_tree.to_string(),
             to_tree: step.tree_sha.clone(),
             diff,
             files,
             synthesized,
         });
     }
+    let (diff, files, synthesized) = edges::render_edge_diff(
+        &git_root,
+        &track.parent_tree_sha,
+        &track.head_tree_sha,
+        &track.parent_tree_sha,
+        &track.head_tree_sha,
+    )
+    .await?;
+    step_diffs.push(Diff {
+        from_tree: track.parent_tree_sha.clone(),
+        to_tree: track.head_tree_sha.clone(),
+        diff,
+        files,
+        synthesized,
+    });
 
     Ok(Json(ShavingTrackResponse {
-        slice_node_id: track.slice_node_id,
+        target_node_id: track.target_node_id,
         parent_tree_sha: track.parent_tree_sha,
         head_tree_sha: track.head_tree_sha,
         steps: track.steps,
@@ -591,6 +615,18 @@ async fn abandon_partition(
     state
         .coordinator
         .abandon_partition(&state, &principal.org_id, &partition_id)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn finish_partition(
+    State(state): State<AppState>,
+    principal: CurrentPrincipal,
+    Path(partition_id): Path<String>,
+) -> Result<StatusCode, ServerError> {
+    state
+        .coordinator
+        .finish_partition(&state, &principal.org_id, &partition_id)
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }

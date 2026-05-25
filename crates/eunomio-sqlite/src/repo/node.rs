@@ -45,7 +45,7 @@ impl NodeRepo for SqliteNodeRepo {
             .call(move |conn| {
                 let mut stmt = conn.prepare(
                     "SELECT n.node_id, n.parent_node_id, n.tree_sha, n.commit_sha, n.title, n.description, n.strategy, \
-                         EXISTS(SELECT 1 FROM shaving_tracks st WHERE st.org_id = n.org_id AND st.session_id = n.session_id AND st.slice_node_id = n.node_id) \
+                         EXISTS(SELECT 1 FROM shaving_tracks st WHERE st.org_id = n.org_id AND st.session_id = n.session_id AND st.target_node_id = n.node_id) \
                      FROM nodes n WHERE n.org_id = ?1 AND n.session_id = ?2 ORDER BY n.created_at",
                 )?;
                 let rows = stmt
@@ -74,7 +74,7 @@ impl NodeRepo for SqliteNodeRepo {
             .call(move |conn| {
                 let mut stmt = conn.prepare(
                     "SELECT n.node_id, n.parent_node_id, n.tree_sha, n.commit_sha, n.title, n.description, n.strategy, \
-                         EXISTS(SELECT 1 FROM shaving_tracks st WHERE st.org_id = n.org_id AND st.session_id = n.session_id AND st.slice_node_id = n.node_id) \
+                         EXISTS(SELECT 1 FROM shaving_tracks st WHERE st.org_id = n.org_id AND st.session_id = n.session_id AND st.target_node_id = n.node_id) \
                      FROM nodes n WHERE n.org_id = ?1 AND n.session_id = ?2 AND n.node_id = ?3",
                 )?;
                 let mut rows =
@@ -198,7 +198,7 @@ impl NodeRepo for SqliteNodeRepo {
                 require_affected_sqlite(n)?;
                 let mut stmt = conn.prepare(
                     "SELECT n.node_id, n.parent_node_id, n.tree_sha, n.commit_sha, n.title, n.description, n.strategy, \
-                         EXISTS(SELECT 1 FROM shaving_tracks st WHERE st.org_id = n.org_id AND st.session_id = n.session_id AND st.slice_node_id = n.node_id) \
+                         EXISTS(SELECT 1 FROM shaving_tracks st WHERE st.org_id = n.org_id AND st.session_id = n.session_id AND st.target_node_id = n.node_id) \
                      FROM nodes n WHERE n.org_id = ?1 AND n.session_id = ?2 AND n.node_id = ?3",
                 )?;
                 let mut rows = stmt.query(tokio_rusqlite::params![org_id, session_id, node_id])?;

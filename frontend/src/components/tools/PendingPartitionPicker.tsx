@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 import { useEffect, useState } from "react";
-import { StopIcon } from "@primer/octicons-react";
+import { PauseIcon } from "@primer/octicons-react";
 
 import type { Partition } from "@/lib/api";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -61,7 +61,7 @@ export default function PendingPartitionPicker({ options, onSelect }: Props) {
       </div>
       {selected && isConstructAwaitingReview(selected.partition) ? (
         <Alert>
-          <StopIcon className="h-4 w-4" />
+          <PauseIcon className="h-4 w-4 text-attention" />
           <AlertTitle>Candidate ready for review</AlertTitle>
           <AlertDescription>
             Inspect the candidate via the candidate view in the graph pane, then

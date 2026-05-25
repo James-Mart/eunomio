@@ -523,6 +523,20 @@ pub async fn commit_parents(repo: &Path, commit: &str) -> Result<Vec<String>> {
     Ok(parts.map(str::to_string).collect())
 }
 
+pub async fn commits_between_linear(repo: &Path, parent: &str, head: &str) -> Result<Vec<String>> {
+    let out = run(repo, &["rev-list", "--reverse", &format!("{parent}..{head}")]).await?;
+    Ok(out
+        .lines()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect())
+}
+
+pub async fn commit_subject(repo: &Path, commit: &str) -> Result<String> {
+    run(repo, &["show", "-s", "--format=%s", commit]).await
+}
+
 pub async fn run_in(cwd: &Path, args: &[&str]) -> Result<String> {
     let out = Command::new("git")
         .arg("-C")

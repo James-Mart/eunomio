@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 import { useState } from "react";
-import { AlertIcon, StopIcon } from "@primer/octicons-react";
+import { AlertIcon, PauseIcon } from "@primer/octicons-react";
 import { toast } from "sonner";
 
 import { api, type Plan, type PartitionStrategy } from "@/lib/api";
@@ -26,6 +26,7 @@ type Props = {
   plan: Plan;
   planRunId: string;
   onAbandon: () => void;
+  onFinish: () => void;
 };
 
 export default function PlanReview({
@@ -33,6 +34,7 @@ export default function PlanReview({
   plan,
   planRunId,
   onAbandon,
+  onFinish,
 }: Props) {
   const [feedback, setFeedback] = useState("");
   const [strategyOverride, setStrategyOverride] = useState<
@@ -81,14 +83,14 @@ export default function PlanReview({
           <AlertDescription className="space-y-2">
             <p>{plan.rationale}</p>
             <p>
-              Approve the plan to accept this verdict and end the partition, or
+              Finish the partition to accept this verdict, or
               re-run with feedback if you still want a split.
             </p>
           </AlertDescription>
         </Alert>
       ) : (
         <Alert>
-          <StopIcon className="h-4 w-4" />
+          <PauseIcon className="h-4 w-4 text-attention" />
           <AlertTitle>Plan ready for review</AlertTitle>
           <AlertDescription>
             Accept the plan to start constructing, or re-run with feedback.
@@ -157,8 +159,8 @@ export default function PlanReview({
 
       <div className="flex flex-wrap gap-2">
         {isIndivisible ? (
-          <Button onClick={onAbandon} disabled={busy}>
-            Approve plan
+          <Button onClick={onFinish} disabled={busy}>
+            Finish partition
           </Button>
         ) : (
           <Button onClick={accept} disabled={busy}>

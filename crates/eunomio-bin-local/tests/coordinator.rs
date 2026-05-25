@@ -368,7 +368,7 @@ fn apply_five_change_slice(path: &Path) {
 }
 
 #[tokio::test]
-async fn construct_accept_attaches_shaving_track_and_authorizes_step_diff() {
+async fn construct_accept_does_not_attach_shaving_track() {
     let runner = Arc::new(EditingRunner::new(vec![
         EditingScript::Events(survey_script()),
         EditingScript::Events(plan_script("synthetic")),
@@ -448,35 +448,18 @@ async fn construct_accept_attaches_shaving_track_and_authorizes_step_diff() {
         .iter()
         .find(|n| n["nodeId"].as_str().unwrap() != target_node_id && !n["parentNodeId"].is_null())
         .unwrap();
-    assert_eq!(slice_node["hasShavingTrack"].as_bool(), Some(true));
-    let slice_node_id = slice_node["nodeId"].as_str().unwrap();
+    assert_eq!(slice_node["hasShavingTrack"].as_bool(), Some(false));
 
     let (status, track) = app
         .auth_empty(
             "GET",
-            &format!("/api/sessions/{session_id}/nodes/{slice_node_id}/shaving-track"),
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK, "track body: {track}");
-    assert_eq!(track["steps"].as_array().unwrap().len(), 5);
-    assert_eq!(track["stepDiffs"].as_array().unwrap().len(), 5);
-
-    let parent_tree = track["parentTreeSha"].as_str().unwrap();
-    let head_tree = track["headTreeSha"].as_str().unwrap();
-    let first_step_tree = track["steps"][0]["treeSha"].as_str().unwrap();
-    assert_eq!(
-        track["stepDiffs"][0]["toTree"].as_str().unwrap(),
-        first_step_tree
-    );
-    let (status, body) = app
-        .auth_empty(
-            "GET",
             &format!(
-                "/api/sessions/{session_id}/diff?fromTree={parent_tree}&toTree={first_step_tree}&beforeRef={parent_tree}&afterRef={head_tree}"
+                "/api/sessions/{session_id}/nodes/{}/shaving-track",
+                slice_node["nodeId"].as_str().unwrap()
             ),
         )
         .await;
-    assert_eq!(status, StatusCode::OK, "diff body: {body}");
+    assert_eq!(status, StatusCode::NOT_FOUND, "track body: {track}");
 
     let (status, _) = app
         .auth_empty(
@@ -1486,6 +1469,20 @@ impl SubagentRunner for KindAwareRunner {
             &self.plans
         } else if request.prompt.contains("**Constructor**") {
             &self.constructs
+        } else if request.prompt.contains("**Shaver**") {
+            let run_id = request.run_id.clone();
+            tokio::spawn(async move {
+                let _ = tx
+                    .send(HelperEvent::Finished {
+                        run_id,
+                        result: "```json\n{\"headCommit\":\"missing\"}\n```".into(),
+                        duration_ms: None,
+                    })
+                    .await;
+            });
+            return Ok(RunHandle {
+                cancel: Box::new(|| {}),
+            });
         } else {
             panic!("KindAwareRunner could not classify prompt");
         };

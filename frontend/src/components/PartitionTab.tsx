@@ -107,6 +107,23 @@ export default function PartitionTab({
     }
   }, [activeLifecycle, resetLifecycle, onPartitionEnded]);
 
+  const finish = useCallback(async () => {
+    if (!activeLifecycle) return;
+    const partitionId = activeLifecycle.partitionId;
+    try {
+      await api.finishPartition(partitionId);
+      resetLifecycle(partitionId);
+      onPartitionEnded();
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) {
+        resetLifecycle(partitionId);
+        onPartitionEnded();
+        return;
+      }
+      toast.error(e instanceof Error ? e.message : "Failed to finish");
+    }
+  }, [activeLifecycle, resetLifecycle, onPartitionEnded]);
+
   return (
     <div className="w-full space-y-4">
       {activePartition ? <LifecycleStepper states={states} /> : null}
@@ -153,6 +170,7 @@ export default function PartitionTab({
             plan={readPlanFromRuns(runs)!}
             planRunId={pickRunId(runs, "plan")!}
             onAbandon={abandon}
+            onFinish={finish}
           />
         ) : (
           <RunningView lifecycle={activeLifecycle!} onAbandon={abandon} />

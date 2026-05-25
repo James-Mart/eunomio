@@ -132,12 +132,14 @@ pub struct DiffQuery {
 pub struct ShavingStep {
     pub tree_sha: String,
     pub commit_sha: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShavingTrack {
-    pub slice_node_id: String,
+    pub target_node_id: String,
     pub parent_tree_sha: String,
     pub head_tree_sha: String,
     pub steps: Vec<ShavingStep>,
@@ -146,7 +148,7 @@ pub struct ShavingTrack {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShavingTrackResponse {
-    pub slice_node_id: String,
+    pub target_node_id: String,
     pub parent_tree_sha: String,
     pub head_tree_sha: String,
     pub steps: Vec<ShavingStep>,
@@ -224,6 +226,7 @@ pub struct SubagentDefaultPrompts {
     pub surveyor: String,
     pub planner: String,
     pub constructor: String,
+    pub shaver: String,
 }
 
 #[derive(Debug, Serialize)]

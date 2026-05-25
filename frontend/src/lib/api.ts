@@ -70,10 +70,10 @@ export type Diff = {
   synthesized: SynthesizedRanges;
 };
 
-export type ShavingStep = { treeSha: string; commitSha: string };
+export type ShavingStep = { treeSha: string; commitSha: string; label?: string | null };
 
 export type ShavingTrack = {
-  sliceNodeId: string;
+  targetNodeId: string;
   parentTreeSha: string;
   headTreeSha: string;
   steps: ShavingStep[];
@@ -107,6 +107,7 @@ export type CoordinatorSettings = {
   humanInTheLoop: HumanInTheLoopSettings;
   maxIterations: IterationLimit;
   surveyorEnabled: boolean;
+  timelineEnabled: boolean;
 };
 
 export interface PartitionSettings {
@@ -115,6 +116,7 @@ export interface PartitionSettings {
   surveyor: SubagentSettings;
   planner: SubagentSettings;
   constructor: SubagentSettings;
+  shaver: SubagentSettings;
 }
 
 export interface PartitionSettingsPatch {
@@ -123,6 +125,7 @@ export interface PartitionSettingsPatch {
   surveyor?: SubagentSettings;
   planner?: SubagentSettings;
   constructor?: SubagentSettings;
+  shaver?: SubagentSettings;
 }
 
 export type PartitionStrategy = "synthetic" | "vertical" | "horizontal";
@@ -402,6 +405,8 @@ export const api = {
     request<Partition>("POST", `/partitions/${partitionId}/plan/accept`, { runId }),
   acceptConstruct: (partitionId: string) =>
     request<void>("POST", `/partitions/${partitionId}/construct/accept`),
+  finishPartition: (partitionId: string) =>
+    request<void>("POST", `/partitions/${partitionId}/finish`),
   abandonPartition: (partitionId: string) =>
     request<void>("POST", `/partitions/${partitionId}/abandon`),
   getTunnel: () => request<TunnelStatus>("GET", "/tunnel"),

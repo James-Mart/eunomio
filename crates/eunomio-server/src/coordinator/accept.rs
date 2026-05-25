@@ -1,16 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{
-    shavings::generate::{self, AttachTrackInput},
-    state::AppState,
-    subagents::surveyor::SurveyOutput,
-    worktree, AppError,
-};
+use crate::{state::AppState, subagents::surveyor::SurveyOutput, worktree, AppError};
 use eunomio_core::types::*;
 use std::path::PathBuf;
 use uuid::Uuid;
 
-use super::{ensure_at_gate, parse_split_plan, Coordinator};
+use super::{ensure_at_gate, parse_split_plan, shaver::TimelineInput, Coordinator};
 
 impl Coordinator {
     pub async fn accept_survey(
@@ -210,8 +205,6 @@ impl Coordinator {
         let remaining_depth = row.remaining_depth;
 
         let sibling_ids: Vec<String> = siblings.iter().map(|s| s.id.clone()).collect();
-        let candidate_tree_for_shavings = candidate_tree.clone();
-        let candidate_commit_for_shavings = candidate_commit.clone();
         state
             .datastore
             .partitions()
@@ -234,21 +227,6 @@ impl Coordinator {
             )
             .await?;
 
-        generate::try_attach_track(
-            state,
-            AttachTrackInput {
-                org_id: org_id.to_string(),
-                session_id: session_id.clone(),
-                slice_node_id: slice_node_id.clone(),
-                parent_node_id: parent.node_id.clone(),
-                parent_tree_sha: parent.tree_sha.clone(),
-                parent_commit_sha: parent.commit_sha.clone(),
-                candidate_tree_sha: candidate_tree_for_shavings,
-                candidate_commit_sha: candidate_commit_for_shavings,
-            },
-        )
-        .await;
-
         teardown_worktrees(state, org_id, &row, &siblings).await;
         self.emit_acceptance_events(&session_id, &target_node_id, partition_id, &siblings);
         self.inner
@@ -262,6 +240,95 @@ impl Coordinator {
             target_node_id,
             slice_node_id,
             remaining_depth,
+        );
+        Ok(())
+    }
+
+    pub async fn finish_partition(
+        &self,
+        state: &AppState,
+        org_id: &str,
+        partition_id: &str,
+    ) -> Result<(), AppError> {
+        let row = state
+            .datastore
+            .partitions()
+            .get(org_id, partition_id)
+            .await?;
+        ensure_at_gate(&row, PhaseName::Plan, "plan")?;
+        let runs = state
+            .datastore
+            .runs()
+            .list_for_partition(org_id, partition_id)
+            .await?;
+        let plan_run = runs
+            .iter()
+            .find(|r| r.kind == RunKind::Plan && r.status == RunStatus::Finished)
+            .ok_or_else(|| AppError::BadRequest("no finished plan run".into()))?;
+        let result_json = plan_run
+            .result_json
+            .as_deref()
+            .ok_or_else(|| AppError::BadRequest("plan run has no parsed result".into()))?;
+        let plan: crate::subagents::planner::PlanOutput = serde_json::from_str(result_json)
+            .map_err(|e| AppError::BadRequest(format!("invalid plan: {e}")))?;
+        if !matches!(plan, crate::subagents::planner::PlanOutput::Indivisible { .. }) {
+            return Err(AppError::Conflict {
+                code: "not_indivisible".into(),
+                message: "partition can only be finished from an indivisible plan".into(),
+            });
+        }
+
+        let (target_node, parent_node) = state
+            .datastore
+            .nodes()
+            .target_and_parent(org_id, &row.session_id, &row.target_node_id)
+            .await?;
+        let parent = parent_node.ok_or_else(|| {
+            AppError::BadRequest("target has no parent; cannot finish partition".into())
+        })?;
+        self.inner.runs.mark_abandoning(partition_id);
+        self.inner.runs.take_and_cancel(partition_id).await;
+        state
+            .datastore
+            .runs()
+            .cancel_running_for_partition(org_id, partition_id)
+            .await?;
+        state
+            .datastore
+            .partitions()
+            .delete_with_runs(org_id, partition_id)
+            .await?;
+        let worktree_path = PathBuf::from(&row.worktree_path);
+        let git_root = crate::repo_store::session_git_root(state, org_id, &row.session_id).await?;
+        worktree::teardown(&git_root, &worktree_path).await;
+        self.emit(
+            &row.session_id,
+            SseEvent::Finished {
+                session_id: row.session_id.clone(),
+                target_node_id: row.target_node_id.clone(),
+                partition_id: partition_id.to_string(),
+            },
+        );
+        self.inner.runs.unmark_abandoning(partition_id);
+        let target_graph = state
+            .datastore
+            .nodes()
+            .get(org_id, &row.session_id, &target_node.node_id)
+            .await?
+            .ok_or(AppError::NotFound)?;
+        self.maybe_spawn_timeline_generation(
+            state.clone(),
+            TimelineInput {
+                org_id: org_id.to_string(),
+                user_id: row.user_id,
+                session_id: row.session_id,
+                target_node_id: target_node.node_id,
+                target_title: target_graph.title,
+                target_description: target_graph.description,
+                parent_tree_sha: parent.tree_sha,
+                parent_commit_sha: parent.commit_sha,
+                target_tree_sha: target_node.tree_sha,
+            },
         );
         Ok(())
     }

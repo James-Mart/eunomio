@@ -14,6 +14,7 @@ pub struct Subagents {
     pub surveyor: SubagentDef,
     pub planner: SubagentDef,
     pub constructor: SubagentDef,
+    pub shaver: SubagentDef,
 }
 
 pub struct SubagentDef {
@@ -120,6 +121,17 @@ pub fn constructor_placeholders() -> &'static [&'static str] {
     ]
 }
 
+pub fn shaver_placeholders() -> &'static [&'static str] {
+    &[
+        "WORKTREE_PATH",
+        "PARENT_COMMIT",
+        "BEFORE_TREE",
+        "TARGET_TREE",
+        "TARGET_TITLE",
+        "TARGET_DESCRIPTION",
+    ]
+}
+
 fn load_one(file: &str, allowed: &[&str]) -> Result<SubagentDef> {
     let raw = SubagentAssets::get(file)
         .ok_or_else(|| anyhow!("missing embedded subagent prompt: {file}"))?;
@@ -137,6 +149,7 @@ pub fn load_subagents() -> Result<Subagents> {
         surveyor: load_one("surveyor.md", surveyor_placeholders())?,
         planner: load_one("planner.md", planner_placeholders())?,
         constructor: load_one("constructor.md", constructor_placeholders())?,
+        shaver: load_one("shaver.md", shaver_placeholders())?,
     })
 }
 
@@ -172,5 +185,6 @@ mod tests {
         assert_eq!(defs.surveyor.name, "surveyor");
         assert_eq!(defs.planner.name, "planner");
         assert_eq!(defs.constructor.name, "constructor");
+        assert_eq!(defs.shaver.name, "shaver");
     }
 }

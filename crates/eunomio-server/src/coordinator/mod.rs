@@ -23,6 +23,7 @@ mod prompt;
 mod recovery;
 mod run_loop;
 mod scope;
+mod shaver;
 
 const BROADCAST_CAPACITY: usize = 64;
 
@@ -249,6 +250,7 @@ impl Coordinator {
             surveyor: defs.surveyor.template.body().to_string(),
             planner: defs.planner.template.body().to_string(),
             constructor: defs.constructor.template.body().to_string(),
+            shaver: defs.shaver.template.body().to_string(),
         }
     }
 

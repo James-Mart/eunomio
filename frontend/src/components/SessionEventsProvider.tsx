@@ -91,13 +91,12 @@ class SessionStore {
   applyEvent(event: SessionEvent) {
     const { lifecycles } = this.state;
     const next = new Map(lifecycles);
-    const cur = next.get(event.partitionId);
 
     let constructChanged = false;
 
     switch (event.type) {
       case "started":
-        if (cur) {
+        if (next.get(event.partitionId)) {
           constructChanged = true;
           break;
         }
@@ -105,6 +104,7 @@ class SessionStore {
         constructChanged = true;
         break;
       case "phase": {
+        const cur = next.get(event.partitionId);
         const base = cur ?? blankLifecycle(event.partitionId, event.targetNodeId);
         const updated: Lifecycle = {
           ...base,
@@ -129,6 +129,7 @@ class SessionStore {
         }
         break;
       case "finished": {
+        const cur = next.get(event.partitionId);
         if (!cur) break;
         next.set(event.partitionId, {
           ...cur,
@@ -138,13 +139,18 @@ class SessionStore {
         constructChanged = true;
         break;
       }
+      case "shavingReady":
+        constructChanged = true;
+        break;
       case "cancelled": {
+        const cur = next.get(event.partitionId);
         if (!cur) break;
         next.set(event.partitionId, { ...cur, cancelledAt: Date.now() });
         constructChanged = true;
         break;
       }
       case "error": {
+        const cur = next.get(event.partitionId);
         if (!cur) break;
         next.set(event.partitionId, {
           ...cur,

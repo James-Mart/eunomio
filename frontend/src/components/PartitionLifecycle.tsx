@@ -7,7 +7,7 @@ import {
   CheckCircleIcon,
   CodeIcon,
   SearchIcon,
-  StopIcon,
+  PauseIcon,
   TasklistIcon,
 } from "@primer/octicons-react";
 
@@ -115,7 +115,7 @@ function Step({
 function statusIconFor(state: LifecycleStateValue, fallback: IconComponent): IconComponent {
   switch (state) {
     case "awaiting_review":
-      return StopIcon;
+      return PauseIcon;
     case "done":
       return CheckCircleIcon;
     case "error":
@@ -132,7 +132,7 @@ function colorFor(state: LifecycleStateValue): string {
     case "running":
       return "text-attention";
     case "awaiting_review":
-      return "text-danger";
+      return "text-attention";
     case "done":
       return "text-success";
     case "error":

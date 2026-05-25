@@ -383,6 +383,14 @@ impl SessionRepo for SqliteSessionRepo {
                     tokio_rusqlite::params![session_id, org_id],
                 )?;
                 tx.execute(
+                    "DELETE FROM shaver_runs WHERE session_id = ?1 AND org_id = ?2",
+                    tokio_rusqlite::params![session_id, org_id],
+                )?;
+                tx.execute(
+                    "DELETE FROM shaving_tracks WHERE session_id = ?1 AND org_id = ?2",
+                    tokio_rusqlite::params![session_id, org_id],
+                )?;
+                tx.execute(
                     "DELETE FROM partitions WHERE session_id = ?1 AND org_id = ?2",
                     tokio_rusqlite::params![session_id, org_id],
                 )?;

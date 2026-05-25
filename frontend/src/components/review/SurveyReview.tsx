@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 import { useState } from "react";
-import { StopIcon } from "@primer/octicons-react";
+import { PauseIcon } from "@primer/octicons-react";
 import { toast } from "sonner";
 
 import { api, type ChangeSurvey } from "@/lib/api";
@@ -61,7 +61,7 @@ export default function SurveyReview({
   return (
     <div className="space-y-3">
       <Alert>
-        <StopIcon className="h-4 w-4" />
+        <PauseIcon className="h-4 w-4 text-attention" />
         <AlertTitle>Survey ready for review</AlertTitle>
         <AlertDescription>
           Accept the survey to start planning, or re-run with feedback.

@@ -43,7 +43,7 @@ import { useAbortableEffect } from "@/lib/useAbortableEffect";
 import { useIsDesktop } from "@/lib/useIsDesktop";
 import { cn } from "@/lib/utils";
 
-type SubagentCategory = "surveyor" | "planner" | "constructor";
+type SubagentCategory = "surveyor" | "planner" | "constructor" | "shaver";
 
 type IconComponent = React.ComponentType<IconProps>;
 
@@ -56,6 +56,7 @@ const CATEGORIES: Record<SettingsCategory, CategoryMeta> = {
   surveyor: { label: "Surveyor", icon: SearchIcon },
   planner: { label: "Planner", icon: TasklistIcon },
   constructor: { label: "Constructor", icon: CodeIcon },
+  shaver: { label: "Timeline", icon: TasklistIcon },
 };
 
 const TOP_ORDER: SettingsCategory[] = ["general", "coordinator", "account"];
@@ -63,6 +64,7 @@ const SUBAGENT_ORDER: SubagentCategory[] = [
   "surveyor",
   "planner",
   "constructor",
+  "shaver",
 ];
 
 type ModelsState =
@@ -155,6 +157,14 @@ export default function PartitionSettingsPanel() {
       "Failed to save settings",
     );
 
+  const onTimelineEnabledChange = (next: boolean) =>
+    settings &&
+    applyOptimistic(
+      "coordinator",
+      { ...settings.coordinator, timelineEnabled: next },
+      "Failed to save settings",
+    );
+
   const updateRoleModel = (role: SubagentCategory, next: string) =>
     settings &&
     applyOptimistic(
@@ -193,6 +203,7 @@ export default function PartitionSettingsPanel() {
           models={models}
           onModelChange={onCoordinatorModelChange}
           onSurveyorEnabledChange={onSurveyorEnabledChange}
+          onTimelineEnabledChange={onTimelineEnabledChange}
           onHitlChange={onHitlChange}
           onMaxIterationsChange={onMaxIterationsChange}
         />
@@ -513,6 +524,7 @@ function CoordinatorPanel({
   models,
   onModelChange,
   onSurveyorEnabledChange,
+  onTimelineEnabledChange,
   onHitlChange,
   onMaxIterationsChange,
 }: {
@@ -520,6 +532,7 @@ function CoordinatorPanel({
   models: ModelsState;
   onModelChange: (next: string) => void;
   onSurveyorEnabledChange: (next: boolean) => void;
+  onTimelineEnabledChange: (next: boolean) => void;
   onHitlChange: (next: HumanInTheLoopSettings) => void;
   onMaxIterationsChange: (next: IterationLimit) => void;
 }) {
@@ -532,6 +545,7 @@ function CoordinatorPanel({
     };
   const disabled = !settings;
   const surveyorEnabled = settings?.coordinator.surveyorEnabled ?? true;
+  const timelineEnabled = settings?.coordinator.timelineEnabled ?? true;
   const selected = settings?.coordinator.model ?? "composer-2.5";
   const iterations = settings?.coordinator.maxIterations;
   const iterationsOption = iterationLimitToOption(iterations);
@@ -570,6 +584,24 @@ function CoordinatorPanel({
             </p>
           </div>
         </div>
+        <div className="flex items-start gap-3">
+          <Checkbox
+            id="coordinator-timeline-enabled"
+            checked={timelineEnabled}
+            disabled={disabled}
+            onChange={(e) => onTimelineEnabledChange(e.target.checked)}
+            className="mt-0.5"
+          />
+          <div className="space-y-0.5">
+            <Label htmlFor="coordinator-timeline-enabled" className="font-normal">
+              Timeline
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Generate a visually inspectable history of changes tied to each
+              finished Edge.
+            </p>
+          </div>
+        </div>
       </section>
 
       <section className="space-y-3">
@@ -602,7 +634,7 @@ function CoordinatorPanel({
           <HitlRow
             id="hitl-after-indivisible"
             label="Pause after indivisible verdict"
-            description="Wait for me to confirm an indivisible plan before auto-Abandoning."
+            description="Wait for me to confirm an indivisible plan before finishing."
             checked={hitl.afterIndivisible}
             disabled={disabled}
             onChange={(checked) =>
@@ -657,6 +689,7 @@ function SubagentPanel({
 }) {
   const cur = settings?.[role];
   const enabled = cur?.overrideModel ?? false;
+  const roleLabel = CATEGORIES[role].label;
   return (
     <div className="space-y-4">
       <div className="flex items-start gap-3">
@@ -672,7 +705,7 @@ function SubagentPanel({
             Override default model
           </Label>
           <p className="text-xs text-muted-foreground">
-            Use a different model for the {role} role than the Coordinator default.
+            Use a different model for {roleLabel} than the Coordinator default.
           </p>
         </div>
       </div>

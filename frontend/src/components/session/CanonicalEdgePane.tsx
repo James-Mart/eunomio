@@ -27,7 +27,7 @@ export function CanonicalEdgePane({ sessionId, node }: Props) {
       .then((next) => {
         if (cancelled) return;
         setTrack(next);
-        setStepIndex(Math.max(0, next.steps.length - 1));
+        setStepIndex(next.steps.length);
       })
       .catch((error) => {
         if (cancelled) return;
@@ -42,20 +42,19 @@ export function CanonicalEdgePane({ sessionId, node }: Props) {
   }, [sessionId, targetNodeId, node.hasShavingTrack]);
 
   useEffect(() => {
-    setStepIndex(track ? Math.max(0, track.steps.length - 1) : 0);
+    setStepIndex(track ? track.steps.length : 0);
   }, [targetNodeId, track]);
 
   if (track && track.steps.length > 0) {
-    const selectedIndex = Math.min(stepIndex, track.steps.length - 1);
-    const selected = track.steps[selectedIndex];
+    const selectedIndex = Math.min(stepIndex, track.stepDiffs.length - 1);
     const selectedDiff = track.stepDiffs[selectedIndex];
     return (
       <div className="flex h-full min-h-0 flex-col">
         <div className="min-h-0 flex-1">
           <EdgePane
             sessionId={sessionId}
-            fromTree={track.parentTreeSha}
-            toTree={selected.treeSha}
+            fromTree={selectedDiff.fromTree}
+            toTree={selectedDiff.toTree}
             beforeRef={track.parentTreeSha}
             afterRef={track.headTreeSha}
             loadedEdge={selectedDiff}
@@ -65,7 +64,7 @@ export function CanonicalEdgePane({ sessionId, node }: Props) {
         </div>
         <ShavingTimelineBar
           track={track}
-          stepIndex={Math.min(stepIndex, track.steps.length - 1)}
+          stepIndex={selectedIndex}
           onStepIndexChange={setStepIndex}
         />
       </div>

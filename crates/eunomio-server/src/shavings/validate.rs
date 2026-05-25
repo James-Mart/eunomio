@@ -16,6 +16,11 @@ pub async fn validate_track(
             "shaving track has fewer than two steps"
         )));
     }
+    if steps.len() > 12 {
+        return Err(AppError::Internal(anyhow!(
+            "shaving track has more than twelve steps"
+        )));
+    }
     let last = steps
         .last()
         .ok_or_else(|| AppError::Internal(anyhow!("shaving track has no steps")))?;
@@ -67,10 +72,12 @@ mod tests {
                 ShavingStep {
                     tree_sha: step1.tree,
                     commit_sha: step1.commit,
+                    label: None,
                 },
                 ShavingStep {
                     tree_sha: step2.tree.clone(),
                     commit_sha: step2.commit,
+                    label: None,
                 },
             ],
         )
@@ -94,10 +101,12 @@ mod tests {
                 ShavingStep {
                     tree_sha: step1.tree,
                     commit_sha: step1.commit,
+                    label: None,
                 },
                 ShavingStep {
                     tree_sha: step2.tree.clone(),
                     commit_sha: step2.commit,
+                    label: None,
                 },
             ],
         )
@@ -122,10 +131,12 @@ mod tests {
                 ShavingStep {
                     tree_sha: step1.tree,
                     commit_sha: step1.commit,
+                    label: None,
                 },
                 ShavingStep {
                     tree_sha: step2.tree.clone(),
                     commit_sha: step2.commit,
+                    label: None,
                 },
             ],
         )

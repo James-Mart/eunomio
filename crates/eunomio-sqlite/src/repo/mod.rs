@@ -15,6 +15,7 @@ pub mod org;
 pub mod partition;
 pub mod run;
 pub mod session;
+pub mod shaver_run;
 pub mod shaving_track;
 pub mod user;
 
@@ -27,6 +28,7 @@ pub use org::SqliteOrgRepo;
 pub use partition::SqlitePartitionRepo;
 pub use run::SqliteRunRepo;
 pub use session::SqliteSessionRepo;
+pub use shaver_run::SqliteShaverRunRepo;
 pub use shaving_track::SqliteShavingTrackRepo;
 pub use user::SqliteUserRepo;
 

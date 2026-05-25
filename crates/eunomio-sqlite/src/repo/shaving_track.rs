@@ -24,11 +24,11 @@ impl ShavingTrackRepo for SqliteShavingTrackRepo {
             .call(move |conn| {
                 conn.execute(
                     "INSERT INTO shaving_tracks \
-                     (session_id, slice_node_id, org_id, parent_tree_sha, head_tree_sha, steps_json, ref_name, created_at) \
+                     (session_id, target_node_id, org_id, parent_tree_sha, head_tree_sha, steps_json, ref_name, created_at) \
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                     rusqlite::params![
                         row.session_id,
-                        row.slice_node_id,
+                        row.target_node_id,
                         row.org_id,
                         row.parent_tree_sha,
                         row.head_tree_sha,
@@ -48,20 +48,20 @@ impl ShavingTrackRepo for SqliteShavingTrackRepo {
         &self,
         org_id: &str,
         session_id: &str,
-        slice_node_id: &str,
+        target_node_id: &str,
     ) -> Result<Option<ShavingTrack>, AppError> {
         let org_id = org_id.to_string();
         let session_id = session_id.to_string();
-        let slice_node_id = slice_node_id.to_string();
+        let target_node_id = target_node_id.to_string();
         let row: Option<(String, String, String, String)> = self
             .conn
             .call(move |conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT slice_node_id, parent_tree_sha, head_tree_sha, steps_json \
+                    "SELECT target_node_id, parent_tree_sha, head_tree_sha, steps_json \
                      FROM shaving_tracks \
-                     WHERE org_id = ?1 AND session_id = ?2 AND slice_node_id = ?3",
+                     WHERE org_id = ?1 AND session_id = ?2 AND target_node_id = ?3",
                 )?;
-                let mut rows = stmt.query(rusqlite::params![org_id, session_id, slice_node_id])?;
+                let mut rows = stmt.query(rusqlite::params![org_id, session_id, target_node_id])?;
                 if let Some(row) = rows.next()? {
                     Ok(Some((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))
                 } else {
@@ -70,13 +70,13 @@ impl ShavingTrackRepo for SqliteShavingTrackRepo {
             })
             .await
             .map_err(crate::repo::map_sqlite_err)?;
-        let Some((slice_node_id, parent_tree_sha, head_tree_sha, steps_json)) = row else {
+        let Some((target_node_id, parent_tree_sha, head_tree_sha, steps_json)) = row else {
             return Ok(None);
         };
         let steps: Vec<ShavingStep> =
             serde_json::from_str(&steps_json).map_err(|e| AppError::Internal(e.into()))?;
         Ok(Some(ShavingTrack {
-            slice_node_id,
+            target_node_id,
             parent_tree_sha,
             head_tree_sha,
             steps,
@@ -87,17 +87,17 @@ impl ShavingTrackRepo for SqliteShavingTrackRepo {
         &self,
         org_id: &str,
         session_id: &str,
-        slice_node_id: &str,
+        target_node_id: &str,
     ) -> Result<(), AppError> {
         let org_id = org_id.to_string();
         let session_id = session_id.to_string();
-        let slice_node_id = slice_node_id.to_string();
+        let target_node_id = target_node_id.to_string();
         self.conn
             .call(move |conn| {
                 conn.execute(
                     "DELETE FROM shaving_tracks \
-                     WHERE org_id = ?1 AND session_id = ?2 AND slice_node_id = ?3",
-                    rusqlite::params![org_id, session_id, slice_node_id],
+                     WHERE org_id = ?1 AND session_id = ?2 AND target_node_id = ?3",
+                    rusqlite::params![org_id, session_id, target_node_id],
                 )?;
                 Ok(())
             })

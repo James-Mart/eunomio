@@ -45,16 +45,21 @@ impl Coordinator {
             self.park_at_gate(state, scope, RunKind::Plan, payload)
                 .await
         } else {
+            state
+                .datastore
+                .partitions()
+                .set_phase_state(&scope.org_id, &scope.partition_id, PhaseState::AwaitingReview)
+                .await?;
             let coord = self.clone();
             let state_owned = state.clone();
             let org_id = scope.org_id.clone();
             let partition_id = scope.partition_id.clone();
             tokio::spawn(async move {
                 if let Err(e) = coord
-                    .abandon_partition(&state_owned, &org_id, &partition_id)
+                    .finish_partition(&state_owned, &org_id, &partition_id)
                     .await
                 {
-                    tracing::error!(error = %e, partition_id = %partition_id, "auto-abandon on indivisible failed");
+                    tracing::error!(error = %e, partition_id = %partition_id, "auto-finish on indivisible failed");
                 }
             });
             Ok(())

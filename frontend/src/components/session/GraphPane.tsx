@@ -5,7 +5,9 @@ import {
   Background,
   ReactFlow,
   ReactFlowProvider,
+  useNodesInitialized,
   useReactFlow,
+  useStore,
   type Node,
   type NodeMouseHandler,
   type NodeTypes,
@@ -48,15 +50,31 @@ type Props = {
 
 const FIT_VIEW_OPTIONS = { padding: 0.2 } as const;
 
+function isUntransformedViewport({ x, y, zoom }: Viewport): boolean {
+  return zoom === 1 && Math.abs(x) < 0.5 && Math.abs(y) < 0.5;
+}
+
 /**
  * - Fit when entering original or candidate layouts.
  * - On first canonical load, fit once.
  * - When returning to canonical, restore pan/zoom from before leaving.
  */
 function GraphViewportFit({ layout }: { layout: SessionLayout }) {
-  const { fitView, getViewport, setViewport } = useReactFlow();
+  const { fitView, getViewport, setViewport, viewportInitialized } =
+    useReactFlow();
+  const nodesInitialized = useNodesInitialized();
+  const width = useStore((state) => state.width);
+  const height = useStore((state) => state.height);
   const canonicalViewportRef = useRef<Viewport | null>(null);
   const didInitialCanonicalFit = useRef(false);
+
+  const viewportReady =
+    viewportInitialized && nodesInitialized && width > 0 && height > 0;
+
+  const layoutNodeIds = useMemo(
+    () => layout.nodes.map((node) => node.id).join("\0"),
+    [layout.nodes],
+  );
 
   const enterTrigger =
     layout.kind === "candidate"
@@ -66,14 +84,18 @@ function GraphViewportFit({ layout }: { layout: SessionLayout }) {
         : null;
 
   useEffect(() => {
+    if (layout.kind !== "canonical") return;
     return () => {
-      if (layout.kind === "canonical") {
-        canonicalViewportRef.current = getViewport();
+      const viewport = getViewport();
+      if (!isUntransformedViewport(viewport)) {
+        canonicalViewportRef.current = viewport;
       }
     };
-  }, [layout.kind, getViewport]);
+  }, [layout.kind]);
 
   useEffect(() => {
+    if (!viewportReady) return;
+
     if (enterTrigger !== null) {
       void fitView(FIT_VIEW_OPTIONS);
       return;
@@ -81,15 +103,33 @@ function GraphViewportFit({ layout }: { layout: SessionLayout }) {
     if (layout.kind !== "canonical") return;
 
     const saved = canonicalViewportRef.current;
-    if (saved) {
+    if (saved && !isUntransformedViewport(saved)) {
+      canonicalViewportRef.current = null;
+      didInitialCanonicalFit.current = true;
       void setViewport(saved);
       return;
     }
-    if (!didInitialCanonicalFit.current) {
-      didInitialCanonicalFit.current = true;
-      void fitView(FIT_VIEW_OPTIONS);
-    }
-  }, [enterTrigger, layout.kind, fitView, setViewport]);
+    if (didInitialCanonicalFit.current) return;
+
+    void fitView({
+      ...FIT_VIEW_OPTIONS,
+      nodes: layout.nodes.map((node) => ({ id: node.id })),
+    }).then(() => {
+      if (!isUntransformedViewport(getViewport())) {
+        didInitialCanonicalFit.current = true;
+      }
+    });
+  }, [
+    enterTrigger,
+    layout.kind,
+    layoutNodeIds,
+    fitView,
+    setViewport,
+    viewportReady,
+    width,
+    height,
+    layout.nodes,
+  ]);
 
   return null;
 }
@@ -113,6 +153,7 @@ function GraphFlow({
 
   return (
     <ReactFlow
+      className="h-full w-full"
       nodes={nodes}
       edges={layout.edges}
       nodeTypes={nodeTypes}

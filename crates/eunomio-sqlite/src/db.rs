@@ -128,6 +128,26 @@ CREATE INDEX IF NOT EXISTS runs_by_edge ON runs (session_id, target_node_id);
 CREATE INDEX IF NOT EXISTS runs_by_partition ON runs (partition_id);
 CREATE INDEX IF NOT EXISTS runs_by_org ON runs (org_id);
 
+CREATE TABLE IF NOT EXISTS shaver_runs (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL REFERENCES orgs(id),
+  user_id TEXT NOT NULL REFERENCES users(id),
+  session_id TEXT NOT NULL,
+  target_node_id TEXT NOT NULL,
+  worktree_path TEXT NOT NULL,
+  status TEXT NOT NULL,
+  result_json TEXT,
+  result_text TEXT,
+  error_message TEXT,
+  prompt_text TEXT,
+  transcript_text TEXT,
+  started_at INTEGER NOT NULL,
+  finished_at INTEGER,
+  FOREIGN KEY (session_id, target_node_id) REFERENCES nodes(session_id, node_id)
+);
+CREATE INDEX IF NOT EXISTS shaver_runs_by_edge ON shaver_runs (session_id, target_node_id);
+CREATE INDEX IF NOT EXISTS shaver_runs_by_org ON shaver_runs (org_id);
+
 CREATE TABLE IF NOT EXISTS edge_file_viewed (
   org_id TEXT NOT NULL REFERENCES orgs(id),
   user_id TEXT NOT NULL REFERENCES users(id),
@@ -143,15 +163,15 @@ CREATE INDEX IF NOT EXISTS edge_file_viewed_by_session
 
 CREATE TABLE IF NOT EXISTS shaving_tracks (
   session_id TEXT NOT NULL,
-  slice_node_id TEXT NOT NULL,
+  target_node_id TEXT NOT NULL,
   org_id TEXT NOT NULL REFERENCES orgs(id),
   parent_tree_sha TEXT NOT NULL,
   head_tree_sha TEXT NOT NULL,
   steps_json TEXT NOT NULL,
   ref_name TEXT NOT NULL,
   created_at INTEGER NOT NULL,
-  PRIMARY KEY (session_id, slice_node_id),
-  FOREIGN KEY (session_id, slice_node_id) REFERENCES nodes(session_id, node_id)
+  PRIMARY KEY (session_id, target_node_id),
+  FOREIGN KEY (session_id, target_node_id) REFERENCES nodes(session_id, node_id)
 );
 CREATE INDEX IF NOT EXISTS shaving_tracks_by_org_session
   ON shaving_tracks (org_id, session_id);

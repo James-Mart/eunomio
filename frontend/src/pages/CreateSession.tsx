@@ -61,7 +61,7 @@ type TabValidation = {
 };
 
 const PR_RESOLVE_DEBOUNCE_MS = 400;
-const BRANCH_VALIDATE_DEBOUNCE_MS = 3000;
+const BRANCH_VALIDATE_DEBOUNCE_MS = 1000;
 
 const emptyValidation = (): TabValidation => ({ status: "idle", error: null });
 

@@ -13,7 +13,7 @@ use uuid::Uuid;
 pub struct AttachTrackInput {
     pub org_id: String,
     pub session_id: String,
-    pub slice_node_id: String,
+    pub target_node_id: String,
     pub parent_node_id: String,
     pub parent_tree_sha: String,
     pub parent_commit_sha: String,
@@ -73,7 +73,7 @@ async fn attach_track(state: &AppState, input: AttachTrackInput) -> Result<()> {
         return Err(anyhow!("shaving validation failed: {e}"));
     }
 
-    let ref_name = format!("refs/eunomio/shavings/{}", input.slice_node_id);
+    let ref_name = format!("refs/eunomio/shavings/{}", input.target_node_id);
     let last_commit = steps
         .last()
         .map(|step| step.commit_sha.as_str())
@@ -92,11 +92,11 @@ async fn attach_track(state: &AppState, input: AttachTrackInput) -> Result<()> {
 
     let org_id = input.org_id.clone();
     let session_id = input.session_id.clone();
-    let slice_node_id = input.slice_node_id.clone();
+    let target_node_id = input.target_node_id.clone();
     let row = NewShavingTrackInsert {
         org_id: org_id.clone(),
         session_id: session_id.clone(),
-        slice_node_id: slice_node_id.clone(),
+        target_node_id: target_node_id.clone(),
         parent_tree_sha: input.parent_tree_sha,
         head_tree_sha: input.candidate_tree_sha,
         steps,
@@ -108,7 +108,7 @@ async fn attach_track(state: &AppState, input: AttachTrackInput) -> Result<()> {
         let _ = state
             .datastore
             .shaving_tracks()
-            .delete(&org_id, &session_id, &slice_node_id)
+            .delete(&org_id, &session_id, &target_node_id)
             .await
             .map_err(|cleanup_err| {
                 tracing::warn!(error = %cleanup_err, "shaving track row cleanup failed");
@@ -141,6 +141,7 @@ async fn build_steps(
         steps.push(ShavingStep {
             tree_sha,
             commit_sha,
+            label: None,
         });
     }
     Ok(steps)

@@ -22,6 +22,8 @@ pub struct PartitionSettings {
     pub planner: SubagentSettings,
     #[serde(default)]
     pub constructor: SubagentSettings,
+    #[serde(default)]
+    pub shaver: SubagentSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,6 +37,8 @@ pub struct CoordinatorSettings {
     pub max_iterations: IterationLimit,
     #[serde(default = "default_true")]
     pub surveyor_enabled: bool,
+    #[serde(default = "default_true")]
+    pub timeline_enabled: bool,
 }
 
 impl Default for CoordinatorSettings {
@@ -44,6 +48,7 @@ impl Default for CoordinatorSettings {
             human_in_the_loop: HumanInTheLoop::default(),
             max_iterations: default_iteration_limit(),
             surveyor_enabled: true,
+            timeline_enabled: true,
         }
     }
 }
@@ -129,6 +134,8 @@ pub struct PartitionSettingsPatch {
     pub planner: Option<SubagentSettings>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub constructor: Option<SubagentSettings>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shaver: Option<SubagentSettings>,
 }
 
 impl PartitionSettings {
@@ -147,6 +154,9 @@ impl PartitionSettings {
         }
         if let Some(v) = patch.constructor {
             self.constructor = v;
+        }
+        if let Some(v) = patch.shaver {
+            self.shaver = v;
         }
     }
 }
