@@ -87,6 +87,10 @@ export type GeneralSettings = {
   transcriptsEnabled: boolean;
 };
 
+export type HotkeySettings = {
+  enabled: boolean;
+};
+
 export type SubagentSettings = {
   overrideModel: boolean;
   model: string;
@@ -113,6 +117,7 @@ export type CoordinatorSettings = {
 
 export interface PartitionSettings {
   general: GeneralSettings;
+  hotkeys: HotkeySettings;
   coordinator: CoordinatorSettings;
   surveyor: SubagentSettings;
   planner: SubagentSettings;
@@ -122,6 +127,7 @@ export interface PartitionSettings {
 
 export interface PartitionSettingsPatch {
   general?: GeneralSettings;
+  hotkeys?: HotkeySettings;
   coordinator?: CoordinatorSettings;
   surveyor?: SubagentSettings;
   planner?: SubagentSettings;

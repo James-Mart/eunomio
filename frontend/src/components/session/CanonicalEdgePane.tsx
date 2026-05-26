@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import EdgePane from "@/components/EdgePane";
+import { useHotkeys } from "@/components/HotkeysProvider";
 import { ShavingTimelineBar } from "@/components/session/ShavingTimelineBar";
 import { ApiError, api, type GraphNode, type ShavingTrack } from "@/lib/api";
 import { useEdgeFileViewed } from "@/lib/useEdgeFileViewed";
@@ -17,6 +18,8 @@ export function CanonicalEdgePane({ sessionId, node }: Props) {
   const { viewedPaths, toggleViewed } = useEdgeFileViewed(sessionId, targetNodeId);
   const [track, setTrack] = useState<ShavingTrack | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
+  const { registerTimeline } = useHotkeys();
+  const timelineRegistrationId = useRef(Symbol("timeline")).current;
   const titleHeader = <NodeDiffTitleBar title={node.title} />;
 
   useEffect(() => {
@@ -45,6 +48,22 @@ export function CanonicalEdgePane({ sessionId, node }: Props) {
   useEffect(() => {
     setStepIndex(track ? track.steps.length : 0);
   }, [targetNodeId, track]);
+
+  useLayoutEffect(() => {
+    if (!track || track.steps.length === 0) {
+      registerTimeline(timelineRegistrationId, null);
+      return;
+    }
+    registerTimeline(timelineRegistrationId, {
+      stepIndex,
+      maxStepIndex: track.steps.length,
+      setStepIndex,
+    });
+  }, [track, stepIndex, registerTimeline, timelineRegistrationId]);
+
+  useLayoutEffect(() => {
+    return () => registerTimeline(timelineRegistrationId, null);
+  }, [registerTimeline, timelineRegistrationId]);
 
   if (track && track.steps.length > 0) {
     const selectedIndex = Math.min(stepIndex, track.stepDiffs.length - 1);

@@ -131,3 +131,27 @@ async fn surveyor_enabled_defaults_true_and_patches() {
         Some(false)
     );
 }
+
+#[tokio::test]
+async fn hotkeys_enabled_defaults_true_and_patches() {
+    let app = TestApp::spawn().await;
+    let cookie = login(&app.router, "hotkeys-setting", TEST_CURSOR_KEY).await;
+
+    let (status, body) =
+        authenticated_empty_request(&app.router, &cookie, "GET", "/api/partition-settings").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["hotkeys"]["enabled"].as_bool(), Some(true));
+
+    let (status, body) = authenticated_json_request(
+        &app.router,
+        &cookie,
+        "PATCH",
+        "/api/partition-settings",
+        serde_json::json!({
+            "hotkeys": { "enabled": false }
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["hotkeys"]["enabled"].as_bool(), Some(false));
+}

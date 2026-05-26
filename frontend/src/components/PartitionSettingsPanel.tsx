@@ -5,6 +5,7 @@ import {
   ArrowLeftIcon,
   ChevronRightIcon,
   CodeIcon,
+  CommandPaletteIcon,
   FileIcon,
   KeyIcon,
   ProjectRoadmapIcon,
@@ -18,6 +19,7 @@ import {
   useSettingsDrill,
   type SettingsCategory,
 } from "@/components/SettingsDrillContext";
+import { useHotkeys } from "@/components/HotkeysProvider";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -39,6 +41,7 @@ import {
   type PartitionSettingsPatch,
 } from "@/lib/api";
 import { formatError } from "@/lib/errors";
+import { TIMELINE_HOTKEY_BINDINGS } from "@/lib/hotkeys";
 import { useAbortableEffect } from "@/lib/useAbortableEffect";
 import { useIsDesktop } from "@/lib/useIsDesktop";
 import { cn } from "@/lib/utils";
@@ -52,6 +55,7 @@ type CategoryMeta = { label: string; icon: IconComponent };
 const CATEGORIES: Record<SettingsCategory, CategoryMeta> = {
   account: { label: "Account", icon: KeyIcon },
   general: { label: "General", icon: FileIcon },
+  hotkeys: { label: "Hotkeys", icon: CommandPaletteIcon },
   coordinator: { label: "Coordinator", icon: ProjectRoadmapIcon },
   surveyor: { label: "Surveyor", icon: SearchIcon },
   planner: { label: "Planner", icon: TasklistIcon },
@@ -59,7 +63,7 @@ const CATEGORIES: Record<SettingsCategory, CategoryMeta> = {
   shaver: { label: "Timeline", icon: TasklistIcon },
 };
 
-const TOP_ORDER: SettingsCategory[] = ["general", "coordinator", "account"];
+const TOP_ORDER: SettingsCategory[] = ["general", "hotkeys", "coordinator", "account"];
 const SUBAGENT_ORDER: SubagentCategory[] = [
   "surveyor",
   "planner",
@@ -195,6 +199,9 @@ export default function PartitionSettingsPanel() {
           }
         />
       );
+    }
+    if (category === "hotkeys") {
+      return <HotkeysPanel />;
     }
     if (category === "coordinator") {
       return (
@@ -793,6 +800,53 @@ function HitlRow({
         </Label>
         <p className="text-xs text-muted-foreground">{description}</p>
       </div>
+    </div>
+  );
+}
+
+function HotkeysPanel() {
+  const { enabled, setEnabled } = useHotkeys();
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start gap-3">
+        <Checkbox
+          id="hotkeys-enabled"
+          checked={enabled}
+          onChange={(e) => setEnabled(e.target.checked)}
+          className="mt-0.5"
+        />
+        <div className="space-y-0.5">
+          <Label htmlFor="hotkeys-enabled" className="font-normal">
+            Enable keyboard shortcuts
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            Timeline shortcuts apply only when a shaving timeline is visible in
+            the diff pane. This is separate from the coordinator Timeline
+            subagent setting.
+          </p>
+        </div>
+      </div>
+
+      <section className="space-y-3">
+        <h4 className="text-sm font-medium">Timeline</h4>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b text-left text-xs text-muted-foreground">
+              <th className="pb-2 pr-4 font-medium">Action</th>
+              <th className="pb-2 font-medium">Shortcut</th>
+            </tr>
+          </thead>
+          <tbody>
+            {TIMELINE_HOTKEY_BINDINGS.map((binding) => (
+              <tr key={binding.id} className="border-b border-border/50">
+                <td className="py-2 pr-4">{binding.label}</td>
+                <td className="py-2 font-mono text-xs">{binding.keys}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
     </div>
   );
 }

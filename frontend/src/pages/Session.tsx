@@ -229,6 +229,7 @@ function SessionInner({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {isDesktop ? (
       <div className="hidden min-h-0 flex-1 md:flex md:flex-col">
         <ResizablePanelGroup
           orientation="horizontal"
@@ -265,7 +266,7 @@ function SessionInner({ sessionId }: { sessionId: string }) {
                 maxSize="85%"
                 className="min-h-0 overflow-hidden"
               >
-                {isDesktop ? graphPane : null}
+                {graphPane}
               </ResizablePanel>
               <ResizableHandle withHandle aria-label="Resize tools and graph" />
               <ResizablePanel
@@ -281,7 +282,9 @@ function SessionInner({ sessionId }: { sessionId: string }) {
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>
+      ) : null}
 
+      {!isDesktop ? (
       <div
         className={cn(
           "flex min-h-0 flex-1 flex-col overflow-hidden md:hidden",
@@ -290,7 +293,7 @@ function SessionInner({ sessionId }: { sessionId: string }) {
       >
         <div className="relative min-h-0 flex-1 overflow-hidden">
           <TabPanel id="graph" active={activeTab === "graph"}>
-            {!isDesktop ? graphPane : null}
+            {graphPane}
           </TabPanel>
           <TabPanel id="diff" active={activeTab === "diff"}>
             {diffPane}
@@ -301,6 +304,7 @@ function SessionInner({ sessionId }: { sessionId: string }) {
         </div>
         <BottomTabBar value={activeTab} onChange={setActiveTab} />
       </div>
+      ) : null}
     </div>
   );
 }

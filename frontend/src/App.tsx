@@ -7,6 +7,7 @@ import AppHeader from "@/components/AppHeader";
 import { AuthProvider } from "@/components/AuthProvider";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { SettingsDrillProvider } from "@/components/SettingsDrillContext";
+import { HotkeysProvider } from "@/components/HotkeysProvider";
 import SessionNotFoundBanner from "@/components/SessionNotFoundBanner";
 import SystemErrorBanner from "@/components/SystemErrorBanner";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -29,23 +30,25 @@ export default function App() {
 function AuthenticatedShell() {
   return (
     <SettingsDrillProvider>
-      <div className="flex h-dvh min-h-0 flex-col overflow-hidden overscroll-none">
-        <SystemErrorBanner />
-        <AppHeader />
-        <SessionNotFoundBanner />
-        <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <ErrorBoundary>
-            <Suspense fallback={<RouteFallback />}>
-              <Routes>
-                <Route path="/" element={<CreateSession />} />
-                <Route path="/sessions/:id" element={<Session />} />
-                <Route path="/settings" element={<PartitionSettingsPage />} />
-              </Routes>
-            </Suspense>
-          </ErrorBoundary>
-        </main>
-        <Toaster position="bottom-right" />
-      </div>
+      <HotkeysProvider>
+        <div className="flex h-dvh min-h-0 flex-col overflow-hidden overscroll-none">
+          <SystemErrorBanner />
+          <AppHeader />
+          <SessionNotFoundBanner />
+          <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <ErrorBoundary>
+              <Suspense fallback={<RouteFallback />}>
+                <Routes>
+                  <Route path="/" element={<CreateSession />} />
+                  <Route path="/sessions/:id" element={<Session />} />
+                  <Route path="/settings" element={<PartitionSettingsPage />} />
+                </Routes>
+              </Suspense>
+            </ErrorBoundary>
+          </main>
+          <Toaster position="bottom-right" />
+        </div>
+      </HotkeysProvider>
     </SettingsDrillProvider>
   );
 }

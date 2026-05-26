@@ -11,6 +11,7 @@ import {
 export type SettingsCategory =
   | "account"
   | "general"
+  | "hotkeys"
   | "coordinator"
   | "surveyor"
   | "planner"

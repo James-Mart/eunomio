@@ -9,11 +9,26 @@ pub struct GeneralSettings {
     pub transcripts_enabled: bool,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HotkeySettings {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+impl Default for HotkeySettings {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PartitionSettings {
     #[serde(default)]
     pub general: GeneralSettings,
+    #[serde(default)]
+    pub hotkeys: HotkeySettings,
     #[serde(default)]
     pub coordinator: CoordinatorSettings,
     #[serde(default)]
@@ -127,6 +142,8 @@ pub struct PartitionSettingsPatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub general: Option<GeneralSettings>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hotkeys: Option<HotkeySettings>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coordinator: Option<CoordinatorSettings>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surveyor: Option<SubagentSettings>,
@@ -142,6 +159,9 @@ impl PartitionSettings {
     pub fn apply_patch(&mut self, patch: PartitionSettingsPatch) {
         if let Some(v) = patch.general {
             self.general = v;
+        }
+        if let Some(v) = patch.hotkeys {
+            self.hotkeys = v;
         }
         if let Some(v) = patch.coordinator {
             self.coordinator = v;
