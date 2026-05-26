@@ -92,9 +92,34 @@ export type HotkeySettings = {
   enabled: boolean;
 };
 
+export type ModelParamValue = { id: string; value: string };
+
+export type ModelParamValueOption = {
+  value: string;
+  displayName?: string;
+};
+
+export type ModelParamDef = {
+  id: string;
+  displayName?: string;
+  values: ModelParamValueOption[];
+};
+
+export type ModelVariant = {
+  params: ModelParamValue[];
+  displayName?: string;
+  description?: string;
+  isDefault?: boolean;
+};
+
+export type ModelSelection = {
+  id: string;
+  params?: ModelParamValue[];
+};
+
 export type SubagentSettings = {
   overrideModel: boolean;
-  model: string;
+  model: ModelSelection;
 };
 
 export type HumanInTheLoopSettings = {
@@ -109,7 +134,7 @@ export type IterationLimit =
   | { kind: "auto" };
 
 export type CoordinatorSettings = {
-  model: string;
+  model: ModelSelection;
   humanInTheLoop: HumanInTheLoopSettings;
   maxIterations: IterationLimit;
   surveyorEnabled: boolean;
@@ -253,7 +278,14 @@ export type StartRunRequest = {
   strategyOverride?: PartitionStrategy;
 };
 
-export type CursorModel = { id: string };
+export type CursorModel = {
+  id: string;
+  displayName?: string;
+  description?: string;
+  aliases?: string[];
+  parameters?: ModelParamDef[];
+  variants?: ModelVariant[];
+};
 export type CursorModels = { models: CursorModel[] };
 
 export type RepoHints = {

@@ -29,8 +29,40 @@ async function listModels() {
   }
 
   const models = await Cursor.models.list({ apiKey: cursorApiKey });
-  const payload = { models: models.map((m) => ({ id: m.id })) };
+  const payload = { models: models.map(mapCatalogModel) };
   process.stdout.write(JSON.stringify(payload));
+}
+
+function mapCatalogModel(m) {
+  const out = { id: m.id };
+  if (m.displayName != null) out.displayName = m.displayName;
+  if (m.description != null) out.description = m.description;
+  if (Array.isArray(m.aliases) && m.aliases.length > 0) out.aliases = m.aliases;
+  if (Array.isArray(m.parameters) && m.parameters.length > 0) {
+    out.parameters = m.parameters.map((p) => {
+      const def = { id: p.id, values: (p.values ?? []).map((v) => mapParamValueOption(v)) };
+      if (p.displayName != null) def.displayName = p.displayName;
+      return def;
+    });
+  }
+  if (Array.isArray(m.variants) && m.variants.length > 0) {
+    out.variants = m.variants.map((v) => {
+      const variant = {
+        params: (v.params ?? []).map((p) => ({ id: p.id, value: String(p.value) })),
+      };
+      if (v.displayName != null) variant.displayName = v.displayName;
+      if (v.description != null) variant.description = v.description;
+      if (v.isDefault != null) variant.isDefault = v.isDefault;
+      return variant;
+    });
+  }
+  return out;
+}
+
+function mapParamValueOption(v) {
+  const opt = { value: String(v.value) };
+  if (v.displayName != null) opt.displayName = v.displayName;
+  return opt;
 }
 
 function fail(code, message) {

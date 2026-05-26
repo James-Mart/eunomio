@@ -95,7 +95,7 @@ export async function run() {
   try {
     agent = await Agent.create({
       apiKey: cursorApiKey,
-      model: { id: model },
+      model: toSdkModel(model),
       local: { cwd },
     });
     await emit({ type: "started", runId, agentId: agent.agentId ?? "" });
@@ -139,6 +139,19 @@ export async function run() {
     await cleanup();
   }
   process.exit(0);
+}
+
+function toSdkModel(model) {
+  if (model == null || typeof model !== "object" || typeof model.id !== "string") {
+    throw new Error("model.id required");
+  }
+  const params = Array.isArray(model.params)
+    ? model.params
+        .filter((p) => p && typeof p.id === "string" && p.value != null)
+        .map((p) => ({ id: p.id, value: String(p.value) }))
+    : [];
+  if (params.length === 0) return { id: model.id };
+  return { id: model.id, params };
 }
 
 function applyEnv(env) {

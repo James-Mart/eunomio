@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::types::ModelSelection;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
@@ -46,8 +47,8 @@ pub struct PartitionSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CoordinatorSettings {
-    #[serde(default = "default_model")]
-    pub model: String,
+    #[serde(default)]
+    pub model: ModelSelection,
     #[serde(default)]
     pub human_in_the_loop: HumanInTheLoop,
     #[serde(default = "default_iteration_limit")]
@@ -63,7 +64,7 @@ pub struct CoordinatorSettings {
 impl Default for CoordinatorSettings {
     fn default() -> Self {
         Self {
-            model: default_model(),
+            model: ModelSelection::default(),
             human_in_the_loop: HumanInTheLoop::default(),
             max_iterations: default_iteration_limit(),
             surveyor_enabled: false,
@@ -120,25 +121,21 @@ fn default_iteration_limit() -> IterationLimit {
 pub struct SubagentSettings {
     #[serde(default)]
     pub override_model: bool,
-    #[serde(default = "default_model")]
-    pub model: String,
+    #[serde(default)]
+    pub model: ModelSelection,
 }
 
 impl Default for SubagentSettings {
     fn default() -> Self {
         Self {
             override_model: false,
-            model: default_model(),
+            model: ModelSelection::default(),
         }
     }
 }
 
 fn default_true() -> bool {
     true
-}
-
-fn default_model() -> String {
-    "composer-2.5".to_string()
 }
 
 #[derive(Debug, Deserialize, Default)]

@@ -2,7 +2,7 @@
 
 use crate::{state::AppState, AppError};
 use anyhow::{Context, Result};
-use eunomio_core::types::*;
+use eunomio_core::types::{ModelSelection, PartitionSettings, PhaseName};
 use std::path::{Path, PathBuf};
 
 pub fn user_settings_path(data_dir: &Path, user_id: &str) -> PathBuf {
@@ -72,7 +72,7 @@ async fn read_or_init(path: &PathBuf) -> Result<PartitionSettings> {
     }
 }
 
-pub fn resolve_model(settings: &PartitionSettings, role: PhaseName) -> String {
+pub fn resolve_model(settings: &PartitionSettings, role: PhaseName) -> ModelSelection {
     let role_settings = match role {
         PhaseName::Survey => &settings.surveyor,
         PhaseName::Plan => &settings.planner,

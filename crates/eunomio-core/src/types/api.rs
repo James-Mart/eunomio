@@ -223,10 +223,76 @@ pub struct BranchFromNodeResponse {
     pub commit_sha: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelParamValue {
+    pub id: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelParamValueOption {
+    pub value: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelParamDef {
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    pub values: Vec<ModelParamValueOption>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelVariant {
+    pub params: Vec<ModelParamValue>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_default: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelSelection {
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub params: Vec<ModelParamValue>,
+}
+
+impl Default for ModelSelection {
+    fn default() -> Self {
+        Self {
+            id: "composer-2.5".to_string(),
+            params: vec![ModelParamValue {
+                id: "fast".to_string(),
+                value: "true".to_string(),
+            }],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CursorModel {
     pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aliases: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parameters: Option<Vec<ModelParamDef>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variants: Option<Vec<ModelVariant>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -274,4 +340,35 @@ pub struct SubagentDefaultPrompts {
 #[serde(rename_all = "camelCase")]
 pub struct NodeSessionLookup {
     pub session_id: String,
+}
+
+#[cfg(test)]
+mod model_selection_tests {
+    use super::{ModelParamValue, ModelSelection};
+
+    #[test]
+    fn model_selection_round_trip_with_params() {
+        let sel = ModelSelection {
+            id: "composer-2.5".to_string(),
+            params: vec![ModelParamValue {
+                id: "fast".to_string(),
+                value: "false".to_string(),
+            }],
+        };
+        let json = serde_json::to_string(&sel).unwrap();
+        assert!(json.contains("\"fast\""));
+        let back: ModelSelection = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.id, "composer-2.5");
+        assert_eq!(back.params[0].value, "false");
+    }
+
+    #[test]
+    fn model_selection_omits_empty_params() {
+        let sel = ModelSelection {
+            id: "gpt-5.5".to_string(),
+            params: vec![],
+        };
+        let json = serde_json::to_string(&sel).unwrap();
+        assert!(!json.contains("params"));
+    }
 }

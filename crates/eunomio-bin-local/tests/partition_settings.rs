@@ -27,7 +27,7 @@ async fn per_user_settings_isolated() {
         "PATCH",
         "/api/partition-settings",
         serde_json::json!({
-            "coordinator": { "model": "model-a" }
+            "coordinator": { "model": { "id": "model-a" } }
         }),
     )
     .await;
@@ -39,7 +39,7 @@ async fn per_user_settings_isolated() {
         "PATCH",
         "/api/partition-settings",
         serde_json::json!({
-            "coordinator": { "model": "model-b" }
+            "coordinator": { "model": { "id": "model-b" } }
         }),
     )
     .await;
@@ -66,8 +66,44 @@ async fn per_user_settings_isolated() {
     let (status, body) =
         authenticated_empty_request(&app.router, &cookie_b, "GET", "/api/partition-settings").await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["coordinator"]["model"].as_str().unwrap(), "model-b");
-    assert_ne!(body["coordinator"]["model"].as_str().unwrap(), "model-a");
+    assert_eq!(body["coordinator"]["model"]["id"].as_str().unwrap(), "model-b");
+    assert_ne!(body["coordinator"]["model"]["id"].as_str().unwrap(), "model-a");
+}
+
+#[tokio::test]
+async fn coordinator_model_params_round_trip() {
+    let app = TestApp::spawn().await;
+    let cookie = login(&app.router, "model-params", TEST_CURSOR_KEY).await;
+
+    let (status, body) = authenticated_json_request(
+        &app.router,
+        &cookie,
+        "PATCH",
+        "/api/partition-settings",
+        serde_json::json!({
+            "coordinator": {
+                "model": {
+                    "id": "composer-2.5",
+                    "params": [{ "id": "fast", "value": "false" }]
+                }
+            }
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body["coordinator"]["model"]["params"][0]["value"].as_str().unwrap(),
+        "false"
+    );
+
+    let (_, me) = authenticated_empty_request(&app.router, &cookie, "GET", "/api/me").await;
+    let user_id = me["userId"].as_str().unwrap();
+    let settings = partition_settings::load_for_user(app.data.path(), user_id)
+        .await
+        .unwrap();
+    assert_eq!(settings.coordinator.model.id, "composer-2.5");
+    assert_eq!(settings.coordinator.model.params.len(), 1);
+    assert_eq!(settings.coordinator.model.params[0].value, "false");
 }
 
 #[tokio::test]
@@ -86,7 +122,7 @@ async fn global_settings_file_not_read() {
         authenticated_empty_request(&app.router, &cookie, "GET", "/api/partition-settings").await;
     assert_eq!(status, StatusCode::OK);
     assert_ne!(
-        body["coordinator"]["model"].as_str().unwrap(),
+        body["coordinator"]["model"]["id"].as_str().unwrap(),
         "global-should-not-apply"
     );
 
@@ -101,7 +137,7 @@ async fn global_settings_file_not_read() {
     let settings = partition_settings::load_for_user(app.data.path(), user_id)
         .await
         .unwrap();
-    assert_ne!(settings.coordinator.model, "global-should-not-apply");
+    assert_ne!(settings.coordinator.model.id, "global-should-not-apply");
     assert!(user_path.is_file());
 }
 

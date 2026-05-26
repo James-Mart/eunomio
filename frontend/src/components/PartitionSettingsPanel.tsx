@@ -31,15 +31,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import ModelPicker from "@/components/ModelPicker";
 import {
   api,
   type CursorModel,
   type GeneralSettings,
   type HumanInTheLoopSettings,
   type IterationLimit,
+  type ModelSelection,
   type PartitionSettings,
   type PartitionSettingsPatch,
 } from "@/lib/api";
+import { DEFAULT_MODEL_SELECTION } from "@/lib/modelSelection";
 import { formatError } from "@/lib/errors";
 import { TIMELINE_HOTKEY_BINDINGS } from "@/lib/hotkeys";
 import { useAbortableEffect } from "@/lib/useAbortableEffect";
@@ -131,7 +134,7 @@ export default function PartitionSettingsPanel() {
     }
   };
 
-  const onCoordinatorModelChange = (next: string) =>
+  const onCoordinatorModelChange = (next: ModelSelection) =>
     settings &&
     applyOptimistic(
       "coordinator",
@@ -179,7 +182,7 @@ export default function PartitionSettingsPanel() {
       "Failed to save settings",
     );
 
-  const updateRoleModel = (role: SubagentCategory, next: string) =>
+  const updateRoleModel = (role: SubagentCategory, next: ModelSelection) =>
     settings &&
     applyOptimistic(
       role,
@@ -549,7 +552,7 @@ function CoordinatorPanel({
 }: {
   settings: PartitionSettings | null;
   models: ModelsState;
-  onModelChange: (next: string) => void;
+  onModelChange: (next: ModelSelection) => void;
   onSurveyorEnabledChange: (next: boolean) => void;
   onTimelineEnabledChange: (next: boolean) => void;
   onReorderEnabledChange: (next: boolean) => void;
@@ -567,18 +570,21 @@ function CoordinatorPanel({
   const surveyorEnabled = settings?.coordinator.surveyorEnabled ?? false;
   const timelineEnabled = settings?.coordinator.timelineEnabled ?? true;
   const reorderEnabled = settings?.coordinator.reorderEnabled ?? true;
-  const selected = settings?.coordinator.model ?? "composer-2.5";
+  const selected = settings?.coordinator.model ?? DEFAULT_MODEL_SELECTION;
+  const catalog = models.kind === "success" ? models.models : [];
+  const loading = models.kind === "loading";
   const iterations = settings?.coordinator.maxIterations;
   const iterationsOption = iterationLimitToOption(iterations);
   return (
     <div className="space-y-6">
       <section className="space-y-1.5">
-        <Label htmlFor="coordinator-model">Default model</Label>
-        <ModelSelect
-          id="coordinator-model"
+        <p className="text-sm font-medium">Default model</p>
+        <ModelPicker
+          idPrefix="coordinator"
           value={selected}
-          models={models}
+          models={catalog}
           disabled={disabled}
+          loading={loading}
           onChange={onModelChange}
         />
         <p className="text-xs text-muted-foreground">
@@ -722,12 +728,14 @@ function SubagentPanel({
   role: SubagentCategory;
   settings: PartitionSettings | null;
   models: ModelsState;
-  onModelChange: (next: string) => void;
+  onModelChange: (next: ModelSelection) => void;
   onOverrideChange: (next: boolean) => void;
 }) {
   const cur = settings?.[role];
   const enabled = cur?.overrideModel ?? false;
   const roleLabel = CATEGORIES[role].label;
+  const catalog = models.kind === "success" ? models.models : [];
+  const loading = models.kind === "loading";
   return (
     <div className="space-y-4">
       <div className="flex items-start gap-3">
@@ -747,57 +755,15 @@ function SubagentPanel({
           </p>
         </div>
       </div>
-      <div className="space-y-1.5">
-        <Label htmlFor={`${role}-model`}>Model</Label>
-        <ModelSelect
-          id={`${role}-model`}
-          value={cur?.model ?? "composer-2.5"}
-          models={models}
-          disabled={!settings || !enabled}
-          onChange={onModelChange}
-        />
-      </div>
+      <ModelPicker
+        idPrefix={role}
+        value={cur?.model ?? DEFAULT_MODEL_SELECTION}
+        models={catalog}
+        disabled={!settings || !enabled}
+        loading={loading}
+        onChange={onModelChange}
+      />
     </div>
-  );
-}
-
-function ModelSelect({
-  id,
-  value,
-  models,
-  disabled,
-  onChange,
-}: {
-  id: string;
-  value: string;
-  models: ModelsState;
-  disabled: boolean;
-  onChange: (next: string) => void;
-}) {
-  const loading = models.kind === "loading";
-  const items =
-    models.kind === "success"
-      ? models.models.some((m) => m.id === value)
-        ? models.models
-        : [{ id: value }, ...models.models]
-      : [];
-  return (
-    <Select
-      value={value}
-      onValueChange={onChange}
-      disabled={disabled || loading}
-    >
-      <SelectTrigger id={id}>
-        <SelectValue placeholder={loading ? "Loading models…" : value} />
-      </SelectTrigger>
-      <SelectContent>
-        {items.map((m) => (
-          <SelectItem key={m.id} value={m.id}>
-            {m.id}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
   );
 }
 

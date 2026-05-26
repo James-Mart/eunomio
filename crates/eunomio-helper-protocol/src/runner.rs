@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use eunomio_core::{traits::quota::TokenUsage, types::CursorModel, AppError};
+use eunomio_core::{traits::quota::TokenUsage, types::{CursorModel, ModelSelection}, AppError};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -9,7 +9,7 @@ use tokio::sync::mpsc;
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunRequest {
-    pub model: String,
+    pub model: ModelSelection,
     pub cwd: PathBuf,
     pub prompt: String,
     pub run_id: String,

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use eunomio_core::{types::CursorModel, AppError};
+use eunomio_core::{
+    types::{CursorModel, ModelParamDef, ModelParamValue, ModelParamValueOption, ModelVariant},
+    AppError,
+};
 use eunomio_helper_protocol::{HelperEvent, RunHandle, RunRequest, SubagentRunner};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::{mpsc, Mutex};
@@ -80,6 +83,45 @@ impl SubagentRunner for FakeSubagentRunner {
     }
 
     async fn list_models(&self, _cursor_api_key: &str) -> Result<Vec<CursorModel>, AppError> {
-        Ok(vec![])
+        Ok(vec![CursorModel {
+            id: "composer-2.5".to_string(),
+            display_name: Some("Composer 2.5".to_string()),
+            description: None,
+            aliases: None,
+            parameters: Some(vec![ModelParamDef {
+                id: "fast".to_string(),
+                display_name: Some("Fast".to_string()),
+                values: vec![
+                    ModelParamValueOption {
+                        value: "false".to_string(),
+                        display_name: None,
+                    },
+                    ModelParamValueOption {
+                        value: "true".to_string(),
+                        display_name: Some("Fast".to_string()),
+                    },
+                ],
+            }]),
+            variants: Some(vec![
+                ModelVariant {
+                    params: vec![ModelParamValue {
+                        id: "fast".to_string(),
+                        value: "true".to_string(),
+                    }],
+                    display_name: Some("Composer 2.5".to_string()),
+                    description: None,
+                    is_default: Some(true),
+                },
+                ModelVariant {
+                    params: vec![ModelParamValue {
+                        id: "fast".to_string(),
+                        value: "false".to_string(),
+                    }],
+                    display_name: Some("Composer 2.5".to_string()),
+                    description: None,
+                    is_default: None,
+                },
+            ]),
+        }])
     }
 }

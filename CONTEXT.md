@@ -110,7 +110,7 @@ The folded text stream of a subagent **Run**'s chain-of-thought and tool-call ma
 The subagent that writes to a Partition's worktree to build the Slice the Planner identified. The only writable subagent. Returns either `OK` or `BLOCKED: <reason>` on a single line.
 
 **Partition settings**:
-User-global configuration that applies to every Partition across every Session for this user. Stored as a single JSON file under the **State directory** (`~/.eunomio/settings.json`), not on the `sessions` row. Structured by subagent role (Surveyor / Planner / Constructor / Shaver) plus Coordinator. The Coordinator owns HITL flags, Timeline enablement, fan-out limits, and the default model that applies to every subagent unless overridden on the subagent's own tab.
+User-global configuration that applies to every Partition across every Session for this user. Stored as a single JSON file under the **State directory** (`~/.eunomio/settings.json`), not on the `sessions` row. Structured by subagent role (Surveyor / Planner / Constructor / Shaver) plus Coordinator. The Coordinator owns HITL flags, Timeline enablement, fan-out limits, and the default **ModelSelection** (base model id plus optional params such as a fast tier) that applies to every subagent unless overridden on the subagent's own tab.
 
 **Phase**:
 A stage of a Partition — `Survey`, `Plan`, or `Construct`. The Coordinator drives the Partition through phases in this fixed order. Phases are the granularity at which Review gates apply.

@@ -678,7 +678,7 @@ async fn hitl_off_drives_full_chain_without_explicit_accepts() {
             "/api/partition-settings",
             json!({
                 "coordinator": {
-                    "model": "composer-2",
+                    "model": { "id": "composer-2" },
                     "humanInTheLoop": {
                         "afterSurvey": false,
                         "afterPlanning": false,
@@ -729,7 +729,7 @@ async fn set_surveyor_disabled_hitl_off(app: &TestApp) {
             "/api/partition-settings",
             json!({
                 "coordinator": {
-                    "model": "composer-2",
+                    "model": { "id": "composer-2" },
                     "surveyorEnabled": false,
                     "humanInTheLoop": {
                         "afterSurvey": false,
@@ -822,7 +822,7 @@ async fn set_hitl_all_off(app: &TestApp) {
             "/api/partition-settings",
             json!({
                 "coordinator": {
-                    "model": "composer-2",
+                    "model": { "id": "composer-2" },
                     "humanInTheLoop": {
                         "afterSurvey": false,
                         "afterPlanning": false,
@@ -1877,7 +1877,7 @@ async fn fanout_count_2_spawns_children_no_grandchildren() {
             "/api/partition-settings",
             json!({
                 "coordinator": {
-                    "model": "composer-2",
+                    "model": { "id": "composer-2" },
                     "humanInTheLoop": {
                         "afterSurvey": false,
                         "afterPlanning": false,
@@ -1952,7 +1952,7 @@ async fn fanout_auto_cascading_indivisible() {
             "/api/partition-settings",
             json!({
                 "coordinator": {
-                    "model": "composer-2",
+                    "model": { "id": "composer-2" },
                     "humanInTheLoop": {
                         "afterSurvey": false,
                         "afterPlanning": false,
