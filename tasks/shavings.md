@@ -1,6 +1,8 @@
 # Shavings
 
-**Status:** Spec
+**Status:** Superseded by implemented Timeline docs.
+
+Current glossary and implementation notes live in [`../CONTEXT.md`](../CONTEXT.md). User-facing Timeline behavior is documented in [`../docs/content/docs/using-eunomio/timeline.mdx`](../docs/content/docs/using-eunomio/timeline.mdx). This file is retained only as the original idea sketch and can be removed once no longer useful.
 
 ## Summary
 

@@ -54,6 +54,7 @@ impl Coordinator {
         target_node_id: &str,
         remaining_depth: Option<Option<i64>>,
     ) -> Result<Partition, AppError> {
+        let root_partition = remaining_depth.is_none();
         let settings = load_for_partition(state, org_id, session_id).await?;
         let remaining_depth = remaining_depth.unwrap_or({
             match settings.coordinator.max_iterations {
@@ -136,6 +137,13 @@ impl Coordinator {
                 worktree_path.to_string_lossy().to_string(),
             )
             .await?;
+        if root_partition {
+            state
+                .datastore
+                .sessions()
+                .clear_session_partition_state(org_id, session_id)
+                .await?;
+        }
 
         self.emit(
             session_id,

@@ -46,6 +46,7 @@ type Props = {
   selectedNodeId: string | null;
   onNodeClick: NodeMouseHandler;
   onNodeReviewedChange?: (nodeId: string, reviewed: boolean) => void;
+  sessionPartitionComplete: boolean;
 };
 
 const FIT_VIEW_OPTIONS = { padding: 0.2 } as const;
@@ -139,11 +140,13 @@ function GraphFlow({
   selectedNodeId,
   onNodeClick,
   onNodeReviewedChange,
+  sessionPartitionComplete,
 }: {
   layout: SessionLayout;
   selectedNodeId: string | null;
   onNodeClick: NodeMouseHandler;
   onNodeReviewedChange?: (nodeId: string, reviewed: boolean) => void;
+  sessionPartitionComplete: boolean;
 }) {
   const nodeTypes = useMemo<NodeTypes>(() => {
     if (layout.kind !== "canonical" || !onNodeReviewedChange) {
@@ -168,12 +171,31 @@ function GraphFlow({
       ),
     [layout, selectedNodeId],
   );
+  const edges = useMemo(() => {
+    if (layout.kind !== "canonical" || !sessionPartitionComplete) {
+      return layout.edges;
+    }
+    return layout.edges.map((edge) => ({
+      ...edge,
+      style: {
+        ...edge.style,
+        stroke: "hsl(var(--success) / 0.65)",
+        strokeWidth: 1.5,
+      },
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        width: 16,
+        height: 16,
+        color: "hsl(var(--success) / 0.65)",
+      },
+    }));
+  }, [layout.edges, layout.kind, sessionPartitionComplete]);
 
   return (
     <ReactFlow
       className="h-full w-full"
       nodes={nodes}
-      edges={layout.edges}
+      edges={edges}
       nodeTypes={nodeTypes}
       defaultEdgeOptions={{
         style: { stroke: "hsl(var(--border))", strokeWidth: 1 },
@@ -208,6 +230,7 @@ export function GraphPane({
   selectedNodeId,
   onNodeClick,
   onNodeReviewedChange,
+  sessionPartitionComplete,
 }: Props) {
   const viewSelectValue =
     view.kind === "candidate" ? view.partitionId : view.kind;
@@ -255,6 +278,7 @@ export function GraphPane({
             selectedNodeId={selectedNodeId}
             onNodeClick={onNodeClick}
             onNodeReviewedChange={onNodeReviewedChange}
+            sessionPartitionComplete={sessionPartitionComplete}
           />
         </ReactFlowProvider>
       </div>

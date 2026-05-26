@@ -50,6 +50,7 @@ type TranscriptDeltaListener = (event: TranscriptDeltaEvent) => void;
 type Store = {
   lifecycles: Map<string, Lifecycle>;
   connection: ConnectionStatus;
+  sessionPartitionCompleteAt: number | null;
 };
 
 const CONNECTION_LOST_TOAST_ID = "session-events-connection";
@@ -60,6 +61,7 @@ class SessionStore {
   private state: Store = {
     lifecycles: new Map(),
     connection: "connecting",
+    sessionPartitionCompleteAt: null,
   };
   private listeners: Listeners = new Set();
   private constructListeners: Set<ConstructListener> = new Set();
@@ -96,6 +98,7 @@ class SessionStore {
 
     switch (event.type) {
       case "started":
+        this.state = { ...this.state, sessionPartitionCompleteAt: null };
         if (next.get(event.partitionId)) {
           constructChanged = true;
           break;
@@ -142,6 +145,12 @@ class SessionStore {
       case "shavingReady":
         constructChanged = true;
         break;
+      case "sessionPartitionComplete":
+        this.state = {
+          ...this.state,
+          sessionPartitionCompleteAt: event.completedAt,
+        };
+        break;
       case "cancelled": {
         const cur = next.get(event.partitionId);
         if (!cur) break;
@@ -184,6 +193,12 @@ class SessionStore {
     this.state = { ...this.state, lifecycles: next };
     this.emit();
     for (const l of this.constructListeners) l();
+  }
+
+  setSessionPartitionCompleteAt(value: number | null) {
+    if (this.state.sessionPartitionCompleteAt === value) return;
+    this.state = { ...this.state, sessionPartitionCompleteAt: value };
+    this.emit();
   }
 
   resetLifecycle(partitionId: string) {
@@ -263,7 +278,16 @@ export function SessionEventsProvider({
 
     void (async () => {
       try {
-        const partitions = await api.listPartitions(sessionId);
+        const [session, partitions] = await Promise.all([
+          api.getSession(sessionId).catch(() => null),
+          api.listPartitions(sessionId),
+        ]);
+        if (signal.aborted) return;
+        if (session) {
+          store.setSessionPartitionCompleteAt(
+            session.sessionPartitionCompleteAt,
+          );
+        }
         if (signal.aborted || partitions.length === 0) return;
         const runsByPartition = await Promise.all(
           partitions.map((p) =>
@@ -369,6 +393,17 @@ export function useAllPartitionLifecycles(): Map<string, Lifecycle> {
     subscribe,
     () => getSnapshot().lifecycles,
     () => getSnapshot().lifecycles,
+  );
+}
+
+export function useSessionPartitionCompleteAt(): number | null {
+  const store = useStore();
+  const subscribe = store.subscribe;
+  const getSnapshot = store.getSnapshot;
+  return useSyncExternalStore(
+    subscribe,
+    () => getSnapshot().sessionPartitionCompleteAt,
+    () => getSnapshot().sessionPartitionCompleteAt,
   );
 }
 

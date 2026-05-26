@@ -34,6 +34,7 @@ fn session_row_mapper(row: &rusqlite::Row<'_>) -> rusqlite::Result<Session> {
         source_ref: row.get(5)?,
         base_node_id: row.get(6)?,
         created_at: row.get(7)?,
+        session_partition_complete_at: row.get(8)?,
     })
 }
 
@@ -117,7 +118,7 @@ impl SessionRepo for SqliteSessionRepo {
             .conn
             .call(move |conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT id, normalized_remote, literal_remote, is_local, base_ref, source_ref, base_node_id, created_at \
+                    "SELECT id, normalized_remote, literal_remote, is_local, base_ref, source_ref, base_node_id, created_at, session_partition_complete_at \
                      FROM sessions WHERE org_id = ?1 ORDER BY created_at DESC",
                 )?;
                 let rows = stmt
@@ -136,7 +137,7 @@ impl SessionRepo for SqliteSessionRepo {
             .conn
             .call(move |conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT id, normalized_remote, literal_remote, is_local, base_ref, source_ref, base_node_id, created_at \
+                    "SELECT id, normalized_remote, literal_remote, is_local, base_ref, source_ref, base_node_id, created_at, session_partition_complete_at \
                      FROM sessions WHERE id = ?1 AND org_id = ?2",
                 )?;
                 let mut rows = stmt.query(tokio_rusqlite::params![session_id, org_id])?;
@@ -230,7 +231,7 @@ impl SessionRepo for SqliteSessionRepo {
             .conn
             .call(move |conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT id, normalized_remote, literal_remote, is_local, base_ref, source_ref, base_node_id, created_at \
+                    "SELECT id, normalized_remote, literal_remote, is_local, base_ref, source_ref, base_node_id, created_at, session_partition_complete_at \
                      FROM sessions \
                      WHERE org_id = ?1 AND normalized_remote = ?2 AND base_ref = ?3 AND source_ref = ?4 \
                      LIMIT 1",
@@ -272,6 +273,82 @@ impl SessionRepo for SqliteSessionRepo {
             .await
             .map_err(crate::repo::map_sqlite_err)?;
         Ok(count)
+    }
+
+    async fn clear_session_partition_state(
+        &self,
+        org_id: &str,
+        session_id: &str,
+    ) -> Result<(), AppError> {
+        let org_id = org_id.to_string();
+        let session_id = session_id.to_string();
+        self.conn
+            .call(move |conn| {
+                let n = conn.execute(
+                    "UPDATE sessions SET session_partition_complete_at = NULL, session_partition_failed_at = NULL WHERE id = ?1 AND org_id = ?2",
+                    tokio_rusqlite::params![session_id, org_id],
+                )?;
+                require_affected_sqlite(n)?;
+                Ok(())
+            })
+            .await
+            .map_not_found()?;
+        Ok(())
+    }
+
+    async fn mark_session_partition_failed(
+        &self,
+        org_id: &str,
+        session_id: &str,
+        failed_at: i64,
+    ) -> Result<(), AppError> {
+        let org_id = org_id.to_string();
+        let session_id = session_id.to_string();
+        self.conn
+            .call(move |conn| {
+                let n = conn.execute(
+                    "UPDATE sessions SET session_partition_complete_at = NULL, session_partition_failed_at = COALESCE(session_partition_failed_at, ?3) WHERE id = ?1 AND org_id = ?2",
+                    tokio_rusqlite::params![session_id, org_id, failed_at],
+                )?;
+                require_affected_sqlite(n)?;
+                Ok(())
+            })
+            .await
+            .map_not_found()?;
+        Ok(())
+    }
+
+    async fn mark_session_partition_complete(
+        &self,
+        org_id: &str,
+        session_id: &str,
+        completed_at: i64,
+    ) -> Result<bool, AppError> {
+        let org_id = org_id.to_string();
+        let session_id = session_id.to_string();
+        let updated = self
+            .conn
+            .call(move |conn| {
+                let exists = {
+                    let mut stmt =
+                        conn.prepare("SELECT 1 FROM sessions WHERE id = ?1 AND org_id = ?2")?;
+                    let mut rows = stmt.query(tokio_rusqlite::params![session_id, org_id])?;
+                    rows.next()?.is_some()
+                };
+                if !exists {
+                    return Err(tokio_rusqlite::Error::Rusqlite(
+                        rusqlite::Error::QueryReturnedNoRows,
+                    ));
+                }
+                let n = conn.execute(
+                    "UPDATE sessions SET session_partition_complete_at = ?3 WHERE id = ?1 AND org_id = ?2 AND session_partition_complete_at IS NULL AND session_partition_failed_at IS NULL",
+                    tokio_rusqlite::params![session_id, org_id, completed_at],
+                )?;
+                Ok(n > 0)
+            })
+            .await
+            .map_not_found()?;
+        Ok(updated)
     }
 
     #[allow(clippy::too_many_arguments)]

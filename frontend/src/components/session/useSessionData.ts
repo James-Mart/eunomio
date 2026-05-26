@@ -13,6 +13,7 @@ import {
   useAllPartitionLifecycles,
   useConstructSubscription,
   useHydratePartition,
+  useSessionPartitionCompleteAt,
 } from "@/components/SessionEventsProvider";
 
 import {
@@ -35,6 +36,7 @@ export type SessionData = {
   candidatePartition: Partition | null;
   layout: SessionLayout | null;
   chain: ReturnType<typeof computeChain> | null;
+  sessionPartitionCompleteAt: number | null;
   refresh: () => Promise<void>;
   refreshPartitions: () => Promise<void>;
   registerStartedPartition: (p: Partition) => void;
@@ -87,6 +89,7 @@ export function useSessionData(sessionId: string): SessionData {
 
   const hydratePartition = useHydratePartition();
   const lifecycles = useAllPartitionLifecycles();
+  const sessionPartitionCompleteAt = useSessionPartitionCompleteAt();
 
   useEffect(() => {
     if (view.kind !== "candidate") return;
@@ -171,6 +174,7 @@ export function useSessionData(sessionId: string): SessionData {
     candidatePartition,
     layout,
     chain,
+    sessionPartitionCompleteAt,
     refresh,
     refreshPartitions,
     registerStartedPartition,

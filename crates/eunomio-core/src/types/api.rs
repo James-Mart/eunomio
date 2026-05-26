@@ -55,6 +55,7 @@ pub struct Session {
     pub source_ref: String,
     pub base_node_id: String,
     pub created_at: i64,
+    pub session_partition_complete_at: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]

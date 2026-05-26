@@ -3,7 +3,7 @@ title: Partitioning
 description: How a partition moves from survey through acceptance.
 ---
 
-A **Partition** carves one edge of the graph into two consecutive commits. Three subagents run in sequence — Surveyor → Planner → Constructor — supervised by a Coordinator that owns the phase machine and human-in-the-loop (HITL) review gates.
+A **Partition** carves one edge of the graph into two consecutive commits. Three subagents run in sequence — Surveyor → Planner → Constructor — supervised by a Coordinator that owns the phase machine and human-in-the-loop (HITL) review gates. If the Planner decides the edge is already indivisible, the partition can be finished instead of constructed.
 
 Many partitions can be pending in a session at once, including siblings on the same target.
 
@@ -15,13 +15,15 @@ Each partition walks through the three subagents in order:
 flowchart BT
     Begin([Begin partition]) --> Surveyor
     Surveyor[Surveyor] --> Planner[Planner]
-    Planner --> Constructor[Constructor]
+    Planner --> Indivisible{Indivisible?}
+    Indivisible -- no --> Constructor[Constructor]
+    Indivisible -- yes --> Finished([Finished])
     Constructor --> Accepted([Accepted])
 ```
 
 ## Per-subagent lifecycle
 
-Each subagent follows the same phase pattern. The diagram below shows one cycle; it repeats for Surveyor, Planner, and Constructor, each with its own HITL gate (`afterSurvey`, `afterPlanning`, `afterConstruct`).
+Each subagent follows the same phase pattern. The diagram below shows one cycle; it repeats for Surveyor, Planner, and Constructor, each with its own HITL gate (`afterSurvey`, `afterPlanning`, `afterConstruct`). Indivisible Planner outputs have their own confirmation gate (`afterIndivisible`).
 
 ```mermaid
 flowchart BT
@@ -38,7 +40,7 @@ flowchart BT
 
 ## HITL defaults
 
-All three gates default to **on**. Turn any off in partition settings for a more automated run — the SDK call still happens; the gate just does not park.
+All gates default to **on**. Turn any off in partition settings for a more automated run — the SDK call still happens; the gate just does not park. With `afterIndivisible` off, indivisible partitions finish automatically.
 
 ## Re-run paths
 
@@ -93,6 +95,12 @@ gitGraph BT:
 </div>
 
 The target node keeps its tree unchanged; its title is rewritten to describe the leftover edge. The graph after acceptance is a strictly linear extension of the chain — no leaf alternatives.
+
+## Finishing an indivisible partition
+
+When the Planner returns an indivisible verdict, eunomio can finish the pending partition without inserting a slice. Finishing deletes the partition row and its worktree, leaves the canonical graph unchanged, and treats the target edge as complete.
+
+If Timeline generation is enabled, finishing may start a background Timeline pass for that target edge. Timeline generation is best-effort and never blocks the finished edge.
 
 ## Inspecting candidates
 

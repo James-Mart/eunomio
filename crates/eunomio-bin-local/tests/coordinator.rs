@@ -174,6 +174,32 @@ async fn wait_for_phase(
     }
 }
 
+async fn wait_for_session_partition_complete(
+    rx: &mut tokio::sync::broadcast::Receiver<SseEvent>,
+    expected_session_id: &str,
+) -> i64 {
+    loop {
+        let ev = next_event(rx).await;
+        if let SseEvent::SessionPartitionComplete {
+            session_id,
+            completed_at,
+        } = &ev
+        {
+            if session_id == expected_session_id {
+                return *completed_at;
+            }
+        }
+    }
+}
+
+async fn session_partition_complete_at(app: &TestApp, session_id: &str) -> Option<i64> {
+    let (status, body) = app
+        .auth_empty("GET", &format!("/api/sessions/{session_id}"))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    body["sessionPartitionCompleteAt"].as_i64()
+}
+
 #[tokio::test]
 async fn happy_path_drives_partition_to_accept() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
@@ -876,6 +902,23 @@ async fn drive_partition_to_construct_review(app: &TestApp, partition_id: &str) 
     poll_partition_phase(app, partition_id, "construct", "awaiting_review").await;
 }
 
+async fn drive_partition_to_plan_review(app: &TestApp, partition_id: &str) {
+    poll_partition_phase(app, partition_id, "survey", "awaiting_review").await;
+    let (_, runs) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
+        .await;
+    let survey_run_id = finished_run_id(&runs, "survey");
+    let (status, body) = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/survey/accept"),
+            json!({ "runId": survey_run_id }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    poll_partition_phase(app, partition_id, "plan", "awaiting_review").await;
+}
+
 #[tokio::test]
 async fn sibling_accept_auto_abandons_other() {
     let runner = Arc::new(KindAwareRunner::new(
@@ -1352,11 +1395,29 @@ async fn finish_indivisible_partition_emits_finished() {
         }
     }
     assert!(got_finished, "expected Finished event");
+    let completed_at = wait_for_session_partition_complete(&mut rx, &session_id).await;
+    assert_eq!(
+        session_partition_complete_at(&app, &session_id).await,
+        Some(completed_at)
+    );
 
     let (status, _) = app
         .auth_empty("GET", &format!("/api/partitions/{partition_id}"))
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+    let (_, partitions) = app
+        .auth_empty("GET", &format!("/api/sessions/{session_id}/partitions"))
+        .await;
+    assert!(partitions.as_array().unwrap().is_empty());
+
+    let (status, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert_eq!(session_partition_complete_at(&app, &session_id).await, None);
 }
 
 #[tokio::test]
@@ -1401,6 +1462,125 @@ async fn finish_rejects_split_plan() {
         .auth_empty("GET", &format!("/api/partitions/{partition_id}"))
         .await;
     assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn partition_abandon_prevents_session_partition_complete_for_pass() {
+    let runner = Arc::new(FakeSubagentRunner::new(vec![
+        survey_script(),
+        survey_script(),
+        plan_indivisible_script("first"),
+        plan_indivisible_script("second"),
+    ]));
+    let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
+
+    let (_, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
+    let pid_a = body["id"].as_str().unwrap().to_string();
+    let (_, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
+    let pid_b = body["id"].as_str().unwrap().to_string();
+
+    drive_partition_to_plan_review(&app, &pid_a).await;
+    drive_partition_to_plan_review(&app, &pid_b).await;
+
+    let (status, body) = app
+        .auth_empty("POST", &format!("/api/partitions/{pid_a}/abandon"))
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    let (status, body) = app
+        .auth_empty("POST", &format!("/api/partitions/{pid_b}/finish"))
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+
+    assert_eq!(session_partition_complete_at(&app, &session_id).await, None);
+}
+
+#[tokio::test]
+async fn cancelled_run_can_be_rerun_before_session_partition_complete() {
+    let runner = Arc::new(FakeSubagentRunner::new(vec![
+        survey_script(),
+        vec![HelperEvent::SdkMessage {
+            run_id: "0".to_string(),
+            message: json!({"text": "thinking"}),
+        }],
+        plan_indivisible_script("rerun indivisible"),
+    ]));
+    let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
+    let mut rx = app.state.coordinator.subscribe(&session_id);
+
+    let (_, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
+    let partition_id = body["id"].as_str().unwrap().to_string();
+
+    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
+    let (_, runs) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
+        .await;
+    let survey_run_id = finished_run_id(&runs, "survey");
+    let (status, body) = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/survey/accept"),
+            json!({ "runId": survey_run_id }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::Running).await;
+    let (_, runs) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
+        .await;
+    let running_plan_id = runs
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["kind"] == "plan" && r["status"] == "running")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (status, body) = app
+        .auth_empty(
+            "DELETE",
+            &format!("/api/partitions/{partition_id}/runs/{running_plan_id}"),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+
+    let (status, body) = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/runs"),
+            json!({ "kind": "plan" }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
+
+    let (status, body) = app
+        .auth_empty("POST", &format!("/api/partitions/{partition_id}/finish"))
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    let completed_at = wait_for_session_partition_complete(&mut rx, &session_id).await;
+    assert_eq!(
+        session_partition_complete_at(&app, &session_id).await,
+        Some(completed_at)
+    );
 }
 
 #[tokio::test]
@@ -1746,6 +1926,7 @@ async fn fanout_auto_cascading_indivisible() {
     let mut started: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut finished: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut cancelled: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut completed_at = None;
     started.insert(root_pid);
 
     for _ in 0..200 {
@@ -1760,15 +1941,26 @@ async fn fanout_auto_cascading_indivisible() {
             SseEvent::Cancelled { partition_id, .. } => {
                 cancelled.insert(partition_id.clone());
             }
+            SseEvent::SessionPartitionComplete {
+                session_id: completed_session_id,
+                completed_at: at,
+            } if completed_session_id == &session_id => {
+                completed_at = Some(*at);
+            }
             _ => {}
         }
-        if finished.len() == 3 {
+        if finished.len() == 3 && completed_at.is_some() {
             break;
         }
     }
     assert_eq!(finished.len(), 3, "expected root + 2 children to Finish");
     assert_eq!(cancelled.len(), 0, "did not expect child auto-cancels");
     assert_eq!(started.len(), 3, "expected root + 2 children Started");
+    assert_eq!(
+        session_partition_complete_at(&app, &session_id).await,
+        completed_at
+    );
+    assert!(completed_at.is_some(), "expected SessionPartitionComplete");
 }
 
 async fn enable_transcripts(app: &TestApp) {

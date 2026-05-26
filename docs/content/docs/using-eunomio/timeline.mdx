@@ -1,0 +1,32 @@
+---
+title: Timeline
+description: Inspect a finished edge as a sequence of implementation steps.
+---
+
+A **Timeline** is a visually inspectable history of changes tied to a finished edge. When available, it lets you scrub through implementation-sized steps without turning those steps into graph nodes or review units.
+
+Timelines are generated after an indivisible partition is finished. Generation runs in the background and is best-effort: if credentials, quota, validation, or cleanup fail, eunomio leaves the edge alone and the canonical diff still works normally.
+
+## What you see
+
+When a selected edge has a Timeline, the canonical diff pane shows a slider with step positions:
+
+- Step `1` starts with the first implementation step.
+- Middle steps compare each step against the previous step.
+- The final step shows the full edge diff from parent tree to target tree.
+
+The control defaults to the final full-diff step, so normal review still begins from the complete edge. Some steps may show a short label above the slider, based on the hidden commit subject for that step.
+
+## What it is not
+
+Timeline steps are not canonical nodes, pending partitions, PR units, or branch commits. They are an inspection aid only.
+
+Internally these hidden steps are called **Shavings**. They may be non-compilable, and they must not affect the session graph, the final tree, or any branch you create from the graph.
+
+## Settings
+
+Timeline generation is enabled by default in partition settings. The setting label is **Timeline**:
+
+> Generate a visually inspectable history of changes tied to each finished Edge.
+
+Disabling Timeline generation stops new background generation. Existing Timelines remain visible.

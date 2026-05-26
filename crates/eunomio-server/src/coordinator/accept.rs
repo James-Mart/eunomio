@@ -271,7 +271,10 @@ impl Coordinator {
             .ok_or_else(|| AppError::BadRequest("plan run has no parsed result".into()))?;
         let plan: crate::subagents::planner::PlanOutput = serde_json::from_str(result_json)
             .map_err(|e| AppError::BadRequest(format!("invalid plan: {e}")))?;
-        if !matches!(plan, crate::subagents::planner::PlanOutput::Indivisible { .. }) {
+        if !matches!(
+            plan,
+            crate::subagents::planner::PlanOutput::Indivisible { .. }
+        ) {
             return Err(AppError::Conflict {
                 code: "not_indivisible".into(),
                 message: "partition can only be finished from an indivisible plan".into(),
@@ -310,6 +313,8 @@ impl Coordinator {
             },
         );
         self.inner.runs.unmark_abandoning(partition_id);
+        self.maybe_mark_session_partition_complete(state, org_id, &row.session_id)
+            .await?;
         let target_graph = state
             .datastore
             .nodes()
@@ -368,6 +373,38 @@ impl Coordinator {
         }
     }
 
+    async fn maybe_mark_session_partition_complete(
+        &self,
+        state: &AppState,
+        org_id: &str,
+        session_id: &str,
+    ) -> Result<(), AppError> {
+        let remaining = state
+            .datastore
+            .partitions()
+            .list(org_id, session_id, None)
+            .await?;
+        if !remaining.is_empty() {
+            return Ok(());
+        }
+        let completed_at = eunomio_core::unix_seconds();
+        let marked = state
+            .datastore
+            .sessions()
+            .mark_session_partition_complete(org_id, session_id, completed_at)
+            .await?;
+        if marked {
+            self.emit(
+                session_id,
+                SseEvent::SessionPartitionComplete {
+                    session_id: session_id.to_string(),
+                    completed_at,
+                },
+            );
+        }
+        Ok(())
+    }
+
     fn maybe_spawn_fanout(
         &self,
         state: &AppState,
@@ -387,6 +424,22 @@ impl Coordinator {
         let coord = self.clone();
         let state_for_children = state.clone();
         tokio::spawn(async move {
+            let fail_pass = |state_for_failure: AppState,
+                             org_id_for_failure: String,
+                             session_id_for_failure: String| async move {
+                if let Err(e) = state_for_failure
+                    .datastore
+                    .sessions()
+                    .mark_session_partition_failed(
+                        &org_id_for_failure,
+                        &session_id_for_failure,
+                        eunomio_core::unix_seconds(),
+                    )
+                    .await
+                {
+                    tracing::warn!(error = %e, "marking session partition pass failed");
+                }
+            };
             let on_slice = coord
                 .begin_child_partition(
                     &state_for_children,
@@ -398,6 +451,12 @@ impl Coordinator {
                 .await;
             if let Err(e) = on_slice {
                 tracing::warn!(error = %e, "fan-out child on slice failed");
+                fail_pass(
+                    state_for_children.clone(),
+                    org_id.clone(),
+                    session_id.clone(),
+                )
+                .await;
             }
             let on_target = coord
                 .begin_child_partition(
@@ -410,6 +469,7 @@ impl Coordinator {
                 .await;
             if let Err(e) = on_target {
                 tracing::warn!(error = %e, "fan-out child on renamed target failed");
+                fail_pass(state_for_children, org_id, session_id).await;
             }
         });
     }
@@ -431,6 +491,11 @@ impl Coordinator {
             .datastore
             .runs()
             .cancel_running_for_partition(org_id, partition_id)
+            .await?;
+        state
+            .datastore
+            .sessions()
+            .mark_session_partition_failed(org_id, &row.session_id, eunomio_core::unix_seconds())
             .await?;
         state
             .datastore

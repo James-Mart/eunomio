@@ -51,15 +51,21 @@ Three AI roles drive each partition:
 - **Planner** — picks strategy and describes the slice + leftover edges
 - **Constructor** — writes the slice in the partition worktree (only writable subagent)
 
+The **Shaver** is a background-only role used after an edge is finished as indivisible. Users see its output as a **Timeline**, not as a separate subagent workflow.
+
 A **Coordinator** owns the phase machine and review gates; it is not a subagent.
 
 ## Review gate
 
-A halt at a phase boundary where you accept output or re-run with feedback. Three gates exist — after survey, after planning, after construct — and all default to **on**.
+A halt at a phase boundary where you accept output or re-run with feedback. Gates exist after survey, planning, construct, and indivisible Plan verdicts; all default to **on**.
 
 ## Acceptance
 
 Terminal success for a partition: the slice is inserted, the target is reparented and renamed, sibling partitions on the same target are auto-abandoned, and the worktree is removed.
+
+## Finish
+
+Terminal success for an indivisible partition: the pending partition is removed without changing the canonical graph. If Timeline generation is enabled, eunomio may then generate a hidden Timeline for the target edge.
 
 ## Abandon
 
@@ -68,6 +74,12 @@ Cancel a pending partition at any non-terminal state. In-flight runs receive SIG
 ## Candidate view
 
 When one or more partitions are pending, switch the graph dropdown to inspect a partition's proposed shape before acceptance — a 2-node mini-graph during survey/plan, expanding to 3 nodes at construct review.
+
+## Timeline and Shavings
+
+A **Timeline** is a user-facing playback control for a finished edge. It lets you inspect the edge as a sequence of adjacent implementation steps, then return to the full edge diff.
+
+**Shavings** are the internal hidden commits/trees behind a Timeline. They are not graph nodes, review units, PR units, or branch commits. They may be non-compilable and exist only as a review aid.
 
 ## Branching
 

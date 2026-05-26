@@ -44,6 +44,11 @@ export type SessionEvent =
       targetNodeId: string;
     }
   | {
+      type: "sessionPartitionComplete";
+      sessionId: string;
+      completedAt: number;
+    }
+  | {
       type: "cancelled";
       sessionId: string;
       targetNodeId: string;

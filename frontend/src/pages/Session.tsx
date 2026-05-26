@@ -60,6 +60,7 @@ function SessionInner({ sessionId }: { sessionId: string }) {
     candidatePartition,
     layout,
     chain,
+    sessionPartitionCompleteAt,
     refresh,
     refreshPartitions,
     registerStartedPartition,
@@ -212,6 +213,7 @@ function SessionInner({ sessionId }: { sessionId: string }) {
       selectedNodeId={selectedNodeId}
       onNodeClick={onNodeClick}
       onNodeReviewedChange={setNodeReviewed}
+      sessionPartitionComplete={sessionPartitionCompleteAt !== null}
     />
   );
 

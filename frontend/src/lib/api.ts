@@ -11,6 +11,7 @@ export type Session = {
   sourceRef: string;
   baseNodeId: string;
   createdAt: number;
+  sessionPartitionCompleteAt: number | null;
 };
 
 export type GraphNode = {

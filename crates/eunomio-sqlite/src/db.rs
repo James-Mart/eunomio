@@ -62,7 +62,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   base_tree TEXT NOT NULL,
   final_tree TEXT NOT NULL,
   base_node_id TEXT NOT NULL,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  session_partition_complete_at INTEGER,
+  session_partition_failed_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS sessions_by_remote ON sessions (normalized_remote);
 CREATE INDEX IF NOT EXISTS sessions_by_org ON sessions (org_id);

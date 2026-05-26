@@ -100,6 +100,23 @@ pub trait SessionRepo: Send + Sync {
         org_id: &str,
         normalized_remote: &str,
     ) -> Result<i64, AppError>;
+    async fn clear_session_partition_state(
+        &self,
+        org_id: &str,
+        session_id: &str,
+    ) -> Result<(), AppError>;
+    async fn mark_session_partition_failed(
+        &self,
+        org_id: &str,
+        session_id: &str,
+        failed_at: i64,
+    ) -> Result<(), AppError>;
+    async fn mark_session_partition_complete(
+        &self,
+        org_id: &str,
+        session_id: &str,
+        completed_at: i64,
+    ) -> Result<bool, AppError>;
     #[allow(clippy::too_many_arguments)]
     async fn insert_seed_nodes(
         &self,

@@ -73,17 +73,23 @@ function NodeCard({ id, data, selected, onReviewedChange }: NodeCardProps) {
       >
         <div
           className={cn(
-            "truncate text-center font-mono tabular-nums",
+            "flex items-center justify-center gap-1.5 font-mono tabular-nums",
             terminal
               ? "text-xs uppercase tracking-wide text-muted-foreground"
               : "text-sm font-medium text-foreground",
           )}
         >
-          {positionLabel}
+          <span className="truncate">{positionLabel}</span>
+          {isCanonicalShell && count > 0 && partitionGlance ? (
+            <PartitionStatusIcon
+              count={count}
+              status={partitionGlance.status}
+            />
+          ) : null}
         </div>
         {isCanonicalShell && showReviewedControl ? (
           <div
-            className="mt-1.5 flex h-6 items-center justify-center gap-2"
+            className="mt-1.5 flex h-6 items-center justify-center"
             onClick={stopNodeSelection}
             onPointerDown={stopNodeSelection}
           >
@@ -106,12 +112,6 @@ function NodeCard({ id, data, selected, onReviewedChange }: NodeCardProps) {
                 <EyeIcon className="h-4 w-4" />
               )}
             </button>
-            {count > 0 && partitionGlance ? (
-              <PartitionStatusIcon
-                count={count}
-                status={partitionGlance.status}
-              />
-            ) : null}
           </div>
         ) : null}
       </div>

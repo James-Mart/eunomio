@@ -42,6 +42,11 @@ pub enum SseEvent {
         target_node_id: String,
     },
     #[serde(rename_all = "camelCase")]
+    SessionPartitionComplete {
+        session_id: String,
+        completed_at: i64,
+    },
+    #[serde(rename_all = "camelCase")]
     Cancelled {
         session_id: String,
         target_node_id: String,

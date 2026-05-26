@@ -50,15 +50,22 @@ _Avoid_: number, index, slot.
 The single primitive for splitting one Edge into two, by inserting a new **Slice** Node between the target Node and its prior parent and reparenting the target onto the Slice.
 
 **Pending Partition**:
-A Partition that exists as a row in the `partitions` table — i.e. has been Begun but neither Accepted nor Abandoned yet. Pending Partitions own a Partition worktree, may have an in-flight subagent Run, and may sit at a Review gate. Many can coexist in a Session at once.
+A Partition that exists as a row in the `partitions` table — i.e. has been Begun but not yet Accepted, Finished, or Abandoned. Pending Partitions own a Partition worktree, may have an in-flight subagent Run, and may sit at a Review gate. Many can coexist in a Session at once.
 
 **Slice**:
 The single new Node a Partition adds. Built by the Constructor; parented on the prior parent of the target Node. Its Title comes from the Planner's description of the slice Edge.
 _Avoid_: intermediate, sub-edge.
 
+**Timeline**:
+The user-facing review aid for scrubbing through hidden implementation steps on a finished Edge. A Timeline is a visually inspectable history of changes tied to the target Node's incoming Edge. It is optional and best-effort: if generation fails or is disabled, the canonical Edge still shows its normal full diff.
+_Avoid_: using "Shavings" in user-facing settings labels, descriptions, or tooltips.
+
 **Shaving**:
-A hidden implementation step inside a Slice's Edge — an intermediate tree between that Edge's parent and the Slice Node, used only for timeline diff playback. Shavings are not Nodes, Partitions, or PR units.
-_Avoid_: shaving track, sub-slice, micro-commit.
+An internal hidden implementation step inside a **Timeline** — a git-backed commit/tree between an Edge's parent tree and target Node tree, used only for Timeline diff playback. Shavings are not Nodes, Partitions, or PR units, may be non-compilable, and must not affect the canonical graph or final tree. Shaving commit subjects may become Timeline step labels.
+_Avoid_: sub-slice, micro-commit, canonical commit.
+
+**Shaver**:
+The background subagent that may generate a Timeline after an indivisible Partition is finished. The Shaver works in a temporary worktree, writes local commits only there, returns a head commit, and the Coordinator validates and stores the resulting Shavings behind a hidden ref. The Shaver is backend-only; users see the feature as **Timeline**.
 
 **Strategy**:
 One of three slicing modes a Partition uses — `Synthetic`, `Vertical`, or `Horizontal`. The Planner chooses the strategy on its first run (always starting from `auto`); the user can override the strategy for a specific Partition at the Plan Review gate when asking for a re-plan. The strategy frames the Constructor's scope rules and the slice/leftover boundary.
@@ -78,7 +85,7 @@ The diff-view rendering concept: word-level marks on an Edge's diff showing cont
 _Avoid_: defining synthesized content relative to `final.tree` alone; "transient", "synthetic content" (collides with the **Synthetic** Strategy).
 
 **Reference pair**:
-The two trees an Edge's synthesized marks are computed against: `(beforeRef, afterRef)`. Canonical Edges default to `(base.tree, final.tree)`; candidate Edges use the Partition's `(BeforeTree, TargetTree)`; timeline scrubbing of a Slice's Shavings uses that Slice Edge's `(parent.tree, slice.tree)`.
+The two trees an Edge's synthesized marks are computed against: `(beforeRef, afterRef)`. Canonical Edges default to `(base.tree, final.tree)`; candidate Edges use the Partition's `(BeforeTree, TargetTree)`; Timeline playback for a finished Edge uses that Edge's `(parent.tree, target.tree)`.
 
 **Canonical view**:
 The default graph view showing the accepted Node chain (`base → 1 → … → final`). Each Edge's synthesized marks use Reference pair `(base.tree, final.tree)`.
@@ -103,16 +110,19 @@ The folded text stream of a subagent **Run**'s chain-of-thought and tool-call ma
 The subagent that writes to a Partition's worktree to build the Slice the Planner identified. The only writable subagent. Returns either `OK` or `BLOCKED: <reason>` on a single line.
 
 **Partition settings**:
-User-global configuration that applies to every Partition across every Session for this user. Stored as a single JSON file under the **State directory** (`~/.eunomio/settings.json`), not on the `sessions` row. Structured by subagent role (Surveyor / Planner / Constructor) plus Coordinator. The Coordinator owns the three HITL flags (`afterSurvey`, `afterPlanning`, `afterConstruct`) and the default model that applies to every subagent unless overridden on the subagent's own tab.
+User-global configuration that applies to every Partition across every Session for this user. Stored as a single JSON file under the **State directory** (`~/.eunomio/settings.json`), not on the `sessions` row. Structured by subagent role (Surveyor / Planner / Constructor / Shaver) plus Coordinator. The Coordinator owns HITL flags, Timeline enablement, fan-out limits, and the default model that applies to every subagent unless overridden on the subagent's own tab.
 
 **Phase**:
 A stage of a Partition — `Survey`, `Plan`, or `Construct`. The Coordinator drives the Partition through phases in this fixed order. Phases are the granularity at which Review gates apply.
 
 **Review gate**:
-A Coordinator-controlled halt at a Phase boundary, governed by the matching `humanInTheLoop.*` flag in Partition settings. All three (`afterSurvey`, `afterPlanning`, `afterConstruct`) exist and default to ON. The Construct gate is where Acceptance happens.
+A Coordinator-controlled halt at a Phase boundary, governed by the matching `humanInTheLoop.*` flag in Partition settings. Survey, Plan, Construct, and Indivisible confirmation gates default to ON. The Construct gate is where Acceptance happens; an indivisible Plan gate can be finished instead of accepted as a split.
 
 **Acceptance**:
 The terminal-success outcome of a Partition: inserts the new Slice Node, reparents the target Node onto the Slice, rewrites the target's Title, removes the Partition's worktree, and auto-Abandons every other Partition pending on the same target. Triggered by the user at the Construct Review gate, or automatically when `afterConstruct` is off.
+
+**Finish Partition**:
+The terminal-success outcome for an indivisible Partition. It accepts the Planner's indivisible verdict, deletes the Pending Partition and its worktree without changing the canonical graph, and may start background Timeline generation for the target Node's incoming Edge. Ordinary Abandon remains discard-only and never generates a Timeline.
 
 **Candidate view**:
 A graph-view mode the user enters via a dropdown when one or more Partitions are pending Acceptance. Begins as a 2-Node mini-graph (the target's prior parent and the canonical target) for the life of Survey and Plan; at the Construct review gate with a split Plan and candidate Slice, expands to three Nodes (prior parent, candidate Slice, renamed target) so the user can inspect the proposed graph state before Accepting.
@@ -121,10 +131,13 @@ A graph-view mode the user enters via a dropdown when one or more Partitions are
 Two or more pending Partitions sharing the same target Node. Allowed by design — the user can run alternative Partitions (e.g. one Vertical and one Horizontal) on the same target, compare them in the graph-view dropdown, and execute their Surveys, Plans, and Constructors in parallel (each owns its own worktree and phase machine). Accepting any one of them auto-Abandons the others.
 
 **Indivisible verdict**:
-A Planner output declaring that the diff between a Partition's BeforeTree and TargetTree is already a single cohesive change and should not be split further. Serialised as `{ outcome: "indivisible", rationale: "…" }` on the Planner's JSON output, parallel to the Constructor's `BLOCKED` outcome. Terminates a branch of the **Auto fan-out** loop. Governed by `humanInTheLoop.afterIndivisible` in Partition settings (default on): when on, the Partition parks at the Plan Review gate for the user to confirm or push back; when off, the Partition is auto-Abandoned without surfacing the gate.
+A Planner output declaring that the diff between a Partition's BeforeTree and TargetTree is already a single cohesive change and should not be split further. Serialised as `{ outcome: "indivisible", rationale: "…" }` on the Planner's JSON output, parallel to the Constructor's `BLOCKED` outcome. Terminates a branch of the **Auto fan-out** loop. Governed by `humanInTheLoop.afterIndivisible` in Partition settings (default on): when on, the Partition parks at the Plan Review gate for the user to confirm or push back; when off, the Partition is auto-finished without surfacing the gate.
 
 **Auto fan-out**:
 A Coordinator-driven loop that turns one user-initiated Begin Partition into a binary tree of Partitions: each Acceptance auto-Begins two new Partitions, one targeting the newly inserted Slice's incoming Edge and one targeting the renamed-target's incoming Edge. Configured by `coordinator.maxIterations` in Partition settings: `{ kind: "count", count: N }` caps the tree depth at N (count=1 disables fan-out entirely, matching the pre-feature behaviour); `{ kind: "auto" }` removes the depth cap. Branches terminate naturally on an **Indivisible verdict**, a Constructor `BLOCKED`, a Run error, a user Abandon, or the depth budget reaching zero. Orthogonal to the HITL flags — each Phase still respects its own `afterX` flag, so a user can run Auto fan-out with HITL on and review every gate in the tree manually.
+
+**Session partition complete**:
+A Session state reached when the current recursive partitioning pass has ended via accepted indivisible Partitions, with no Pending Partitions remaining and no pass-failing Abandon or fan-out failure.
 
 ## Deployment shapes
 
@@ -142,9 +155,9 @@ The tenancy axis. Every tenant-scoped row carries an `org_id`; a request's princ
 - A **Session** has exactly one **Remote** and starts with exactly two **Nodes**: **base** and **final**.
 - Every non-`base` **Node** has exactly one parent **Node**. The canonical graph is therefore a single linear chain `base → … → final`.
 - Each pending **Partition** owns exactly one **Partition worktree** for the duration of its existence.
-- A **Partition** row exists only between Begin and a terminal action (Acceptance or Abandon). The Slice it produced and the rewrite of the target Node persist after Acceptance; Run rows live alongside the Partition row and are deleted with it at the terminal action.
+- A **Partition** row exists only between Begin and a terminal action (Acceptance, Finish, or Abandon). The Slice it produced and the rewrite of the target Node persist after Acceptance; Run rows live alongside the Partition row and are deleted with it at the terminal action.
 - Many **Partitions** can be pending in a Session at any moment, including **Sibling Partitions** on the same target.
-- A **Slice** may have zero or more **Shavings** ordered from the Slice Edge's parent tree toward the Slice Node's tree.
+- A finished **Edge** may have zero or one **Timeline**, stored internally as ordered **Shavings** from the Edge parent tree toward the target Node tree, plus a final full-diff Timeline step.
 
 ## Flagged ambiguities
 
