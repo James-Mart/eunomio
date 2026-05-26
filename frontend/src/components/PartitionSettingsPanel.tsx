@@ -526,7 +526,7 @@ const ITERATION_OPTIONS: { value: string; label: string }[] = [
 ];
 
 function iterationLimitToOption(limit: IterationLimit | undefined): string {
-  if (!limit) return "1";
+  if (!limit) return "auto";
   if (limit.kind === "auto") return "auto";
   return String(limit.count);
 }
@@ -558,13 +558,13 @@ function CoordinatorPanel({
 }) {
   const hitl =
     settings?.coordinator.humanInTheLoop ?? {
-      afterSurvey: true,
-      afterPlanning: true,
-      afterConstruct: true,
-      afterIndivisible: true,
+      afterSurvey: false,
+      afterPlanning: false,
+      afterConstruct: false,
+      afterIndivisible: false,
     };
   const disabled = !settings;
-  const surveyorEnabled = settings?.coordinator.surveyorEnabled ?? true;
+  const surveyorEnabled = settings?.coordinator.surveyorEnabled ?? false;
   const timelineEnabled = settings?.coordinator.timelineEnabled ?? true;
   const reorderEnabled = settings?.coordinator.reorderEnabled ?? true;
   const selected = settings?.coordinator.model ?? "composer-2.5";

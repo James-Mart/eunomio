@@ -106,14 +106,14 @@ async fn global_settings_file_not_read() {
 }
 
 #[tokio::test]
-async fn surveyor_enabled_defaults_true_and_patches() {
+async fn surveyor_enabled_defaults_false_and_patches() {
     let app = TestApp::spawn().await;
     let cookie = login(&app.router, "surveyor-setting", TEST_CURSOR_KEY).await;
 
     let (status, body) =
         authenticated_empty_request(&app.router, &cookie, "GET", "/api/partition-settings").await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["coordinator"]["surveyorEnabled"].as_bool(), Some(true));
+    assert_eq!(body["coordinator"]["surveyorEnabled"].as_bool(), Some(false));
 
     let (status, body) = authenticated_json_request(
         &app.router,
@@ -121,14 +121,14 @@ async fn surveyor_enabled_defaults_true_and_patches() {
         "PATCH",
         "/api/partition-settings",
         serde_json::json!({
-            "coordinator": { "surveyorEnabled": false }
+            "coordinator": { "surveyorEnabled": true }
         }),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         body["coordinator"]["surveyorEnabled"].as_bool(),
-        Some(false)
+        Some(true)
     );
 }
 

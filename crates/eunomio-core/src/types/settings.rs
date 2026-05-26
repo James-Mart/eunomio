@@ -52,7 +52,7 @@ pub struct CoordinatorSettings {
     pub human_in_the_loop: HumanInTheLoop,
     #[serde(default = "default_iteration_limit")]
     pub max_iterations: IterationLimit,
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub surveyor_enabled: bool,
     #[serde(default = "default_true")]
     pub timeline_enabled: bool,
@@ -66,7 +66,7 @@ impl Default for CoordinatorSettings {
             model: default_model(),
             human_in_the_loop: HumanInTheLoop::default(),
             max_iterations: default_iteration_limit(),
-            surveyor_enabled: true,
+            surveyor_enabled: false,
             timeline_enabled: true,
             reorder_enabled: true,
         }
@@ -76,23 +76,23 @@ impl Default for CoordinatorSettings {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HumanInTheLoop {
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub after_survey: bool,
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub after_planning: bool,
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub after_construct: bool,
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub after_indivisible: bool,
 }
 
 impl Default for HumanInTheLoop {
     fn default() -> Self {
         Self {
-            after_survey: true,
-            after_planning: true,
-            after_construct: true,
-            after_indivisible: true,
+            after_survey: false,
+            after_planning: false,
+            after_construct: false,
+            after_indivisible: false,
         }
     }
 }
@@ -112,7 +112,7 @@ fn default_count() -> u32 {
 }
 
 fn default_iteration_limit() -> IterationLimit {
-    IterationLimit::Count { count: 1 }
+    IterationLimit::Auto
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
