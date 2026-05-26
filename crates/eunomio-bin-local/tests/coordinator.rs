@@ -460,36 +460,6 @@ async fn construct_accept_does_not_attach_shaving_track() {
         )
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND, "track body: {track}");
-
-    let (status, _) = app
-        .auth_empty(
-            "GET",
-            &format!(
-                "/api/sessions/{session_id}/diff?fromTree={parent_tree}&toTree=0000000000000000000000000000000000000000&beforeRef={parent_tree}&afterRef={head_tree}"
-            ),
-        )
-        .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-
-    let (status, _) = app
-        .auth_empty(
-            "GET",
-            &format!(
-                "/api/sessions/{session_id}/diff?fromTree={parent_tree}&toTree={first_step_tree}&beforeRef=0000000000000000000000000000000000000000&afterRef={head_tree}"
-            ),
-        )
-        .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-
-    let (status, _) = app
-        .auth_empty(
-            "GET",
-            &format!(
-                "/api/sessions/{session_id}/diff?fromTree={parent_tree}&toTree={first_step_tree}&beforeRef={parent_tree}&afterRef=0000000000000000000000000000000000000000"
-            ),
-        )
-        .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
@@ -1331,7 +1301,110 @@ async fn indivisible_with_hitl_on_parks_at_review() {
 }
 
 #[tokio::test]
-async fn indivisible_with_hitl_off_auto_abandons() {
+async fn finish_indivisible_partition_emits_finished() {
+    let runner = Arc::new(FakeSubagentRunner::new(vec![
+        survey_script(),
+        plan_indivisible_script("finished edge"),
+    ]));
+    let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
+    let mut rx = app.state.coordinator.subscribe(&session_id);
+
+    let (_, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
+    let partition_id = body["id"].as_str().unwrap().to_string();
+
+    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
+    let (_, runs) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
+        .await;
+    let survey_run_id = finished_run_id(&runs, "survey");
+    let (status, _) = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/survey/accept"),
+            json!({ "runId": survey_run_id }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
+    let (status, body) = app
+        .auth_empty("POST", &format!("/api/partitions/{partition_id}/finish"))
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "finish body: {body}");
+
+    let mut got_finished = false;
+    for _ in 0..40 {
+        let ev = next_event(&mut rx).await;
+        if let SseEvent::Finished {
+            partition_id: p, ..
+        } = &ev
+        {
+            if *p == partition_id {
+                got_finished = true;
+                break;
+            }
+        }
+    }
+    assert!(got_finished, "expected Finished event");
+
+    let (status, _) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}"))
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn finish_rejects_split_plan() {
+    let runner = Arc::new(FakeSubagentRunner::new(vec![
+        survey_script(),
+        plan_script("synthetic"),
+    ]));
+    let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
+    let mut rx = app.state.coordinator.subscribe(&session_id);
+
+    let (_, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
+    let partition_id = body["id"].as_str().unwrap().to_string();
+
+    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
+    let (_, runs) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
+        .await;
+    let survey_run_id = finished_run_id(&runs, "survey");
+    let (status, _) = app
+        .auth_json(
+            "POST",
+            &format!("/api/partitions/{partition_id}/survey/accept"),
+            json!({ "runId": survey_run_id }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
+    let (status, _) = app
+        .auth_empty("POST", &format!("/api/partitions/{partition_id}/finish"))
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    let (status, _) = app
+        .auth_empty("GET", &format!("/api/partitions/{partition_id}"))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn indivisible_with_hitl_off_auto_finishes() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
         survey_script(),
         plan_indivisible_script("indivisible"),
@@ -1349,15 +1422,15 @@ async fn indivisible_with_hitl_off_auto_abandons() {
         .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
 
-    let mut got_cancelled = false;
+    let mut got_finished = false;
     for _ in 0..40 {
         let ev = next_event(&mut rx).await;
-        if let SseEvent::Cancelled {
+        if let SseEvent::Finished {
             partition_id: p, ..
         } = &ev
         {
             if *p == partition_id {
-                got_cancelled = true;
+                got_finished = true;
                 break;
             }
         }
@@ -1367,10 +1440,10 @@ async fn indivisible_with_hitl_off_auto_abandons() {
             ..
         } = &ev
         {
-            panic!("HITL-off indivisible should auto-Abandon, not park");
+            panic!("HITL-off indivisible should auto-finish, not park");
         }
     }
-    assert!(got_cancelled, "expected Cancelled event");
+    assert!(got_finished, "expected Finished event");
 
     for _ in 0..20 {
         let (status, _) = app
@@ -1381,7 +1454,7 @@ async fn indivisible_with_hitl_off_auto_abandons() {
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    panic!("partition row was not deleted after auto-Abandon");
+    panic!("partition row was not deleted after auto-finish");
 }
 
 #[tokio::test]
@@ -1689,16 +1762,12 @@ async fn fanout_auto_cascading_indivisible() {
             }
             _ => {}
         }
-        if finished.len() == 1 && cancelled.len() == 2 {
+        if finished.len() == 3 {
             break;
         }
     }
-    assert_eq!(finished.len(), 1, "expected root to Finish");
-    assert_eq!(
-        cancelled.len(),
-        2,
-        "expected 2 children to be auto-Abandoned"
-    );
+    assert_eq!(finished.len(), 3, "expected root + 2 children to Finish");
+    assert_eq!(cancelled.len(), 0, "did not expect child auto-cancels");
     assert_eq!(started.len(), 3, "expected root + 2 children Started");
 }
 

@@ -821,9 +821,8 @@ function HotkeysPanel() {
             Enable keyboard shortcuts
           </Label>
           <p className="text-xs text-muted-foreground">
-            Timeline shortcuts apply only when a shaving timeline is visible in
-            the diff pane. This is separate from the coordinator Timeline
-            subagent setting.
+            Timeline shortcuts apply only when a timeline is visible in the
+            diff pane. This is separate from the coordinator Timeline setting.
           </p>
         </div>
       </div>
