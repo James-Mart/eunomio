@@ -11,7 +11,7 @@ import type { Lifecycle } from "@/components/SessionEventsProvider";
 import type { NodeCardData, NodePartitionGlance } from "@/components/NodeCard";
 
 export const NODE_X = 0;
-export const NODE_Y_STEP = 140;
+export const NODE_Y_STEP = 120;
 
 export const CANDIDATE_SLICE_ID = "__candidate_slice__";
 export const CANDIDATE_TARGET_PREFIX = "__candidate_target__";
@@ -162,7 +162,7 @@ export function canonicalLayout(
     data: {
       positionLabel: chain.positionByNodeId.get(n.nodeId) ?? "",
       partitionGlance: partitionGlanceByNodeId.get(n.nodeId) ?? null,
-      reviewed: n.reviewed,
+      reviewed: n.parentNodeId !== null ? n.reviewed : undefined,
     },
   }));
   const edges: FlowEdge[] = chain.ordered

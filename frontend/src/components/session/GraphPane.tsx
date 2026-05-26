@@ -176,14 +176,24 @@ function GraphFlow({
       edges={layout.edges}
       nodeTypes={nodeTypes}
       defaultEdgeOptions={{
-        markerEnd: { type: MarkerType.ArrowClosed, width: 25, height: 25 },
+        style: { stroke: "hsl(var(--border))", strokeWidth: 1 },
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          width: 16,
+          height: 16,
+          color: "hsl(var(--border))",
+        },
       }}
       colorMode="dark"
       nodesDraggable={false}
       proOptions={{ hideAttribution: true }}
       onNodeClick={onNodeClick}
     >
-      <Background />
+      <Background
+        gap={24}
+        size={0.75}
+        color="hsl(var(--border) / 0.25)"
+      />
       <GraphViewportFit layout={layout} />
     </ReactFlow>
   );

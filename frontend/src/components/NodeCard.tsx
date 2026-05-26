@@ -1,10 +1,15 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-import { memo, useId } from "react";
+import { memo } from "react";
+import {
+  AlertIcon,
+  CheckCircleIcon,
+  EyeIcon,
+  PauseIcon,
+} from "@primer/octicons-react";
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 
-import { Card, CardContent } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
+import { CANDIDATE_SLICE_ID } from "@/components/session/layout";
 import { cn } from "@/lib/utils";
 
 export type NodePartitionGlance = {
@@ -26,67 +31,93 @@ function stopNodeSelection(event: React.SyntheticEvent) {
   event.stopPropagation();
 }
 
-function NodeCard({ data, selected, onReviewedChange }: NodeCardProps) {
+function isTerminalLabel(label: string): boolean {
+  return label === "base" || label === "final";
+}
+
+function NodeCard({ id, data, selected, onReviewedChange }: NodeCardProps) {
   const { positionLabel, partitionGlance, reviewed } = data;
-  const checkboxId = useId();
+  const isCanonicalShell = onReviewedChange !== undefined;
   const showReviewedControl = reviewed !== undefined;
   const count = partitionGlance?.count ?? 0;
-  const status = partitionGlance?.status;
-  const needsAttention = status === "blocked" || status === "error";
+  const isCandidateSlice = id === CANDIDATE_SLICE_ID;
+  const terminal = isTerminalLabel(positionLabel);
 
   return (
     <>
       <Handle type="target" position={Position.Bottom} />
-      <Card
+      <div
         className={cn(
-          showReviewedControl ? "w-[220px]" : "w-[180px]",
-          "shadow-md",
-          status === "error" && "ring-2 ring-danger",
-          status === "blocked" && "ring-2 ring-danger/80",
-          selected && "ring-offset-2 ring-offset-background",
-          selected && !needsAttention && "ring-2 ring-primary",
+          "rounded-md border border-border bg-card px-2.5 py-2 transition-colors duration-150",
+          isCanonicalShell ? "w-[140px]" : "w-[100px]",
+          isCanonicalShell && "flex flex-col",
+          isCanonicalShell &&
+            !showReviewedControl &&
+            "min-h-[3.75rem] justify-center",
+          selected && "bg-secondary",
+          isCandidateSlice && "border-attention/40",
         )}
       >
-        <CardContent className="flex items-center gap-2 p-3">
-          {showReviewedControl ? (
-            <div
-              className="flex shrink-0 items-center gap-1.5"
-              onClick={stopNodeSelection}
-              onPointerDown={stopNodeSelection}
+        <div
+          className={cn(
+            "truncate text-center font-mono tabular-nums",
+            terminal
+              ? "text-xs uppercase tracking-wide text-muted-foreground"
+              : "text-sm font-medium text-foreground",
+          )}
+        >
+          {positionLabel}
+        </div>
+        {isCanonicalShell && showReviewedControl ? (
+          <div
+            className="mt-1.5 flex h-6 items-center justify-center gap-2"
+            onClick={stopNodeSelection}
+            onPointerDown={stopNodeSelection}
+          >
+            <button
+              type="button"
+              className={cn(
+                "flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground",
+                reviewed && "text-success",
+              )}
+              aria-label="Mark node as viewed"
+              aria-pressed={reviewed}
+              onClick={() => onReviewedChange?.(!reviewed)}
             >
-              <Checkbox
-                id={checkboxId}
-                checked={reviewed}
-                aria-label="Mark node as viewed"
-                onChange={(event) =>
-                  onReviewedChange?.(event.currentTarget.checked)
-                }
+              {reviewed ? (
+                <CheckCircleIcon className="h-4 w-4" />
+              ) : (
+                <EyeIcon className="h-4 w-4" />
+              )}
+            </button>
+            {count > 0 && partitionGlance ? (
+              <PartitionStatusIcon
+                count={count}
+                status={partitionGlance.status}
               />
-              <label
-                htmlFor={checkboxId}
-                className="cursor-pointer text-xs text-muted-foreground"
-              >
-                Viewed
-              </label>
-            </div>
-          ) : null}
-          <span className="min-w-0 flex-1 truncate text-sm font-semibold">
-            {positionLabel}
-          </span>
-          {count > 0 && partitionGlance ? (
-            <PartitionCountChip
-              count={count}
-              status={partitionGlance.status}
-            />
-          ) : null}
-        </CardContent>
-      </Card>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
       <Handle type="source" position={Position.Top} />
     </>
   );
 }
 
-function PartitionCountChip({
+function partitionAriaLabel(
+  count: number,
+  status: "running" | "blocked" | "error",
+): string {
+  if (status === "error") {
+    return `${count} partitions, one or more failed`;
+  }
+  if (status === "blocked") {
+    return `${count} partitions, one or more awaiting review`;
+  }
+  return `${count} partitions in progress`;
+}
+
+function PartitionStatusIcon({
   count,
   status,
 }: {
@@ -95,21 +126,24 @@ function PartitionCountChip({
 }) {
   return (
     <span
-      className={cn(
-        "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
-        status === "error" && "bg-danger/20 text-danger ring-2 ring-danger",
-        status === "blocked" && "text-danger ring-2 ring-danger/80",
-        status === "running" && "animate-pulse bg-attention/15 text-attention",
-      )}
-      aria-label={
-        status === "error"
-          ? `${count} partitions, one or more failed`
-          : status === "blocked"
-            ? `${count} partitions, one or more awaiting review`
-            : `${count} partitions in progress`
-      }
+      className="flex shrink-0 items-center gap-0.5"
+      aria-label={partitionAriaLabel(count, status)}
     >
-      {count}
+      {status === "error" ? (
+        <AlertIcon className="h-4 w-4 text-danger" aria-hidden />
+      ) : status === "blocked" ? (
+        <PauseIcon className="h-4 w-4 text-attention" aria-hidden />
+      ) : (
+        <span
+          className="h-1.5 w-1.5 animate-pulse rounded-full bg-attention"
+          aria-hidden
+        />
+      )}
+      {count > 1 ? (
+        <span className="text-[10px] tabular-nums text-muted-foreground">
+          {count}
+        </span>
+      ) : null}
     </span>
   );
 }

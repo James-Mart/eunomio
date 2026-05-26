@@ -71,6 +71,16 @@
   }
 }
 
+.react-flow__handle {
+  width: 1px;
+  height: 1px;
+  min-width: 0;
+  min-height: 0;
+  opacity: 0;
+  border: none;
+  background: transparent;
+}
+
 .react-flow__node.selected,
 .react-flow__node:focus,
 .react-flow__node:focus-visible {
@@ -80,6 +90,8 @@
 
 .react-flow {
   --xy-background-color: hsl(var(--background));
+  --xy-edge-stroke: hsl(var(--border));
+  --xy-edge-stroke-default: hsl(var(--border));
 }
 
 .react-flow__minimap,
