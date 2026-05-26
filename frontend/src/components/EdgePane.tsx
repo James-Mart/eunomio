@@ -39,6 +39,7 @@ import { cn, cssEscape } from "@/lib/utils";
 type ViewedProps = {
   viewedPaths?: ReadonlySet<string>;
   onToggleViewed?: (path: string, viewed: boolean) => void;
+  header?: ReactNode;
   footer?: ReactNode;
 };
 
@@ -75,7 +76,7 @@ type Overflow = "scroll" | "wrap";
 const FILE_DATA_ATTR = "data-edge-file-path";
 
 export default function EdgePane(props: Props) {
-  const { sessionId, viewedPaths, onToggleViewed, footer } = props;
+  const { sessionId, viewedPaths, onToggleViewed, header, footer } = props;
   const targetNodeId = "targetNodeId" in props ? props.targetNodeId : undefined;
   const fromTree = "fromTree" in props ? props.fromTree : undefined;
   const toTree = "toTree" in props ? props.toTree : undefined;
@@ -334,6 +335,7 @@ export default function EdgePane(props: Props) {
 
   const diffBody = (
     <div className="flex h-full min-w-0 flex-col">
+      {header}
       <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-b px-3 py-1.5 pr-12 md:pr-3">
         {viewedPathsInDiff && paths.length > 0 ? (
           <span className="text-xs text-muted-foreground tabular-nums">

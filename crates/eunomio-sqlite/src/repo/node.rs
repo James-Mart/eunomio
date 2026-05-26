@@ -28,6 +28,7 @@ fn graph_node_mapper(row: &rusqlite::Row<'_>) -> rusqlite::Result<GraphNode> {
             .get::<_, Option<String>>(6)?
             .and_then(|s| PartitionStrategy::parse(&s)),
         has_shaving_track: row.get::<_, i64>(7)? != 0,
+        reviewed: false,
     })
 }
 

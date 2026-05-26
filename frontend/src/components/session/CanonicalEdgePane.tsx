@@ -17,6 +17,7 @@ export function CanonicalEdgePane({ sessionId, node }: Props) {
   const { viewedPaths, toggleViewed } = useEdgeFileViewed(sessionId, targetNodeId);
   const [track, setTrack] = useState<ShavingTrack | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
+  const titleHeader = <NodeDiffTitleBar title={node.title} />;
 
   useEffect(() => {
     let cancelled = false;
@@ -58,6 +59,7 @@ export function CanonicalEdgePane({ sessionId, node }: Props) {
         loadedEdge={selectedDiff}
         viewedPaths={viewedPaths}
         onToggleViewed={toggleViewed}
+        header={titleHeader}
         footer={
           <ShavingTimelineBar
             track={track}
@@ -76,6 +78,19 @@ export function CanonicalEdgePane({ sessionId, node }: Props) {
       targetNodeId={targetNodeId}
       viewedPaths={viewedPaths}
       onToggleViewed={toggleViewed}
+      header={titleHeader}
     />
+  );
+}
+
+function NodeDiffTitleBar({ title }: { title: string }) {
+  const trimmed = title.trim();
+  if (!trimmed) return null;
+  return (
+    <div className="shrink-0 border-b bg-background px-4 py-2">
+      <div className="h-4 truncate text-center text-xs text-foreground">
+        {trimmed}
+      </div>
+    </div>
   );
 }

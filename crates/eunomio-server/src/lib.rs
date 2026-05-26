@@ -11,6 +11,7 @@ pub mod git;
 pub mod github;
 pub mod launch;
 pub mod middleware;
+pub mod node_reviewed;
 pub mod partition_settings;
 pub mod process_util;
 pub mod repo_store;

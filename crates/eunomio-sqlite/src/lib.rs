@@ -5,13 +5,15 @@ pub mod display;
 pub mod repo;
 
 use eunomio_core::traits::{
-    AuthEventRepo, AuthSessionRepo, Datastore, DiffAuthorizationRepo, EdgeFileViewedRepo, NodeRepo,
-    OrgRepo, PartitionRepo, RunRepo, SessionRepo, ShaverRunRepo, ShavingTrackRepo, UserRepo,
+    AuthEventRepo, AuthSessionRepo, Datastore, DiffAuthorizationRepo, EdgeFileViewedRepo,
+    NodeRepo, NodeReviewedRepo, OrgRepo, PartitionRepo, RunRepo, SessionRepo, ShaverRunRepo,
+    ShavingTrackRepo, UserRepo,
 };
 use repo::{
     SqliteAuthEventRepo, SqliteAuthSessionRepo, SqliteDiffAuthorizationRepo,
-    SqliteEdgeFileViewedRepo, SqliteNodeRepo, SqliteOrgRepo, SqlitePartitionRepo, SqliteRunRepo,
-    SqliteSessionRepo, SqliteShaverRunRepo, SqliteShavingTrackRepo, SqliteUserRepo,
+    SqliteEdgeFileViewedRepo, SqliteNodeRepo, SqliteNodeReviewedRepo, SqliteOrgRepo,
+    SqlitePartitionRepo, SqliteRunRepo, SqliteSessionRepo, SqliteShaverRunRepo,
+    SqliteShavingTrackRepo, SqliteUserRepo,
 };
 use std::{path::Path, sync::Arc};
 use tokio_rusqlite::Connection;
@@ -27,6 +29,7 @@ pub struct SqliteDatastore {
     runs: Arc<SqliteRunRepo>,
     shaver_runs: Arc<SqliteShaverRunRepo>,
     edge_file_viewed: Arc<SqliteEdgeFileViewedRepo>,
+    node_reviewed: Arc<SqliteNodeReviewedRepo>,
     shaving_tracks: Arc<SqliteShavingTrackRepo>,
     diff_authorization: Arc<SqliteDiffAuthorizationRepo>,
 }
@@ -49,6 +52,7 @@ impl SqliteDatastore {
             runs: Arc::new(SqliteRunRepo::new(conn.clone())),
             shaver_runs: Arc::new(SqliteShaverRunRepo::new(conn.clone())),
             edge_file_viewed: Arc::new(SqliteEdgeFileViewedRepo::new(conn.clone())),
+            node_reviewed: Arc::new(SqliteNodeReviewedRepo::new(conn.clone())),
             shaving_tracks: Arc::new(SqliteShavingTrackRepo::new(conn.clone())),
             diff_authorization: Arc::new(SqliteDiffAuthorizationRepo::new(conn)),
         }
@@ -94,6 +98,10 @@ impl Datastore for SqliteDatastore {
 
     fn edge_file_viewed(&self) -> &dyn EdgeFileViewedRepo {
         self.edge_file_viewed.as_ref()
+    }
+
+    fn node_reviewed(&self) -> &dyn NodeReviewedRepo {
+        self.node_reviewed.as_ref()
     }
 
     fn shaving_tracks(&self) -> &dyn ShavingTrackRepo {

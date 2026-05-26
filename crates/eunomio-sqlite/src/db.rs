@@ -161,6 +161,18 @@ CREATE TABLE IF NOT EXISTS edge_file_viewed (
 CREATE INDEX IF NOT EXISTS edge_file_viewed_by_session
   ON edge_file_viewed (session_id, org_id);
 
+CREATE TABLE IF NOT EXISTS node_reviewed (
+  org_id TEXT NOT NULL REFERENCES orgs(id),
+  user_id TEXT NOT NULL REFERENCES users(id),
+  session_id TEXT NOT NULL,
+  node_id TEXT NOT NULL,
+  reviewed_at INTEGER NOT NULL,
+  PRIMARY KEY (org_id, user_id, session_id, node_id),
+  FOREIGN KEY (session_id, node_id) REFERENCES nodes(session_id, node_id)
+);
+CREATE INDEX IF NOT EXISTS node_reviewed_by_session
+  ON node_reviewed (session_id, org_id);
+
 CREATE TABLE IF NOT EXISTS shaving_tracks (
   session_id TEXT NOT NULL,
   target_node_id TEXT NOT NULL,

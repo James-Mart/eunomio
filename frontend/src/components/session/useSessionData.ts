@@ -38,6 +38,7 @@ export type SessionData = {
   refresh: () => Promise<void>;
   refreshPartitions: () => Promise<void>;
   registerStartedPartition: (p: Partition) => void;
+  setNodeReviewed: (nodeId: string, reviewed: boolean) => void;
 };
 
 export function useSessionData(sessionId: string): SessionData {
@@ -134,6 +135,32 @@ export function useSessionData(sessionId: string): SessionData {
     [hydratePartition],
   );
 
+  const setNodeReviewed = useCallback(
+    (nodeId: string, reviewed: boolean) => {
+      setGraph((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          nodes: prev.nodes.map((n) =>
+            n.nodeId === nodeId ? { ...n, reviewed } : n,
+          ),
+        };
+      });
+      api.setNodeReviewed(sessionId, nodeId, reviewed).catch(() => {
+        setGraph((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            nodes: prev.nodes.map((n) =>
+              n.nodeId === nodeId ? { ...n, reviewed: !reviewed } : n,
+            ),
+          };
+        });
+      });
+    },
+    [sessionId],
+  );
+
   return {
     graph,
     notFound,
@@ -147,5 +174,6 @@ export function useSessionData(sessionId: string): SessionData {
     refresh,
     refreshPartitions,
     registerStartedPartition,
+    setNodeReviewed,
   };
 }

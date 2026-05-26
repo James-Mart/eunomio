@@ -22,6 +22,7 @@ export type GraphNode = {
   description: string;
   strategy: PartitionStrategy | null;
   hasShavingTrack: boolean;
+  reviewed: boolean;
 };
 
 export type GraphEdge = { from: string; to: string };
@@ -359,6 +360,10 @@ export const api = {
   },
   renameNode: (sessionId: string, nodeId: string, title: string) =>
     request<GraphNode>("PATCH", `/sessions/${sessionId}/nodes/${nodeId}`, { title }),
+  setNodeReviewed: (sessionId: string, nodeId: string, reviewed: boolean) =>
+    request<void>("PUT", `/sessions/${sessionId}/nodes/${nodeId}/reviewed`, {
+      reviewed,
+    }),
   branchFromNode: (sessionId: string, nodeId: string, branchName: string, force = false) =>
     request<BranchResult>("POST", `/sessions/${sessionId}/nodes/${nodeId}/branch`, {
       branchName,

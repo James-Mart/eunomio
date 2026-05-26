@@ -63,6 +63,7 @@ function SessionInner({ sessionId }: { sessionId: string }) {
     refresh,
     refreshPartitions,
     registerStartedPartition,
+    setNodeReviewed,
   } = data;
 
   const selection = useSessionSelection(graph, layout, view, candidatePartition);
@@ -210,6 +211,7 @@ function SessionInner({ sessionId }: { sessionId: string }) {
       onSelectView={onSelectView}
       selectedNodeId={selectedNodeId}
       onNodeClick={onNodeClick}
+      onNodeReviewedChange={setNodeReviewed}
     />
   );
 

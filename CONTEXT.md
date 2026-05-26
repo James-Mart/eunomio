@@ -83,6 +83,9 @@ The two trees an Edge's synthesized marks are computed against: `(beforeRef, aft
 **Canonical view**:
 The default graph view showing the accepted Node chain (`base → 1 → … → final`). Each Edge's synthesized marks use Reference pair `(base.tree, final.tree)`.
 
+**Node reviewed**:
+Per-user marker that the current user finished reviewing a Node in **Canonical view**. Shown as a "Viewed" checkbox on each Node card; persisted per user, distinct from per-file **viewed** marks on an Edge diff and from a Partition **Review gate**.
+
 **Original view**:
 A two-Node graph view (`base → final`) showing the seed diff before any Partitions. Selecting **final** shows the `base→final` diff with no synthesized marks; selecting **base** shows an empty diff pane.
 

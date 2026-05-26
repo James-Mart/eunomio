@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import {
   Background,
+  MarkerType,
   ReactFlow,
   ReactFlowProvider,
   useNodesInitialized,
@@ -36,8 +37,6 @@ import {
   type View,
 } from "./layout";
 
-const nodeTypes: NodeTypes = { eunomio: NodeCard };
-
 type Props = {
   layout: SessionLayout;
   chain: Chain;
@@ -46,6 +45,7 @@ type Props = {
   onSelectView: (next: string) => void;
   selectedNodeId: string | null;
   onNodeClick: NodeMouseHandler;
+  onNodeReviewedChange?: (nodeId: string, reviewed: boolean) => void;
 };
 
 const FIT_VIEW_OPTIONS = { padding: 0.2 } as const;
@@ -138,11 +138,29 @@ function GraphFlow({
   layout,
   selectedNodeId,
   onNodeClick,
+  onNodeReviewedChange,
 }: {
   layout: SessionLayout;
   selectedNodeId: string | null;
   onNodeClick: NodeMouseHandler;
+  onNodeReviewedChange?: (nodeId: string, reviewed: boolean) => void;
 }) {
+  const nodeTypes = useMemo<NodeTypes>(() => {
+    if (layout.kind !== "canonical" || !onNodeReviewedChange) {
+      return { eunomio: NodeCard };
+    }
+    return {
+      eunomio: (props) => (
+        <NodeCard
+          {...props}
+          onReviewedChange={(reviewed) =>
+            onNodeReviewedChange(props.id, reviewed)
+          }
+        />
+      ),
+    };
+  }, [layout.kind, onNodeReviewedChange]);
+
   const nodes = useMemo<Node<NodeCardData>[]>(
     () =>
       layout.nodes.map((n) =>
@@ -157,6 +175,9 @@ function GraphFlow({
       nodes={nodes}
       edges={layout.edges}
       nodeTypes={nodeTypes}
+      defaultEdgeOptions={{
+        markerEnd: { type: MarkerType.ArrowClosed, width: 25, height: 25 },
+      }}
       colorMode="dark"
       nodesDraggable={false}
       proOptions={{ hideAttribution: true }}
@@ -176,6 +197,7 @@ export function GraphPane({
   onSelectView,
   selectedNodeId,
   onNodeClick,
+  onNodeReviewedChange,
 }: Props) {
   const viewSelectValue =
     view.kind === "candidate" ? view.partitionId : view.kind;
@@ -222,6 +244,7 @@ export function GraphPane({
             layout={layout}
             selectedNodeId={selectedNodeId}
             onNodeClick={onNodeClick}
+            onNodeReviewedChange={onNodeReviewedChange}
           />
         </ReactFlowProvider>
       </div>

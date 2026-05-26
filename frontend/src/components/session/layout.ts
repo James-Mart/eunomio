@@ -162,6 +162,7 @@ export function canonicalLayout(
     data: {
       positionLabel: chain.positionByNodeId.get(n.nodeId) ?? "",
       partitionGlance: partitionGlanceByNodeId.get(n.nodeId) ?? null,
+      reviewed: n.reviewed,
     },
   }));
   const edges: FlowEdge[] = chain.ordered
@@ -214,6 +215,7 @@ export function candidateLayout(
       description: planEdges[0].description,
       strategy: null,
       hasShavingTrack: false,
+      reviewed: false,
     };
     const renamedTarget: GraphNode = {
       ...target,

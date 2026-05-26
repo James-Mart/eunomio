@@ -68,6 +68,7 @@ pub struct GraphNode {
     pub description: String,
     pub strategy: Option<PartitionStrategy>,
     pub has_shaving_track: bool,
+    pub reviewed: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -94,6 +95,12 @@ pub struct EdgeViewedFiles {
 #[serde(rename_all = "camelCase")]
 pub struct SetEdgeFileViewedRequest {
     pub viewed: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetNodeReviewedRequest {
+    pub reviewed: bool,
 }
 
 #[derive(Debug, Serialize)]

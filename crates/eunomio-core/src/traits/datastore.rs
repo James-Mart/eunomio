@@ -385,6 +385,25 @@ pub trait EdgeFileViewedRepo: Send + Sync {
 }
 
 #[async_trait]
+pub trait NodeReviewedRepo: Send + Sync {
+    async fn list_node_ids(
+        &self,
+        org_id: &str,
+        user_id: &str,
+        session_id: &str,
+    ) -> Result<Vec<String>, AppError>;
+    async fn set_reviewed(
+        &self,
+        org_id: &str,
+        user_id: &str,
+        session_id: &str,
+        node_id: &str,
+        reviewed: bool,
+        reviewed_at: i64,
+    ) -> Result<(), AppError>;
+}
+
+#[async_trait]
 pub trait ShavingTrackRepo: Send + Sync {
     async fn insert(&self, row: NewShavingTrackInsert) -> Result<(), AppError>;
     async fn get(
@@ -423,6 +442,7 @@ pub trait Datastore: Send + Sync {
     fn runs(&self) -> &dyn RunRepo;
     fn shaver_runs(&self) -> &dyn ShaverRunRepo;
     fn edge_file_viewed(&self) -> &dyn EdgeFileViewedRepo;
+    fn node_reviewed(&self) -> &dyn NodeReviewedRepo;
     fn shaving_tracks(&self) -> &dyn ShavingTrackRepo;
     fn diff_authorization(&self) -> &dyn DiffAuthorizationRepo;
 }

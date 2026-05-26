@@ -399,6 +399,10 @@ impl SessionRepo for SqliteSessionRepo {
                     tokio_rusqlite::params![session_id, org_id],
                 )?;
                 tx.execute(
+                    "DELETE FROM node_reviewed WHERE session_id = ?1 AND org_id = ?2",
+                    tokio_rusqlite::params![session_id, org_id],
+                )?;
+                tx.execute(
                     "DELETE FROM nodes WHERE session_id = ?1 AND org_id = ?2",
                     tokio_rusqlite::params![session_id, org_id],
                 )?;
@@ -465,6 +469,12 @@ mod tests {
                  VALUES ('local', 'u1', 's1', 'n1', 'src/a.rs', 1)",
                 [],
             )?;
+            c.execute(
+                "INSERT INTO node_reviewed \
+                 (org_id, user_id, session_id, node_id, reviewed_at) \
+                 VALUES ('local', 'u1', 's1', 'n1', 1)",
+                [],
+            )?;
             Ok(())
         })
         .await
@@ -472,7 +482,7 @@ mod tests {
 
         repo.delete_cascade("local", "s1").await.unwrap();
 
-        let counts: (i64, i64, i64, i64, i64) = conn
+        let counts: (i64, i64, i64, i64, i64, i64) = conn
             .call(|c| {
                 let sessions: i64 =
                     c.query_row("SELECT COUNT(*) FROM sessions WHERE id = 's1'", [], |r| {
@@ -498,10 +508,15 @@ mod tests {
                     [],
                     |r| r.get(0),
                 )?;
-                Ok((sessions, nodes, partitions, runs, viewed))
+                let reviewed: i64 = c.query_row(
+                    "SELECT COUNT(*) FROM node_reviewed WHERE session_id = 's1'",
+                    [],
+                    |r| r.get(0),
+                )?;
+                Ok((sessions, nodes, partitions, runs, viewed, reviewed))
             })
             .await
             .unwrap();
-        assert_eq!(counts, (0, 0, 0, 0, 0));
+        assert_eq!(counts, (0, 0, 0, 0, 0, 0));
     }
 }

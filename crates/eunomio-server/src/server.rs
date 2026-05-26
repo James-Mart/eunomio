@@ -7,7 +7,7 @@ use crate::{
     branching, edge_file_viewed, edges, embed,
     launch::public_launch_routes,
     middleware::host_guard,
-    partition_settings, sessions, sse,
+    node_reviewed, partition_settings, sessions, sse,
     state::AppState,
     AppError, ServerError,
 };
@@ -48,6 +48,10 @@ fn protected_routes() -> Router<AppState> {
         )
         .route("/api/sessions/:id/diff", get(get_diff))
         .route("/api/sessions/:id/nodes/:node_id", patch(rename_node))
+        .route(
+            "/api/sessions/:id/nodes/:node_id/reviewed",
+            put(node_reviewed::put_node_reviewed),
+        )
         .route("/api/sessions/:id/nodes/:node_id/branch", post(branch_node))
         .route(
             "/api/partition-settings",
@@ -183,13 +187,22 @@ async fn get_graph(
         .sessions()
         .ensure(&principal.org_id, &id)
         .await?;
-    let nodes = state
+    let mut nodes = state
         .datastore
         .nodes()
         .list_for_session(&principal.org_id, &id)
         .await?;
     if nodes.is_empty() {
         return Err(AppError::NotFound.into());
+    }
+    let reviewed_ids = state
+        .datastore
+        .node_reviewed()
+        .list_node_ids(&principal.org_id, &principal.user_id, &id)
+        .await?;
+    let reviewed: std::collections::HashSet<_> = reviewed_ids.into_iter().collect();
+    for node in &mut nodes {
+        node.reviewed = reviewed.contains(&node.node_id);
     }
     let edges: Vec<GraphEdge> = nodes
         .iter()
