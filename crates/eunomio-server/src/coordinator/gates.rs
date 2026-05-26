@@ -48,7 +48,11 @@ impl Coordinator {
             state
                 .datastore
                 .partitions()
-                .set_phase_state(&scope.org_id, &scope.partition_id, PhaseState::AwaitingReview)
+                .set_phase_state(
+                    &scope.org_id,
+                    &scope.partition_id,
+                    PhaseState::AwaitingReview,
+                )
                 .await?;
             let coord = self.clone();
             let state_owned = state.clone();

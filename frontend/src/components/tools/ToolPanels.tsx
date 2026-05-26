@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-import type { Partition, PartitionStrategy } from "@/lib/api";
+import type { Partition, PartitionStrategy, ReorderAudit } from "@/lib/api";
 import BranchTab from "@/components/BranchTab";
 import InfoTab from "@/components/InfoTab";
 import PartitionTab from "@/components/PartitionTab";
@@ -17,6 +17,7 @@ export type ToolsContext = {
   nodeTitle: string | null;
   nodeDescription: string | null;
   nodeStrategy: PartitionStrategy | null;
+  reorderAudit: ReorderAudit | null;
   activePartition: Partition | null;
   isCandidateSliceSelected: boolean;
   pendingPartitionOptions: PendingPartitionOption[];
@@ -59,6 +60,7 @@ export function InfoToolPanel(ctx: ToolsContext) {
       nodeTitle={ctx.nodeTitle!}
       nodeDescription={ctx.nodeDescription ?? ""}
       nodeStrategy={ctx.nodeStrategy}
+      reorderAudit={ctx.reorderAudit}
       onChange={ctx.onChange}
     />
   );

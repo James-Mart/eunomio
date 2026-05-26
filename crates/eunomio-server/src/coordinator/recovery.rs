@@ -19,8 +19,50 @@ impl Coordinator {
         repair_stuck_shaver_runs(state).await?;
         let alive = prune_dead_partition_rows(state).await?;
         sweep_orphan_worktree_dirs(state, &alive).await;
+        recover_missing_shaving_tracks(self, state).await?;
+        retry_incomplete_finalizations(self, state).await?;
         Ok(())
     }
+}
+
+async fn retry_incomplete_finalizations(
+    coord: &Coordinator,
+    state: &AppState,
+) -> Result<(), AppError> {
+    let sessions = state
+        .datastore
+        .sessions()
+        .list_sessions_needing_finalization(LOCAL_ORG_ID)
+        .await?;
+    for session_id in sessions {
+        if let Err(e) = coord
+            .recover_session_partition_finalization(state, LOCAL_ORG_ID, &session_id)
+            .await
+        {
+            tracing::warn!(session_id = %session_id, error = %e, "session finalization recovery failed");
+        }
+    }
+    Ok(())
+}
+
+async fn recover_missing_shaving_tracks(
+    coord: &Coordinator,
+    state: &AppState,
+) -> Result<(), AppError> {
+    let sessions = state
+        .datastore
+        .sessions()
+        .list_completed_session_ids(LOCAL_ORG_ID)
+        .await?;
+    for session_id in sessions {
+        if let Err(e) = coord
+            .spawn_missing_timelines_for_session(state, LOCAL_ORG_ID, &session_id)
+            .await
+        {
+            tracing::warn!(session_id = %session_id, error = %e, "shaving recovery failed");
+        }
+    }
+    Ok(())
 }
 
 async fn repair_stuck_shaver_runs(state: &AppState) -> Result<(), AppError> {

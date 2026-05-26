@@ -33,6 +33,7 @@ fn protected_routes() -> Router<AppState> {
         .route("/api/sessions/validate", post(validate_session))
         .route("/api/sessions/:id", get(get_session).delete(delete_session))
         .route("/api/sessions/:id/graph", get(get_graph))
+        .route("/api/sessions/:id/reorder-audit", get(get_reorder_audit))
         .route("/api/sessions/:id/edges/:target_node_id", get(get_edge))
         .route(
             "/api/sessions/:id/nodes/:node_id/shaving-track",
@@ -214,6 +215,25 @@ async fn get_graph(
         })
         .collect();
     Ok(Json(Graph { nodes, edges }))
+}
+
+async fn get_reorder_audit(
+    State(state): State<AppState>,
+    principal: CurrentPrincipal,
+    Path(id): Path<String>,
+) -> Result<Json<Option<ReorderAudit>>, ServerError> {
+    state
+        .datastore
+        .sessions()
+        .ensure(&principal.org_id, &id)
+        .await?;
+    Ok(Json(
+        state
+            .datastore
+            .sessions()
+            .get_reorder_audit(&principal.org_id, &id)
+            .await?,
+    ))
 }
 
 async fn get_edge(

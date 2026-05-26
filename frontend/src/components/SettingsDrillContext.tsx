@@ -16,7 +16,8 @@ export type SettingsCategory =
   | "surveyor"
   | "planner"
   | "constructor"
-  | "shaver";
+  | "shaver"
+  | "reorder";
 
 type SettingsDrillContextValue = {
   activeCategory: SettingsCategory | null;

@@ -114,6 +114,7 @@ export type CoordinatorSettings = {
   maxIterations: IterationLimit;
   surveyorEnabled: boolean;
   timelineEnabled: boolean;
+  reorderEnabled: boolean;
 };
 
 export interface PartitionSettings {
@@ -124,6 +125,7 @@ export interface PartitionSettings {
   planner: SubagentSettings;
   constructor: SubagentSettings;
   shaver: SubagentSettings;
+  reorder: SubagentSettings;
 }
 
 export interface PartitionSettingsPatch {
@@ -134,7 +136,29 @@ export interface PartitionSettingsPatch {
   planner?: SubagentSettings;
   constructor?: SubagentSettings;
   shaver?: SubagentSettings;
+  reorder?: SubagentSettings;
 }
+
+export type ReorderRelation = {
+  before: string;
+  after: string;
+  reason: string;
+};
+
+export type ReorderAuditStatus = "disabled" | "applied" | "noChange" | "fallback";
+
+export type ReorderAudit = {
+  status: ReorderAuditStatus;
+  originalOrder: string[];
+  proposedOrder: string[];
+  appliedOrder: string[];
+  hardDeps: ReorderRelation[];
+  softPrefs: ReorderRelation[];
+  uncertainPairs: [string, string][];
+  rationale: string;
+  fallbackReason: string | null;
+  createdAt: number;
+};
 
 export type PartitionStrategy = "synthetic" | "vertical" | "horizontal";
 export type StrategyOverride = PartitionStrategy | "auto";
@@ -327,6 +351,8 @@ export const api = {
   getSession: (id: string) => request<Session>("GET", `/sessions/${id}`),
   listSessions: () => request<Session[]>("GET", "/sessions"),
   getGraph: (id: string) => request<Graph>("GET", `/sessions/${id}/graph`),
+  getReorderAudit: (id: string) =>
+    request<ReorderAudit | null>("GET", `/sessions/${id}/reorder-audit`),
   getEdge: (sessionId: string, targetNodeId: string) =>
     request<Edge>("GET", `/sessions/${sessionId}/edges/${targetNodeId}`),
   getShavingTrack: (sessionId: string, nodeId: string) =>

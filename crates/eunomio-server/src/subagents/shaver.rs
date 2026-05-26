@@ -35,8 +35,7 @@ pub fn render_prompt(ctx: &ShaverContext, template: &PromptTemplate) -> String {
 pub fn parse_output(raw: &str) -> Result<ShaverOutput, ParseError> {
     let block = extract_json_block(raw)
         .ok_or_else(|| ParseError::Malformed("no fenced ```json``` block found".into()))?;
-    serde_json::from_str(&block)
-        .map_err(|e| ParseError::Malformed(format!("invalid JSON: {e}")))
+    serde_json::from_str(&block).map_err(|e| ParseError::Malformed(format!("invalid JSON: {e}")))
 }
 
 fn extract_json_block(raw: &str) -> Option<String> {

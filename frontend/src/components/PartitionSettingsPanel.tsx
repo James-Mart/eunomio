@@ -46,7 +46,7 @@ import { useAbortableEffect } from "@/lib/useAbortableEffect";
 import { useIsDesktop } from "@/lib/useIsDesktop";
 import { cn } from "@/lib/utils";
 
-type SubagentCategory = "surveyor" | "planner" | "constructor" | "shaver";
+type SubagentCategory = "surveyor" | "planner" | "constructor" | "shaver" | "reorder";
 
 type IconComponent = React.ComponentType<IconProps>;
 
@@ -61,6 +61,7 @@ const CATEGORIES: Record<SettingsCategory, CategoryMeta> = {
   planner: { label: "Planner", icon: TasklistIcon },
   constructor: { label: "Constructor", icon: CodeIcon },
   shaver: { label: "Timeline", icon: TasklistIcon },
+  reorder: { label: "Reorder", icon: ProjectRoadmapIcon },
 };
 
 const TOP_ORDER: SettingsCategory[] = ["general", "hotkeys", "coordinator", "account"];
@@ -69,6 +70,7 @@ const SUBAGENT_ORDER: SubagentCategory[] = [
   "planner",
   "constructor",
   "shaver",
+  "reorder",
 ];
 
 type ModelsState =
@@ -169,6 +171,14 @@ export default function PartitionSettingsPanel() {
       "Failed to save settings",
     );
 
+  const onReorderEnabledChange = (next: boolean) =>
+    settings &&
+    applyOptimistic(
+      "coordinator",
+      { ...settings.coordinator, reorderEnabled: next },
+      "Failed to save settings",
+    );
+
   const updateRoleModel = (role: SubagentCategory, next: string) =>
     settings &&
     applyOptimistic(
@@ -211,6 +221,7 @@ export default function PartitionSettingsPanel() {
           onModelChange={onCoordinatorModelChange}
           onSurveyorEnabledChange={onSurveyorEnabledChange}
           onTimelineEnabledChange={onTimelineEnabledChange}
+          onReorderEnabledChange={onReorderEnabledChange}
           onHitlChange={onHitlChange}
           onMaxIterationsChange={onMaxIterationsChange}
         />
@@ -532,6 +543,7 @@ function CoordinatorPanel({
   onModelChange,
   onSurveyorEnabledChange,
   onTimelineEnabledChange,
+  onReorderEnabledChange,
   onHitlChange,
   onMaxIterationsChange,
 }: {
@@ -540,6 +552,7 @@ function CoordinatorPanel({
   onModelChange: (next: string) => void;
   onSurveyorEnabledChange: (next: boolean) => void;
   onTimelineEnabledChange: (next: boolean) => void;
+  onReorderEnabledChange: (next: boolean) => void;
   onHitlChange: (next: HumanInTheLoopSettings) => void;
   onMaxIterationsChange: (next: IterationLimit) => void;
 }) {
@@ -553,6 +566,7 @@ function CoordinatorPanel({
   const disabled = !settings;
   const surveyorEnabled = settings?.coordinator.surveyorEnabled ?? true;
   const timelineEnabled = settings?.coordinator.timelineEnabled ?? true;
+  const reorderEnabled = settings?.coordinator.reorderEnabled ?? true;
   const selected = settings?.coordinator.model ?? "composer-2.5";
   const iterations = settings?.coordinator.maxIterations;
   const iterationsOption = iterationLimitToOption(iterations);
@@ -606,6 +620,23 @@ function CoordinatorPanel({
             <p className="text-xs text-muted-foreground">
               Generate a visually inspectable history of changes tied to each
               finished Edge.
+            </p>
+          </div>
+        </div>
+        <div className="flex items-start gap-3">
+          <Checkbox
+            id="coordinator-reorder-enabled"
+            checked={reorderEnabled}
+            disabled={disabled}
+            onChange={(e) => onReorderEnabledChange(e.target.checked)}
+            className="mt-0.5"
+          />
+          <div className="space-y-0.5">
+            <Label htmlFor="coordinator-reorder-enabled" className="font-normal">
+              Reorder review atoms
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Run dependency-aware ordering before a partition pass completes.
             </p>
           </div>
         </div>

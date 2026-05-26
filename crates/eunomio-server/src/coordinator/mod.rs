@@ -21,6 +21,7 @@ mod constructor_outcome;
 mod gates;
 mod prompt;
 mod recovery;
+mod reorder;
 mod run_loop;
 mod scope;
 mod shaver;
@@ -251,6 +252,7 @@ impl Coordinator {
             planner: defs.planner.template.body().to_string(),
             constructor: defs.constructor.template.body().to_string(),
             shaver: defs.shaver.template.body().to_string(),
+            reorder: defs.reorder.template.body().to_string(),
         }
     }
 

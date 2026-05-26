@@ -3,6 +3,7 @@
 use anyhow::{anyhow, Result};
 use eunomio_core::FileBlob;
 use std::path::Path;
+use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
 const MAX_BLOB_BYTES: usize = 512 * 1024;
@@ -73,6 +74,58 @@ pub async fn diff_text(repo: &Path, from_tree: &str, to_tree: &str) -> Result<St
         ));
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+pub async fn diff_binary(repo: &Path, from_tree: &str, to_tree: &str) -> Result<Vec<u8>> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args([
+            "diff",
+            "--binary",
+            "--full-index",
+            "--no-color",
+            "--no-ext-diff",
+            "--end-of-options",
+            from_tree,
+            to_tree,
+        ])
+        .output()
+        .await?;
+    if !out.status.success() {
+        return Err(anyhow!(
+            "git diff --binary {} {}: {}",
+            from_tree,
+            to_tree,
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(out.stdout)
+}
+
+pub async fn apply_patch_bytes(cwd: &Path, patch: &[u8]) -> Result<()> {
+    let mut child = Command::new("git")
+        .arg("-C")
+        .arg(cwd)
+        .args(["apply", "--index", "--3way"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| anyhow!("git apply stdin unavailable"))?;
+    stdin.write_all(patch).await?;
+    drop(stdin);
+    let out = child.wait_with_output().await?;
+    if !out.status.success() {
+        return Err(anyhow!(
+            "git apply --index --3way: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(())
 }
 
 pub async fn changed_files(repo: &Path, from_tree: &str, to_tree: &str) -> Result<Vec<FileBlob>> {
@@ -524,7 +577,11 @@ pub async fn commit_parents(repo: &Path, commit: &str) -> Result<Vec<String>> {
 }
 
 pub async fn commits_between_linear(repo: &Path, parent: &str, head: &str) -> Result<Vec<String>> {
-    let out = run(repo, &["rev-list", "--reverse", &format!("{parent}..{head}")]).await?;
+    let out = run(
+        repo,
+        &["rev-list", "--reverse", &format!("{parent}..{head}")],
+    )
+    .await?;
     Ok(out
         .lines()
         .map(str::trim)

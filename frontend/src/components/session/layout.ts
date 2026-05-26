@@ -141,7 +141,7 @@ export function computeChain(graph: Graph): Chain {
   ordered.forEach((node, idx) => {
     if (node.parentNodeId === null) {
       positionByNodeId.set(node.nodeId, "base");
-    } else if (idx === ordered.length - 1 && node.title === "final") {
+    } else if (idx === ordered.length - 1) {
       positionByNodeId.set(node.nodeId, "final");
     } else {
       positionByNodeId.set(node.nodeId, String(idx));

@@ -7,6 +7,7 @@ import {
   ApiError,
   type Graph,
   type Partition,
+  type ReorderAudit,
 } from "@/lib/api";
 import { formatError } from "@/lib/errors";
 import {
@@ -31,6 +32,7 @@ export type SessionData = {
   notFound: boolean;
   error: string | null;
   partitions: Partition[];
+  reorderAudit: ReorderAudit | null;
   view: View;
   setView: Dispatch<SetStateAction<View>>;
   candidatePartition: Partition | null;
@@ -48,6 +50,7 @@ export function useSessionData(sessionId: string): SessionData {
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [partitions, setPartitions] = useState<Partition[]>([]);
+  const [reorderAudit, setReorderAudit] = useState<ReorderAudit | null>(null);
   const [view, setView] = useState<View>({ kind: "canonical" });
 
   const refresh = useCallback(async () => {
@@ -72,6 +75,14 @@ export function useSessionData(sessionId: string): SessionData {
     }
   }, [sessionId]);
 
+  const refreshReorderAudit = useCallback(async () => {
+    try {
+      setReorderAudit(await api.getReorderAudit(sessionId));
+    } catch {
+      setReorderAudit(null);
+    }
+  }, [sessionId]);
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -79,6 +90,10 @@ export function useSessionData(sessionId: string): SessionData {
   useEffect(() => {
     void refreshPartitions();
   }, [refreshPartitions]);
+
+  useEffect(() => {
+    void refreshReorderAudit();
+  }, [refreshReorderAudit]);
 
   useConstructSubscription(
     useCallback(() => {
@@ -90,6 +105,12 @@ export function useSessionData(sessionId: string): SessionData {
   const hydratePartition = useHydratePartition();
   const lifecycles = useAllPartitionLifecycles();
   const sessionPartitionCompleteAt = useSessionPartitionCompleteAt();
+
+  useEffect(() => {
+    if (sessionPartitionCompleteAt === null) return;
+    void refresh();
+    void refreshReorderAudit();
+  }, [sessionPartitionCompleteAt, refresh, refreshReorderAudit]);
 
   useEffect(() => {
     if (view.kind !== "candidate") return;
@@ -169,6 +190,7 @@ export function useSessionData(sessionId: string): SessionData {
     notFound,
     error,
     partitions,
+    reorderAudit,
     view,
     setView,
     candidatePartition,

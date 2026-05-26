@@ -5,8 +5,7 @@ use crate::{
     git, partition_settings, repo_store,
     shavings::validate,
     state::AppState,
-    subagents,
-    worktree, AppError, NewShaverRunInsert, NewShavingTrackInsert, ShavingStep,
+    subagents, worktree, AppError, NewShaverRunInsert, NewShavingTrackInsert, ShavingStep,
 };
 use anyhow::{anyhow, Context, Result};
 use eunomio_core::types::*;
@@ -57,8 +56,7 @@ impl Coordinator {
         state: &AppState,
         input: TimelineInput,
     ) -> Result<(), AppError> {
-        let settings =
-            partition_settings::load_for_user(&state.data_dir, &input.user_id).await?;
+        let settings = partition_settings::load_for_user(&state.data_dir, &input.user_id).await?;
         if !settings.coordinator.timeline_enabled {
             return Ok(());
         }
@@ -72,7 +70,8 @@ impl Coordinator {
             return Ok(());
         }
 
-        let git_root = repo_store::session_git_root(state, &input.org_id, &input.session_id).await?;
+        let git_root =
+            repo_store::session_git_root(state, &input.org_id, &input.session_id).await?;
         let worktree_path = provision_shaver_worktree(
             &git_root,
             &state.data_dir,
@@ -110,7 +109,9 @@ impl Coordinator {
                 .shaver_runs()
                 .finish_error(&input.org_id, &generated.run_id, format!("{e}"))
                 .await;
-            return Err(AppError::Internal(anyhow!("timeline worktree cleanup: {e}")));
+            return Err(AppError::Internal(anyhow!(
+                "timeline worktree cleanup: {e}"
+            )));
         }
         if let Err(e) = publish_track(state, &git_root, &input, generated, ref_name).await {
             return Err(e);
@@ -325,6 +326,30 @@ async fn publish_track(
     let run_id = generated.run_id;
     let raw_result = generated.raw_result;
     let head_commit = generated.head_commit;
+    let current = state
+        .datastore
+        .nodes()
+        .target_tree_and_parent(&input.org_id, &input.session_id, &input.target_node_id)
+        .await?;
+    if current.as_ref().map(|(target_tree, _, parent_tree)| {
+        target_tree == &input.target_tree_sha
+            && parent_tree.as_deref() == Some(input.parent_tree_sha.as_str())
+    }) != Some(true)
+    {
+        let _ = state
+            .datastore
+            .shaver_runs()
+            .finish_error(
+                &input.org_id,
+                &run_id,
+                "edge changed before timeline publish".into(),
+            )
+            .await;
+        if let Err(cleanup_err) = git::delete_ref(git_root, &ref_name).await {
+            tracing::warn!(error = %cleanup_err, ref_name = %ref_name, "timeline ref cleanup failed");
+        }
+        return Ok(());
+    }
     let row = NewShavingTrackInsert {
         org_id: input.org_id.clone(),
         session_id: input.session_id.clone(),
@@ -346,10 +371,8 @@ async fn publish_track(
         }
         return Err(e);
     }
-    let result_json = serde_json::to_string(&ShaverResult {
-        head_commit,
-    })
-    .map_err(|e| AppError::Internal(anyhow!("shaver result json: {e}")))?;
+    let result_json = serde_json::to_string(&ShaverResult { head_commit })
+        .map_err(|e| AppError::Internal(anyhow!("shaver result json: {e}")))?;
     if let Err(e) = state
         .datastore
         .shaver_runs()

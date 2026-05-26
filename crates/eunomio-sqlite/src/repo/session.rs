@@ -284,11 +284,17 @@ impl SessionRepo for SqliteSessionRepo {
         let session_id = session_id.to_string();
         self.conn
             .call(move |conn| {
-                let n = conn.execute(
-                    "UPDATE sessions SET session_partition_complete_at = NULL, session_partition_failed_at = NULL WHERE id = ?1 AND org_id = ?2",
+                let tx = conn.transaction()?;
+                let n = tx.execute(
+                    "UPDATE sessions SET session_partition_complete_at = NULL, session_partition_failed_at = NULL, session_partition_finalizing = 0, reorder_audit_json = NULL WHERE id = ?1 AND org_id = ?2",
                     tokio_rusqlite::params![session_id, org_id],
                 )?;
                 require_affected_sqlite(n)?;
+                tx.execute(
+                    "DELETE FROM shaving_tracks WHERE session_id = ?1 AND org_id = ?2",
+                    tokio_rusqlite::params![session_id, org_id],
+                )?;
+                tx.commit()?;
                 Ok(())
             })
             .await
@@ -307,7 +313,7 @@ impl SessionRepo for SqliteSessionRepo {
         self.conn
             .call(move |conn| {
                 let n = conn.execute(
-                    "UPDATE sessions SET session_partition_complete_at = NULL, session_partition_failed_at = COALESCE(session_partition_failed_at, ?3) WHERE id = ?1 AND org_id = ?2",
+                    "UPDATE sessions SET session_partition_complete_at = NULL, session_partition_failed_at = COALESCE(session_partition_failed_at, ?3), session_partition_finalizing = 0 WHERE id = ?1 AND org_id = ?2",
                     tokio_rusqlite::params![session_id, org_id, failed_at],
                 )?;
                 require_affected_sqlite(n)?;
@@ -341,7 +347,7 @@ impl SessionRepo for SqliteSessionRepo {
                     ));
                 }
                 let n = conn.execute(
-                    "UPDATE sessions SET session_partition_complete_at = ?3 WHERE id = ?1 AND org_id = ?2 AND session_partition_complete_at IS NULL AND session_partition_failed_at IS NULL",
+                    "UPDATE sessions SET session_partition_complete_at = ?3, session_partition_finalizing = 0 WHERE id = ?1 AND org_id = ?2 AND session_partition_complete_at IS NULL AND session_partition_failed_at IS NULL",
                     tokio_rusqlite::params![session_id, org_id, completed_at],
                 )?;
                 Ok(n > 0)
@@ -349,6 +355,164 @@ impl SessionRepo for SqliteSessionRepo {
             .await
             .map_not_found()?;
         Ok(updated)
+    }
+
+    async fn try_begin_session_finalization(
+        &self,
+        org_id: &str,
+        session_id: &str,
+    ) -> Result<bool, AppError> {
+        let org_id = org_id.to_string();
+        let session_id = session_id.to_string();
+        let updated = self
+            .conn
+            .call(move |conn| {
+                let exists = {
+                    let mut stmt =
+                        conn.prepare("SELECT 1 FROM sessions WHERE id = ?1 AND org_id = ?2")?;
+                    let mut rows = stmt.query(tokio_rusqlite::params![session_id, org_id])?;
+                    rows.next()?.is_some()
+                };
+                if !exists {
+                    return Err(tokio_rusqlite::Error::Rusqlite(
+                        rusqlite::Error::QueryReturnedNoRows,
+                    ));
+                }
+                let n = conn.execute(
+                    "UPDATE sessions SET session_partition_finalizing = 1 \
+                     WHERE id = ?1 AND org_id = ?2 \
+                       AND session_partition_complete_at IS NULL \
+                       AND session_partition_failed_at IS NULL \
+                       AND session_partition_finalizing = 0",
+                    tokio_rusqlite::params![session_id, org_id],
+                )?;
+                Ok(n > 0)
+            })
+            .await
+            .map_not_found()?;
+        Ok(updated)
+    }
+
+    async fn finish_session_finalization(
+        &self,
+        org_id: &str,
+        session_id: &str,
+    ) -> Result<(), AppError> {
+        let org_id = org_id.to_string();
+        let session_id = session_id.to_string();
+        self.conn
+            .call(move |conn| {
+                let n = conn.execute(
+                    "UPDATE sessions SET session_partition_finalizing = 0 WHERE id = ?1 AND org_id = ?2",
+                    tokio_rusqlite::params![session_id, org_id],
+                )?;
+                require_affected_sqlite(n)?;
+                Ok(())
+            })
+            .await
+            .map_not_found()?;
+        Ok(())
+    }
+
+    async fn list_sessions_needing_finalization(
+        &self,
+        org_id: &str,
+    ) -> Result<Vec<String>, AppError> {
+        let org_id = org_id.to_string();
+        let rows = self
+            .conn
+            .call(move |conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT s.id FROM sessions s \
+                     WHERE s.org_id = ?1 \
+                       AND s.session_partition_complete_at IS NULL \
+                       AND s.session_partition_failed_at IS NULL \
+                       AND NOT EXISTS (SELECT 1 FROM partitions p WHERE p.org_id = s.org_id AND p.session_id = s.id)",
+                )?;
+                let rows = stmt
+                    .query_map(tokio_rusqlite::params![org_id], |row| row.get::<_, String>(0))?
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(rows)
+            })
+            .await
+            .map_err(crate::repo::map_sqlite_err)?;
+        Ok(rows)
+    }
+
+    async fn list_completed_session_ids(&self, org_id: &str) -> Result<Vec<String>, AppError> {
+        let org_id = org_id.to_string();
+        let rows = self
+            .conn
+            .call(move |conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT id FROM sessions WHERE org_id = ?1 AND session_partition_complete_at IS NOT NULL",
+                )?;
+                let rows = stmt
+                    .query_map(tokio_rusqlite::params![org_id], |row| row.get::<_, String>(0))?
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(rows)
+            })
+            .await
+            .map_err(crate::repo::map_sqlite_err)?;
+        Ok(rows)
+    }
+
+    async fn set_reorder_audit(
+        &self,
+        org_id: &str,
+        session_id: &str,
+        audit: Option<ReorderAudit>,
+    ) -> Result<(), AppError> {
+        let org_id = org_id.to_string();
+        let session_id = session_id.to_string();
+        let audit_json = audit
+            .map(|a| serde_json::to_string(&a))
+            .transpose()
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("reorder audit json: {e}")))?;
+        self.conn
+            .call(move |conn| {
+                let n = conn.execute(
+                    "UPDATE sessions SET reorder_audit_json = ?3 WHERE id = ?1 AND org_id = ?2",
+                    tokio_rusqlite::params![session_id, org_id, audit_json],
+                )?;
+                require_affected_sqlite(n)?;
+                Ok(())
+            })
+            .await
+            .map_not_found()?;
+        Ok(())
+    }
+
+    async fn get_reorder_audit(
+        &self,
+        org_id: &str,
+        session_id: &str,
+    ) -> Result<Option<ReorderAudit>, AppError> {
+        let org_id = org_id.to_string();
+        let session_id = session_id.to_string();
+        let row: Option<Option<String>> = self
+            .conn
+            .call(move |conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT reorder_audit_json FROM sessions WHERE id = ?1 AND org_id = ?2",
+                )?;
+                let mut rows = stmt.query(tokio_rusqlite::params![session_id, org_id])?;
+                if let Some(row) = rows.next()? {
+                    Ok(Some(row.get(0)?))
+                } else {
+                    Ok(None)
+                }
+            })
+            .await
+            .map_err(crate::repo::map_sqlite_err)?;
+        let Some(json) = row else {
+            return Err(AppError::NotFound);
+        };
+        json.map(|s| {
+            serde_json::from_str(&s)
+                .map_err(|e| AppError::Internal(anyhow::anyhow!("reorder audit json: {e}")))
+        })
+        .transpose()
     }
 
     #[allow(clippy::too_many_arguments)]

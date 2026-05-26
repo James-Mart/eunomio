@@ -5,8 +5,8 @@ pub mod display;
 pub mod repo;
 
 use eunomio_core::traits::{
-    AuthEventRepo, AuthSessionRepo, Datastore, DiffAuthorizationRepo, EdgeFileViewedRepo,
-    NodeRepo, NodeReviewedRepo, OrgRepo, PartitionRepo, RunRepo, SessionRepo, ShaverRunRepo,
+    AuthEventRepo, AuthSessionRepo, Datastore, DiffAuthorizationRepo, EdgeFileViewedRepo, NodeRepo,
+    NodeReviewedRepo, OrgRepo, PartitionRepo, RunRepo, SessionRepo, ShaverRunRepo,
     ShavingTrackRepo, UserRepo,
 };
 use repo::{

@@ -117,6 +117,32 @@ pub trait SessionRepo: Send + Sync {
         session_id: &str,
         completed_at: i64,
     ) -> Result<bool, AppError>;
+    async fn try_begin_session_finalization(
+        &self,
+        org_id: &str,
+        session_id: &str,
+    ) -> Result<bool, AppError>;
+    async fn finish_session_finalization(
+        &self,
+        org_id: &str,
+        session_id: &str,
+    ) -> Result<(), AppError>;
+    async fn list_sessions_needing_finalization(
+        &self,
+        org_id: &str,
+    ) -> Result<Vec<String>, AppError>;
+    async fn list_completed_session_ids(&self, org_id: &str) -> Result<Vec<String>, AppError>;
+    async fn set_reorder_audit(
+        &self,
+        org_id: &str,
+        session_id: &str,
+        audit: Option<ReorderAudit>,
+    ) -> Result<(), AppError>;
+    async fn get_reorder_audit(
+        &self,
+        org_id: &str,
+        session_id: &str,
+    ) -> Result<Option<ReorderAudit>, AppError>;
     #[allow(clippy::too_many_arguments)]
     async fn insert_seed_nodes(
         &self,
@@ -189,6 +215,12 @@ pub trait NodeRepo: Send + Sync {
         session_id: &str,
         trees: &[&str],
     ) -> Result<bool, AppError>;
+    async fn rewrite_chain(
+        &self,
+        org_id: &str,
+        session_id: &str,
+        rewrites: Vec<NodeRewrite>,
+    ) -> Result<(), AppError>;
 }
 
 #[async_trait]

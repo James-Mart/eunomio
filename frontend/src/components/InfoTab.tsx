@@ -4,7 +4,7 @@ import { CopyIcon } from "@primer/octicons-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { api, type PartitionStrategy } from "@/lib/api";
+import { api, type PartitionStrategy, type ReorderAudit } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +15,7 @@ type Props = {
   nodeTitle: string;
   nodeDescription: string;
   nodeStrategy: PartitionStrategy | null;
+  reorderAudit: ReorderAudit | null;
   onChange?: () => void;
 };
 
@@ -55,6 +56,7 @@ export default function InfoTab({
   nodeTitle,
   nodeDescription,
   nodeStrategy,
+  reorderAudit,
   onChange,
 }: Props) {
   const [title, setTitle] = useState(nodeTitle);
@@ -123,6 +125,52 @@ export default function InfoTab({
           </p>
         </div>
       )}
+      {reorderAudit && (
+        <div className="space-y-1.5 border-t border-border pt-3">
+          <Label>Reorder</Label>
+          <ReorderSummary audit={reorderAudit} nodeId={nodeId} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReorderSummary({
+  audit,
+  nodeId,
+}: {
+  audit: ReorderAudit;
+  nodeId: string;
+}) {
+  const originalIdx = audit.originalOrder.indexOf(nodeId);
+  const appliedIdx = audit.appliedOrder.indexOf(nodeId);
+  const moved = originalIdx >= 0 && appliedIdx >= 0 && originalIdx !== appliedIdx;
+  const related = [...audit.hardDeps, ...audit.softPrefs].filter(
+    (rel) => rel.before === nodeId || rel.after === nodeId,
+  );
+  const status =
+    audit.status === "disabled"
+      ? "Skipped by setting"
+      : audit.status === "fallback"
+        ? "Kept original order"
+        : audit.status === "noChange"
+          ? "No change"
+          : moved
+            ? `Moved ${originalIdx + 1} -> ${appliedIdx + 1}`
+            : "Kept position";
+  return (
+    <div className="space-y-2 text-sm text-muted-foreground">
+      <p>{status}</p>
+      {audit.fallbackReason && <p>{audit.fallbackReason}</p>}
+      {related.length > 0 ? (
+        <div className="space-y-1">
+          {related.slice(0, 3).map((rel, idx) => (
+            <p key={`${rel.before}-${rel.after}-${idx}`}>{rel.reason}</p>
+          ))}
+        </div>
+      ) : audit.rationale.trim() !== "" ? (
+        <p>{audit.rationale}</p>
+      ) : null}
     </div>
   );
 }

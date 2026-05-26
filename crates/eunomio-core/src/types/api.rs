@@ -86,6 +86,38 @@ pub struct Graph {
     pub edges: Vec<GraphEdge>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReorderAudit {
+    pub status: ReorderAuditStatus,
+    pub original_order: Vec<String>,
+    pub proposed_order: Vec<String>,
+    pub applied_order: Vec<String>,
+    pub hard_deps: Vec<ReorderRelation>,
+    pub soft_prefs: Vec<ReorderRelation>,
+    pub uncertain_pairs: Vec<[String; 2]>,
+    pub rationale: String,
+    pub fallback_reason: Option<String>,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ReorderAuditStatus {
+    Disabled,
+    Applied,
+    NoChange,
+    Fallback,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReorderRelation {
+    pub before: String,
+    pub after: String,
+    pub reason: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EdgeViewedFiles {
@@ -235,6 +267,7 @@ pub struct SubagentDefaultPrompts {
     pub planner: String,
     pub constructor: String,
     pub shaver: String,
+    pub reorder: String,
 }
 
 #[derive(Debug, Serialize)]

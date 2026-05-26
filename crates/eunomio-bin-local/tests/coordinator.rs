@@ -1421,6 +1421,46 @@ async fn finish_indivisible_partition_emits_finished() {
 }
 
 #[tokio::test]
+async fn reorder_disabled_records_audit_on_completion() {
+    let runner = Arc::new(FakeSubagentRunner::new(vec![
+        survey_script(),
+        plan_indivisible_script("already small"),
+    ]));
+    let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    let (status, body) = app
+        .auth_json(
+            "PATCH",
+            "/api/partition-settings",
+            json!({ "coordinator": { "reorderEnabled": false } }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
+    let mut rx = app.state.coordinator.subscribe(&session_id);
+    let (_, body) = app
+        .auth_empty(
+            "POST",
+            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
+        )
+        .await;
+    let partition_id = body["id"].as_str().unwrap().to_string();
+
+    drive_partition_to_plan_review(&app, &partition_id).await;
+    let (status, body) = app
+        .auth_empty("POST", &format!("/api/partitions/{partition_id}/finish"))
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    let _ = wait_for_session_partition_complete(&mut rx, &session_id).await;
+
+    let (status, audit) = app
+        .auth_empty("GET", &format!("/api/sessions/{session_id}/reorder-audit"))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(audit["status"], "disabled");
+    assert_eq!(audit["fallbackReason"], serde_json::Value::Null);
+}
+
+#[tokio::test]
 async fn finish_rejects_split_plan() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
         survey_script(),
@@ -1729,6 +1769,20 @@ impl SubagentRunner for KindAwareRunner {
                     .send(HelperEvent::Finished {
                         run_id,
                         result: "```json\n{\"headCommit\":\"missing\"}\n```".into(),
+                        duration_ms: None,
+                    })
+                    .await;
+            });
+            return Ok(RunHandle {
+                cancel: Box::new(|| {}),
+            });
+        } else if request.prompt.contains("**Reorder**") {
+            let run_id = request.run_id.clone();
+            tokio::spawn(async move {
+                let _ = tx
+                    .send(HelperEvent::Finished {
+                        run_id,
+                        result: String::new(),
                         duration_ms: None,
                     })
                     .await;

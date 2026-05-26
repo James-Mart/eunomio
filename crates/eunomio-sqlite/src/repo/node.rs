@@ -330,4 +330,46 @@ impl NodeRepo for SqliteNodeRepo {
             .await.map_err(crate::repo::map_sqlite_err)?;
         Ok(known)
     }
+
+    async fn rewrite_chain(
+        &self,
+        org_id: &str,
+        session_id: &str,
+        rewrites: Vec<NodeRewrite>,
+    ) -> Result<(), AppError> {
+        let org_id = org_id.to_string();
+        let session_id = session_id.to_string();
+        self.conn
+            .call(move |conn| {
+                let tx = conn.transaction()?;
+                for row in rewrites {
+                    let n = tx.execute(
+                        "UPDATE nodes SET parent_node_id = ?1, tree_sha = ?2, commit_sha = ?3 \
+                         WHERE org_id = ?4 AND session_id = ?5 AND node_id = ?6",
+                        tokio_rusqlite::params![
+                            row.parent_node_id,
+                            row.tree_sha,
+                            row.commit_sha,
+                            org_id,
+                            session_id,
+                            row.node_id
+                        ],
+                    )?;
+                    require_affected_sqlite(n)?;
+                }
+                tx.execute(
+                    "DELETE FROM edge_file_viewed WHERE org_id = ?1 AND session_id = ?2",
+                    tokio_rusqlite::params![org_id, session_id],
+                )?;
+                tx.execute(
+                    "DELETE FROM node_reviewed WHERE org_id = ?1 AND session_id = ?2",
+                    tokio_rusqlite::params![org_id, session_id],
+                )?;
+                tx.commit()?;
+                Ok(())
+            })
+            .await
+            .map_not_found()?;
+        Ok(())
+    }
 }

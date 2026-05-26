@@ -71,13 +71,7 @@ impl NodeReviewedRepo for SqliteNodeReviewedRepo {
                          VALUES (?1, ?2, ?3, ?4, ?5) \
                          ON CONFLICT(org_id, user_id, session_id, node_id) \
                          DO UPDATE SET reviewed_at = excluded.reviewed_at",
-                        tokio_rusqlite::params![
-                            org_id,
-                            user_id,
-                            session_id,
-                            node_id,
-                            reviewed_at
-                        ],
+                        tokio_rusqlite::params![org_id, user_id, session_id, node_id, reviewed_at],
                     )?;
                 } else {
                     conn.execute(
@@ -141,6 +135,10 @@ mod tests {
         repo.set_reviewed("local", "u1", "s1", "n1", false, 1)
             .await
             .unwrap();
-        assert!(repo.list_node_ids("local", "u1", "s1").await.unwrap().is_empty());
+        assert!(repo
+            .list_node_ids("local", "u1", "s1")
+            .await
+            .unwrap()
+            .is_empty());
     }
 }

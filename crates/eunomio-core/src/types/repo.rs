@@ -23,6 +23,14 @@ pub struct NodeBasic {
 }
 
 #[derive(Debug, Clone)]
+pub struct NodeRewrite {
+    pub node_id: String,
+    pub parent_node_id: String,
+    pub tree_sha: String,
+    pub commit_sha: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct SiblingInfo {
     pub id: String,
     pub target_node_id: String,

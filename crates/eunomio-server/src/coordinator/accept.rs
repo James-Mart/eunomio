@@ -5,7 +5,7 @@ use eunomio_core::types::*;
 use std::path::PathBuf;
 use uuid::Uuid;
 
-use super::{ensure_at_gate, parse_split_plan, shaver::TimelineInput, Coordinator};
+use super::{ensure_at_gate, parse_split_plan, Coordinator};
 
 impl Coordinator {
     pub async fn accept_survey(
@@ -281,12 +281,12 @@ impl Coordinator {
             });
         }
 
-        let (target_node, parent_node) = state
+        let (_target_node, parent_node) = state
             .datastore
             .nodes()
             .target_and_parent(org_id, &row.session_id, &row.target_node_id)
             .await?;
-        let parent = parent_node.ok_or_else(|| {
+        let _parent = parent_node.ok_or_else(|| {
             AppError::BadRequest("target has no parent; cannot finish partition".into())
         })?;
         self.inner.runs.mark_abandoning(partition_id);
@@ -315,26 +315,6 @@ impl Coordinator {
         self.inner.runs.unmark_abandoning(partition_id);
         self.maybe_mark_session_partition_complete(state, org_id, &row.session_id)
             .await?;
-        let target_graph = state
-            .datastore
-            .nodes()
-            .get(org_id, &row.session_id, &target_node.node_id)
-            .await?
-            .ok_or(AppError::NotFound)?;
-        self.maybe_spawn_timeline_generation(
-            state.clone(),
-            TimelineInput {
-                org_id: org_id.to_string(),
-                user_id: row.user_id,
-                session_id: row.session_id,
-                target_node_id: target_node.node_id,
-                target_title: target_graph.title,
-                target_description: target_graph.description,
-                parent_tree_sha: parent.tree_sha,
-                parent_commit_sha: parent.commit_sha,
-                target_tree_sha: target_node.tree_sha,
-            },
-        );
         Ok(())
     }
 
@@ -379,30 +359,8 @@ impl Coordinator {
         org_id: &str,
         session_id: &str,
     ) -> Result<(), AppError> {
-        let remaining = state
-            .datastore
-            .partitions()
-            .list(org_id, session_id, None)
-            .await?;
-        if !remaining.is_empty() {
-            return Ok(());
-        }
-        let completed_at = eunomio_core::unix_seconds();
-        let marked = state
-            .datastore
-            .sessions()
-            .mark_session_partition_complete(org_id, session_id, completed_at)
-            .await?;
-        if marked {
-            self.emit(
-                session_id,
-                SseEvent::SessionPartitionComplete {
-                    session_id: session_id.to_string(),
-                    completed_at,
-                },
-            );
-        }
-        Ok(())
+        self.maybe_finalize_session_partition_pass(state, org_id, session_id)
+            .await
     }
 
     fn maybe_spawn_fanout(
