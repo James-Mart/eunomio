@@ -252,6 +252,7 @@ impl Coordinator {
             prompt: prompt_for_helper,
             run_id: run_id.clone(),
             cursor_api_key: Some(cursor_api_key),
+            env: Default::default(),
         };
 
         let handle = self.inner.runner.run(request, tx_helper).await?;

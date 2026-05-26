@@ -343,6 +343,7 @@ impl Coordinator {
                     prompt,
                     run_id: Uuid::new_v4().to_string(),
                     cursor_api_key: Some(cursor_api_key),
+                    env: Default::default(),
                 },
                 tx,
             )

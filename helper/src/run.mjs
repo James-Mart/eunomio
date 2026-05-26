@@ -35,8 +35,9 @@ export async function run() {
     process.exit(1);
   }
 
-  const { model, cwd, prompt, runId, cursorApiKey } = request;
+  const { model, cwd, prompt, runId, cursorApiKey, env } = request;
   delete process.env.CURSOR_API_KEY;
+  applyEnv(env);
 
   if (typeof runId !== "string" || runId.length === 0) {
     await emit({ type: "error", runId: "", code: "bad_request", message: "runId required" });
@@ -138,6 +139,16 @@ export async function run() {
     await cleanup();
   }
   process.exit(0);
+}
+
+function applyEnv(env) {
+  if (env == null) return;
+  if (typeof env !== "object" || Array.isArray(env)) return;
+  for (const [key, value] of Object.entries(env)) {
+    if (typeof key !== "string" || !/^[A-Z_][A-Z0-9_]*$/.test(key)) continue;
+    if (typeof value !== "string") continue;
+    process.env[key] = value;
+  }
 }
 
 function extractFinalText(result) {

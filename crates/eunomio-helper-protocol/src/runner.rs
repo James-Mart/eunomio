@@ -2,6 +2,7 @@
 
 use eunomio_core::{traits::quota::TokenUsage, types::CursorModel, AppError};
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use tokio::sync::mpsc;
 
@@ -14,6 +15,8 @@ pub struct RunRequest {
     pub run_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor_api_key: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone)]

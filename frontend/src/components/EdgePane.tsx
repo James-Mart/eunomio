@@ -391,7 +391,7 @@ export default function EdgePane(props: Props) {
               {...{ [FILE_DATA_ATTR]: file.name }}
               onClick={onWrapperClick}
               className={cn(
-                "my-2 overflow-hidden rounded-md",
+                "my-2 rounded-md",
                 activeFilePath === file.name && "border-2 border-link",
                 isViewed && "opacity-80",
               )}

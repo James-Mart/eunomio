@@ -7,6 +7,7 @@ use tokio::sync::{mpsc, Mutex};
 
 pub struct FakeSubagentRunner {
     scripts: Mutex<Vec<Vec<HelperEvent>>>,
+    requests: Mutex<Vec<RunRequest>>,
     spawned: AtomicUsize,
 }
 
@@ -14,6 +15,7 @@ impl FakeSubagentRunner {
     pub fn new(scripts: Vec<Vec<HelperEvent>>) -> Self {
         Self {
             scripts: Mutex::new(scripts),
+            requests: Mutex::new(Vec::new()),
             spawned: AtomicUsize::new(0),
         }
     }
@@ -29,6 +31,10 @@ impl FakeSubagentRunner {
     pub fn spawn_count(&self) -> usize {
         self.spawned.load(Ordering::SeqCst)
     }
+
+    pub async fn requests(&self) -> Vec<RunRequest> {
+        self.requests.lock().await.clone()
+    }
 }
 
 #[async_trait::async_trait]
@@ -39,6 +45,7 @@ impl SubagentRunner for FakeSubagentRunner {
         tx: mpsc::Sender<HelperEvent>,
     ) -> Result<RunHandle, AppError> {
         let run_id = request.run_id.clone();
+        self.requests.lock().await.push(request.clone());
         let mut scripts = self.scripts.lock().await;
         let events = if scripts.is_empty() {
             vec![HelperEvent::Finished {

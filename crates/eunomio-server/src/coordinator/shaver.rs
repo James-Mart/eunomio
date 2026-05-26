@@ -10,6 +10,7 @@ use crate::{
 use anyhow::{anyhow, Context, Result};
 use eunomio_core::types::*;
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tokio::sync::mpsc;
 use uuid::Uuid;
@@ -127,16 +128,6 @@ impl Coordinator {
         worktree_path: &Path,
         input: &TimelineInput,
     ) -> Result<GeneratedTimeline, AppError> {
-        git::run_in(worktree_path, &["config", "user.name", "Eunomio"])
-            .await
-            .map_err(|e| AppError::Internal(anyhow!("timeline git config user.name: {e}")))?;
-        git::run_in(
-            worktree_path,
-            &["config", "user.email", "timeline@eunomio.local"],
-        )
-        .await
-        .map_err(|e| AppError::Internal(anyhow!("timeline git config user.email: {e}")))?;
-
         let template = &self.inner.subagents.shaver.template;
         let ctx = subagents::shaver::ShaverContext {
             worktree_path: worktree_path.display().to_string(),
@@ -223,6 +214,7 @@ impl Coordinator {
                     prompt,
                     run_id: run_id.to_string(),
                     cursor_api_key: Some(cursor_api_key),
+                    env: timeline_git_env(),
                 },
                 tx,
             )
@@ -282,6 +274,45 @@ impl Coordinator {
             head_commit: parsed.head_commit,
             steps,
         })
+    }
+}
+
+fn timeline_git_env() -> BTreeMap<String, String> {
+    [
+        ("GIT_AUTHOR_NAME", "Eunomio"),
+        ("GIT_AUTHOR_EMAIL", "timeline@eunomio.local"),
+        ("GIT_COMMITTER_NAME", "Eunomio"),
+        ("GIT_COMMITTER_EMAIL", "timeline@eunomio.local"),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_string(), v.to_string()))
+    .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::timeline_git_env;
+
+    #[test]
+    fn timeline_git_env_supplies_commit_identity() {
+        let env = timeline_git_env();
+
+        assert_eq!(
+            env.get("GIT_AUTHOR_NAME").map(String::as_str),
+            Some("Eunomio")
+        );
+        assert_eq!(
+            env.get("GIT_AUTHOR_EMAIL").map(String::as_str),
+            Some("timeline@eunomio.local")
+        );
+        assert_eq!(
+            env.get("GIT_COMMITTER_NAME").map(String::as_str),
+            Some("Eunomio")
+        );
+        assert_eq!(
+            env.get("GIT_COMMITTER_EMAIL").map(String::as_str),
+            Some("timeline@eunomio.local")
+        );
     }
 }
 
