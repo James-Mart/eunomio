@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-import { memo } from "react";
+import { memo, useCallback, useRef } from "react";
 import {
   AlertIcon,
   CheckCircleIcon,
@@ -10,6 +10,7 @@ import {
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 
 import { CANDIDATE_SLICE_ID } from "@/components/session/layout";
+import { burstConfettiAt } from "@/lib/burstConfetti";
 import { cn } from "@/lib/utils";
 
 export type NodePartitionGlance = {
@@ -37,11 +38,23 @@ function isTerminalLabel(label: string): boolean {
 
 function NodeCard({ id, data, selected, onReviewedChange }: NodeCardProps) {
   const { positionLabel, partitionGlance, reviewed } = data;
+  const reviewedToggleRef = useRef<HTMLButtonElement>(null);
   const isCanonicalShell = onReviewedChange !== undefined;
   const showReviewedControl = reviewed !== undefined;
   const count = partitionGlance?.count ?? 0;
   const isCandidateSlice = id === CANDIDATE_SLICE_ID;
   const terminal = isTerminalLabel(positionLabel);
+
+  const handleReviewedToggle = useCallback(() => {
+    if (reviewed) {
+      onReviewedChange?.(false);
+      return;
+    }
+    if (reviewedToggleRef.current) {
+      burstConfettiAt(reviewedToggleRef.current);
+    }
+    onReviewedChange?.(true);
+  }, [onReviewedChange, reviewed]);
 
   return (
     <>
@@ -75,14 +88,17 @@ function NodeCard({ id, data, selected, onReviewedChange }: NodeCardProps) {
             onPointerDown={stopNodeSelection}
           >
             <button
+              ref={reviewedToggleRef}
               type="button"
               className={cn(
-                "flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground",
-                reviewed && "text-success",
+                "flex h-6 w-6 shrink-0 items-center justify-center rounded-sm transition-colors",
+                reviewed
+                  ? "text-primary/70 hover:text-primary"
+                  : "text-muted-foreground hover:text-foreground",
               )}
               aria-label="Mark node as viewed"
               aria-pressed={reviewed}
-              onClick={() => onReviewedChange?.(!reviewed)}
+              onClick={handleReviewedToggle}
             >
               {reviewed ? (
                 <CheckCircleIcon className="h-4 w-4" />
