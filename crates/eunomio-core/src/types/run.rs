@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "lowercase")]
 pub enum RunKind {
     #[default]
-    Survey,
     Plan,
     Construct,
 }
@@ -15,7 +14,6 @@ pub enum RunKind {
 impl RunKind {
     pub fn as_str(&self) -> &'static str {
         match self {
-            RunKind::Survey => "survey",
             RunKind::Plan => "plan",
             RunKind::Construct => "construct",
         }
@@ -23,7 +21,6 @@ impl RunKind {
 
     pub fn parse(s: &str) -> Option<Self> {
         match s {
-            "survey" => Some(RunKind::Survey),
             "plan" => Some(RunKind::Plan),
             "construct" => Some(RunKind::Construct),
             _ => None,
@@ -32,7 +29,6 @@ impl RunKind {
 
     pub fn phase(&self) -> super::partition::PhaseName {
         match self {
-            RunKind::Survey => super::partition::PhaseName::Survey,
             RunKind::Plan => super::partition::PhaseName::Plan,
             RunKind::Construct => super::partition::PhaseName::Construct,
         }
@@ -81,12 +77,6 @@ pub struct StartRunRequest {
     pub strategy_override: Option<PartitionStrategy>,
     #[serde(default)]
     pub prompt_override: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AcceptSurveyRequest {
-    pub run_id: String,
 }
 
 #[derive(Debug, Deserialize)]

@@ -36,11 +36,12 @@ async fn seed_fixture(state: &eunomio_server::state::AppState) -> Fixture {
             org_id.clone(),
             user_id.clone(),
             session_id.clone(),
+            "local:/tmp/repo".into(),
             "/tmp/repo".into(),
-            "/tmp/repo".into(),
-            true,
             "main".into(),
             "feature".into(),
+            "e".repeat(40),
+            "f".repeat(40),
             "a".repeat(40),
             "b".repeat(40),
             base_node_id.clone(),
@@ -61,7 +62,7 @@ async fn seed_fixture(state: &eunomio_server::state::AppState) -> Fixture {
             session_id: session_id.clone(),
             target_node_id: final_node_id.clone(),
             worktree_path: "/tmp/worktree".into(),
-            initial_phase: PhaseName::Survey,
+            initial_phase: PhaseName::Plan,
             remaining_depth: None,
             now,
         })
@@ -77,7 +78,7 @@ async fn seed_fixture(state: &eunomio_server::state::AppState) -> Fixture {
             partition_id: partition_id.clone(),
             session_id: session_id.clone(),
             target_node_id: final_node_id.clone(),
-            kind: RunKind::Survey,
+            kind: RunKind::Plan,
             parent_run_id: None,
             prompt_text: "prompt".into(),
             started_at: now,
@@ -273,13 +274,6 @@ async fn partition_repo_wrong_org_returns_not_found() {
         app.state
             .datastore
             .partitions()
-            .accept_survey(EVIL_ORG, &fx.partition_id, "{}".into())
-            .await,
-    );
-    assert_not_found(
-        app.state
-            .datastore
-            .partitions()
             .accept_plan(
                 EVIL_ORG,
                 &fx.partition_id,
@@ -299,7 +293,7 @@ async fn partition_repo_wrong_org_returns_not_found() {
         app.state
             .datastore
             .partitions()
-            .set_phase_running(EVIL_ORG, &fx.partition_id, PhaseName::Survey)
+            .set_phase_running(EVIL_ORG, &fx.partition_id, PhaseName::Plan)
             .await,
     );
     assert_not_found(
@@ -463,21 +457,6 @@ async fn node_repo_wrong_org_returns_not_found() {
         app.state
             .datastore
             .nodes()
-            .update_title(EVIL_ORG, &fx.session_id, &fx.final_node_id, "x")
-            .await,
-    );
-    assert!(app
-        .state
-        .datastore
-        .nodes()
-        .walk_to_base(EVIL_ORG, &fx.session_id, &fx.final_node_id)
-        .await
-        .unwrap()
-        .is_empty());
-    assert_not_found_row(
-        app.state
-            .datastore
-            .nodes()
             .session_for_node_id(EVIL_ORG, &fx.final_node_id)
             .await,
     );
@@ -551,11 +530,12 @@ async fn insert_carries_org_and_user_ids() {
             org_id.clone(),
             user_id.clone(),
             session_id.clone(),
+            "local:/tmp/repo".into(),
             "/tmp/repo".into(),
-            "/tmp/repo".into(),
-            true,
             "main".into(),
             "feature".into(),
+            "e".repeat(40),
+            "f".repeat(40),
             "a".repeat(40),
             "b".repeat(40),
             base_node_id,
@@ -586,7 +566,7 @@ async fn insert_carries_org_and_user_ids() {
             session_id: session_id.clone(),
             target_node_id: final_node_id.clone(),
             worktree_path: "/tmp/wt".into(),
-            initial_phase: PhaseName::Survey,
+            initial_phase: PhaseName::Plan,
             remaining_depth: Some(2),
             now,
         })

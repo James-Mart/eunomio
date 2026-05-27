@@ -130,8 +130,8 @@ mod tests {
                 [],
             )?;
             c.execute(
-                "INSERT INTO sessions (id, org_id, user_id, normalized_remote, literal_remote, is_local, base_ref, source_ref, base_tree, final_tree, base_node_id, created_at) \
-                 VALUES ('s1', 'local', 'u1', 'local:/tmp', 'local:/tmp', 1, 'main', 'main', 't0', 't1', 'base', 1)",
+                "INSERT INTO sessions (id, org_id, user_id, normalized_remote, literal_remote, base_ref, source_ref, resolved_base_commit, resolved_source_commit, base_tree, final_tree, base_node_id, created_at) \
+                 VALUES ('s1', 'local', 'u1', 'local:/tmp', '/tmp', 'main', 'main', 'c0', 'c1', 't0', 't1', 'base', 1)",
                 [],
             )?;
             c.execute(

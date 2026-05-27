@@ -36,22 +36,25 @@ import MobileShareCard from "@/components/MobileShareCard";
 import { api, type ResolvedPullRequest, type Session } from "@/lib/api";
 import { createSessionFromResolved } from "@/lib/createSessionFromPullRequest";
 import { formatError } from "@/lib/errors";
-import { isGithubPullRequestUrl } from "@/lib/remoteRepoHost";
+import {
+  isGithubPullRequestUrl,
+  normalizeGithubPullRequestUrl,
+} from "@/lib/remoteRepoHost";
 import { useAbortableEffect } from "@/lib/useAbortableEffect";
 
-const branchSchema = z.object({
+const repositorySchema = z.object({
   remoteUrl: z.string().min(1, "repository is required"),
-  sourceRef: z.string().min(1, "source branch is required"),
-  baseRef: z.string().min(1, "base branch is required"),
+  sourceRef: z.string().min(1, "source ref is required"),
+  baseRef: z.string().min(1, "base ref is required"),
 });
 
 const prSchema = z.object({
   pullRequestUrl: z.string(),
 });
 
-type BranchFormValues = z.infer<typeof branchSchema>;
+type RepositoryFormValues = z.infer<typeof repositorySchema>;
 type PrFormValues = z.infer<typeof prSchema>;
-type CreateMode = "pr" | "branch";
+type CreateMode = "pr" | "repository";
 type SubmitPhase = "idle" | "fetching" | "creating";
 type ValidationStatus = "idle" | "pending" | "valid" | "invalid";
 
@@ -61,7 +64,7 @@ type TabValidation = {
 };
 
 const PR_RESOLVE_DEBOUNCE_MS = 400;
-const BRANCH_VALIDATE_DEBOUNCE_MS = 1000;
+const REPOSITORY_VALIDATE_DEBOUNCE_MS = 1000;
 
 const emptyValidation = (): TabValidation => ({ status: "idle", error: null });
 
@@ -295,15 +298,16 @@ function CreateSessionDialogContent({ onCreated }: { onCreated: (sessionId: stri
   const [submitting, setSubmitting] = useState(false);
   const [phase, setPhase] = useState<SubmitPhase>("idle");
   const [prValidation, setPrValidation] = useState<TabValidation>(emptyValidation);
-  const [branchValidation, setBranchValidation] = useState<TabValidation>(emptyValidation);
+  const [repositoryValidation, setRepositoryValidation] = useState<TabValidation>(emptyValidation);
   const [resolvedPr, setResolvedPr] = useState<ResolvedPullRequest | null>(null);
   const prGenRef = useRef(0);
-  const branchGenRef = useRef(0);
+  const repositoryGenRef = useRef(0);
   const prTimerRef = useRef<number | null>(null);
-  const branchTimerRef = useRef<number | null>(null);
+  const repositoryTimerRef = useRef<number | null>(null);
+  const prInputRef = useRef<HTMLInputElement | null>(null);
 
-  const branchForm = useForm<BranchFormValues>({
-    resolver: zodResolver(branchSchema),
+  const repositoryForm = useForm<RepositoryFormValues>({
+    resolver: zodResolver(repositorySchema),
     defaultValues: { remoteUrl: "", sourceRef: "", baseRef: "origin/main" },
   });
 
@@ -313,27 +317,27 @@ function CreateSessionDialogContent({ onCreated }: { onCreated: (sessionId: stri
   });
 
   const pullRequestUrl = prForm.watch("pullRequestUrl");
-  const branchRemoteUrl = branchForm.watch("remoteUrl");
-  const branchSourceRef = branchForm.watch("sourceRef");
-  const branchBaseRef = branchForm.watch("baseRef");
+  const repositoryRemoteUrl = repositoryForm.watch("remoteUrl");
+  const repositorySourceRef = repositoryForm.watch("sourceRef");
+  const repositoryBaseRef = repositoryForm.watch("baseRef");
 
   useAbortableEffect(async (signal) => {
     try {
       const hints = await api.getRepoHints();
       if (signal.aborted) return;
-      if (hints.suggestedRemoteUrl && !branchForm.getValues("remoteUrl")) {
-        branchForm.setValue("remoteUrl", hints.suggestedRemoteUrl);
+      if (hints.suggestedRemoteUrl && !repositoryForm.getValues("remoteUrl")) {
+        repositoryForm.setValue("remoteUrl", hints.suggestedRemoteUrl);
       }
-      if (hints.suggestedSourceRef && !branchForm.getValues("sourceRef")) {
-        branchForm.setValue("sourceRef", hints.suggestedSourceRef);
+      if (hints.suggestedSourceRef && !repositoryForm.getValues("sourceRef")) {
+        repositoryForm.setValue("sourceRef", hints.suggestedSourceRef);
       }
-      if (hints.suggestedBaseRef && branchForm.getValues("baseRef") === "origin/main") {
-        branchForm.setValue("baseRef", hints.suggestedBaseRef);
+      if (hints.suggestedBaseRef && repositoryForm.getValues("baseRef") === "origin/main") {
+        repositoryForm.setValue("baseRef", hints.suggestedBaseRef);
       }
     } catch {
       // Non-fatal; user can fill the field manually.
     }
-  }, [branchForm]);
+  }, [repositoryForm]);
 
   useEffect(() => {
     if (prTimerRef.current) {
@@ -342,6 +346,7 @@ function CreateSessionDialogContent({ onCreated }: { onCreated: (sessionId: stri
     }
 
     const trimmed = pullRequestUrl.trim();
+    const normalized = normalizeGithubPullRequestUrl(trimmed);
 
     if (trimmed === "") {
       setPrValidation(emptyValidation());
@@ -349,7 +354,7 @@ function CreateSessionDialogContent({ onCreated }: { onCreated: (sessionId: stri
       return;
     }
 
-    if (!isGithubPullRequestUrl(trimmed)) {
+    if (!normalized) {
       setPrValidation({ status: "invalid", error: null });
       setResolvedPr(null);
       return;
@@ -363,7 +368,7 @@ function CreateSessionDialogContent({ onCreated }: { onCreated: (sessionId: stri
       void (async () => {
         setPrValidation({ status: "pending", error: null });
         try {
-          const resolved = await api.resolvePullRequest(trimmed);
+          const resolved = await api.resolvePullRequest(normalized);
           if (gen !== prGenRef.current) return;
           setResolvedPr(resolved);
           setPrValidation({ status: "valid", error: null });
@@ -386,47 +391,47 @@ function CreateSessionDialogContent({ onCreated }: { onCreated: (sessionId: stri
   }, [pullRequestUrl]);
 
   useEffect(() => {
-    if (branchTimerRef.current) {
-      window.clearTimeout(branchTimerRef.current);
-      branchTimerRef.current = null;
+    if (repositoryTimerRef.current) {
+      window.clearTimeout(repositoryTimerRef.current);
+      repositoryTimerRef.current = null;
     }
 
-    const remoteUrl = branchRemoteUrl.trim();
-    const sourceRef = branchSourceRef.trim();
-    const baseRef = branchBaseRef.trim();
+    const remoteUrl = repositoryRemoteUrl.trim();
+    const sourceRef = repositorySourceRef.trim();
+    const baseRef = repositoryBaseRef.trim();
 
     if (!remoteUrl || !sourceRef || !baseRef) {
-      setBranchValidation(emptyValidation());
+      setRepositoryValidation(emptyValidation());
       return;
     }
 
-    setBranchValidation({ status: "idle", error: null });
+    setRepositoryValidation({ status: "idle", error: null });
 
-    const gen = ++branchGenRef.current;
-    branchTimerRef.current = window.setTimeout(() => {
+    const gen = ++repositoryGenRef.current;
+    repositoryTimerRef.current = window.setTimeout(() => {
       void (async () => {
-        setBranchValidation({ status: "pending", error: null });
+        setRepositoryValidation({ status: "pending", error: null });
         try {
           await api.validateSession(remoteUrl, baseRef, sourceRef);
-          if (gen !== branchGenRef.current) return;
-          setBranchValidation({ status: "valid", error: null });
+          if (gen !== repositoryGenRef.current) return;
+          setRepositoryValidation({ status: "valid", error: null });
         } catch (e) {
-          if (gen !== branchGenRef.current) return;
-          setBranchValidation({
+          if (gen !== repositoryGenRef.current) return;
+          setRepositoryValidation({
             status: "invalid",
             error: formatError(e, "Validation failed"),
           });
         }
       })();
-    }, BRANCH_VALIDATE_DEBOUNCE_MS);
+    }, REPOSITORY_VALIDATE_DEBOUNCE_MS);
 
     return () => {
-      if (branchTimerRef.current) {
-        window.clearTimeout(branchTimerRef.current);
-        branchTimerRef.current = null;
+      if (repositoryTimerRef.current) {
+        window.clearTimeout(repositoryTimerRef.current);
+        repositoryTimerRef.current = null;
       }
     };
-  }, [branchRemoteUrl, branchSourceRef, branchBaseRef]);
+  }, [repositoryRemoteUrl, repositorySourceRef, repositoryBaseRef]);
 
   const createFromRefs = async (remoteUrl: string, baseRef: string, sourceRef: string) => {
     setPhase("fetching");
@@ -436,8 +441,8 @@ function CreateSessionDialogContent({ onCreated }: { onCreated: (sessionId: stri
     onCreated(session.id);
   };
 
-  const onBranchSubmit = async (values: BranchFormValues) => {
-    if (branchValidation.status !== "valid") return;
+  const onRepositorySubmit = async (values: RepositoryFormValues) => {
+    if (repositoryValidation.status !== "valid") return;
     setSubmitting(true);
     try {
       await createFromRefs(values.remoteUrl, values.baseRef, values.sourceRef);
@@ -471,21 +476,26 @@ function CreateSessionDialogContent({ onCreated }: { onCreated: (sessionId: stri
       ? "Resolving PR…"
       : "Create session";
 
-  const branchButtonLabel = submitting
+  const repositoryButtonLabel = submitting
     ? submitPhaseLabel
-    : branchValidation.status === "pending"
+    : repositoryValidation.status === "pending"
       ? "Validating…"
       : "Create session";
 
-  const showBranchHint =
+  const showRepositoryHint =
     pullRequestUrl.trim() !== "" && !isGithubPullRequestUrl(pullRequestUrl);
 
   return (
-    <DialogContent>
+    <DialogContent
+      onOpenAutoFocus={(e) => {
+        e.preventDefault();
+        prInputRef.current?.focus();
+      }}
+    >
       <DialogHeader>
         <DialogTitle>Create session</DialogTitle>
         <DialogDescription>
-          Paste a GitHub pull request link, or enter a repository and branch refs manually.
+          Paste a GitHub pull request link, or enter a repository and refs manually.
         </DialogDescription>
       </DialogHeader>
       <Tabs
@@ -497,8 +507,8 @@ function CreateSessionDialogContent({ onCreated }: { onCreated: (sessionId: stri
           <TabsTrigger variant="underline" value="pr">
             Pull Request
           </TabsTrigger>
-          <TabsTrigger variant="underline" value="branch">
-            Branch
+          <TabsTrigger variant="underline" value="repository">
+            Repository
           </TabsTrigger>
         </TabsList>
         <TabsContent value="pr" className="mt-4">
@@ -520,11 +530,15 @@ function CreateSessionDialogContent({ onCreated }: { onCreated: (sessionId: stri
                       <Input
                         placeholder="https://github.com/org/repo/pull/123"
                         {...field}
+                        ref={(el) => {
+                          field.ref(el);
+                          prInputRef.current = el;
+                        }}
                       />
                     </FormControl>
-                    {showBranchHint && (
+                    {showRepositoryHint && (
                       <p className="text-sm text-destructive">
-                        For local repos or git hosts other than GitHub, use the Branch tab.
+                        For local repos or git hosts other than GitHub, use the Repository tab.
                       </p>
                     )}
                     {prValidation.error && (
@@ -544,11 +558,11 @@ function CreateSessionDialogContent({ onCreated }: { onCreated: (sessionId: stri
             </form>
           </Form>
         </TabsContent>
-        <TabsContent value="branch" className="mt-4">
-          <Form {...branchForm}>
-            <form onSubmit={branchForm.handleSubmit(onBranchSubmit)} className="space-y-4">
+        <TabsContent value="repository" className="mt-4">
+          <Form {...repositoryForm}>
+            <form onSubmit={repositoryForm.handleSubmit(onRepositorySubmit)} className="space-y-4">
               <FormField
-                control={branchForm.control}
+                control={repositoryForm.control}
                 name="remoteUrl"
                 render={({ field }) => (
                   <FormItem>
@@ -564,40 +578,40 @@ function CreateSessionDialogContent({ onCreated }: { onCreated: (sessionId: stri
                 )}
               />
               <FormField
-                control={branchForm.control}
+                control={repositoryForm.control}
                 name="sourceRef"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>source branch</FormLabel>
+                    <FormLabel>source ref</FormLabel>
                     <FormControl>
-                      <Input placeholder="feature-branch" className="font-mono" {...field} />
+                      <Input placeholder="feature-branch, tag, or commit" className="font-mono" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
               <FormField
-                control={branchForm.control}
+                control={repositoryForm.control}
                 name="baseRef"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>base branch</FormLabel>
+                    <FormLabel>base ref</FormLabel>
                     <FormControl>
-                      <Input placeholder="origin/main" className="font-mono" {...field} />
+                      <Input placeholder="origin/main, tag, or commit" className="font-mono" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              {branchValidation.error && (
-                <p className="text-sm text-destructive">{branchValidation.error}</p>
+              {repositoryValidation.error && (
+                <p className="text-sm text-destructive">{repositoryValidation.error}</p>
               )}
               <Button
                 type="submit"
-                disabled={submitting || branchValidation.status !== "valid"}
+                disabled={submitting || repositoryValidation.status !== "valid"}
                 className="w-full"
               >
-                {mode === "branch" ? branchButtonLabel : "Create session"}
+                {mode === "repository" ? repositoryButtonLabel : "Create session"}
               </Button>
             </form>
           </Form>

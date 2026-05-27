@@ -5,7 +5,8 @@ use crate::{
     git, partition_settings, repo_store,
     shavings::validate,
     state::AppState,
-    subagents, worktree, AppError, NewShaverRunInsert, NewShavingTrackInsert, ShavingStep,
+    storage_path, subagents, worktree, AppError, NewShaverRunInsert, NewShavingTrackInsert,
+    ShavingStep,
 };
 use anyhow::{anyhow, Context, Result};
 use eunomio_core::types::*;
@@ -76,6 +77,7 @@ impl Coordinator {
         let worktree_path = provision_shaver_worktree(
             &git_root,
             &state.data_dir,
+            &input.org_id,
             &input.session_id,
             &input.parent_commit_sha,
         )
@@ -433,15 +435,13 @@ async fn publish_track(
 async fn provision_shaver_worktree(
     repo_root: &Path,
     data_dir: &Path,
+    org_id: &str,
     session_id: &str,
     parent_commit: &str,
 ) -> Result<PathBuf> {
-    let worktree_path = data_dir
-        .join("worktrees")
-        .join(session_id)
-        .join("shaving-gen")
-        .join(Uuid::new_v4().to_string())
-        .join("worktree");
+    let id = Uuid::new_v4().to_string();
+    let worktree_path =
+        storage_path::generated_worktree_path(data_dir, org_id, session_id, "shaving-gen", &id);
     if let Some(parent_dir) = worktree_path.parent() {
         tokio::fs::create_dir_all(parent_dir)
             .await

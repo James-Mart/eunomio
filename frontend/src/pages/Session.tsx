@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { Navigate, useParams } from "react-router-dom";
 import "@xyflow/react/dist/style.css";
 import type { NodeMouseHandler } from "@xyflow/react";
@@ -35,7 +35,6 @@ import { useSessionActiveTab } from "@/components/session/useSessionActiveTab";
 import { useSessionData } from "@/components/session/useSessionData";
 import { useSessionSelection } from "@/components/session/useSessionSelection";
 import { sessionNotFoundHomePath } from "@/lib/sessionNotFound";
-import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export default function Session() {
@@ -62,7 +61,6 @@ function SessionInner({ sessionId }: { sessionId: string }) {
     layout,
     chain,
     sessionPartitionCompleteAt,
-    refresh,
     refreshPartitions,
     registerStartedPartition,
     setNodeReviewed,
@@ -77,18 +75,7 @@ function SessionInner({ sessionId }: { sessionId: string }) {
   } = selection;
 
   const { activeTab, setActiveTab } = useSessionActiveTab();
-  const [isLocal, setIsLocal] = useState(true);
   const isDesktop = useIsDesktop();
-
-  useEffect(() => {
-    let cancelled = false;
-    api.getSession(sessionId).then((s) => {
-      if (!cancelled) setIsLocal(s.isLocal);
-    }).catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionId]);
 
   const onNodeClick = useCallback<NodeMouseHandler>(
     (_event, node) => {
@@ -190,7 +177,6 @@ function SessionInner({ sessionId }: { sessionId: string }) {
 
   const toolsContext = {
     sessionId,
-    isLocal,
     nodeId: selectedCanonicalNode?.nodeId ?? null,
     nodeTitle: selectedCanonicalNode?.title ?? null,
     nodeDescription: selectedCanonicalNode?.description ?? null,
@@ -202,7 +188,6 @@ function SessionInner({ sessionId }: { sessionId: string }) {
     onSelectPartition: selectPartition,
     onPartitionStarted,
     onPartitionEnded,
-    onChange: refresh,
   };
 
   const graphPane = (

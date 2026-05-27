@@ -77,11 +77,6 @@ def transform(content: str, module: str) -> str:
         )
     if module == "node":
         content = re.sub(
-            r"#\[derive\(Debug, Clone\)\]\npub struct WalkNode \{[^}]+\}\n\n",
-            "",
-            content,
-        )
-        content = re.sub(
             r"#\[derive\(Debug, Clone\)\]\npub struct NodeBasic \{[^}]+\}\n\n",
             "",
             content,

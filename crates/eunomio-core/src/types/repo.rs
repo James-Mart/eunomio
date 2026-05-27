@@ -10,12 +10,6 @@ pub struct UserRow {
 }
 
 #[derive(Debug, Clone)]
-pub struct WalkNode {
-    pub tree_sha: String,
-    pub title: String,
-}
-
-#[derive(Debug, Clone)]
 pub struct NodeBasic {
     pub node_id: String,
     pub tree_sha: String,
@@ -50,7 +44,12 @@ pub struct CreatedSessionRow {
 pub struct SessionRepoFields {
     pub normalized_remote: String,
     pub literal_remote: String,
-    pub is_local: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct SessionRepoIdentity {
+    pub org_id: String,
+    pub normalized_remote: String,
 }
 
 #[derive(Debug, Clone)]

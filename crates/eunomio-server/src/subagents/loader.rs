@@ -11,7 +11,6 @@ use std::sync::OnceLock;
 struct SubagentAssets;
 
 pub struct Subagents {
-    pub surveyor: SubagentDef,
     pub planner: SubagentDef,
     pub constructor: SubagentDef,
     pub shaver: SubagentDef,
@@ -93,16 +92,11 @@ fn placeholder_re() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"\{\{([A-Z][A-Z0-9_]*)\}\}").unwrap())
 }
 
-pub fn surveyor_placeholders() -> &'static [&'static str] {
-    &["BEFORE_TREE", "TARGET_TREE", "USER_FEEDBACK"]
-}
-
 pub fn planner_placeholders() -> &'static [&'static str] {
     &[
         "PARENT_COMMIT",
         "BEFORE_TREE",
         "TARGET_TREE",
-        "CHANGE_SURVEY_JSON",
         "STRATEGY_OVERRIDE",
         "USER_FEEDBACK",
         "PRIOR_BLOCK_OR_CANDIDATE",
@@ -157,7 +151,6 @@ fn load_one(file: &str, allowed: &[&str]) -> Result<SubagentDef> {
 
 pub fn load_subagents() -> Result<Subagents> {
     Ok(Subagents {
-        surveyor: load_one("surveyor.md", surveyor_placeholders())?,
         planner: load_one("planner.md", planner_placeholders())?,
         constructor: load_one("constructor.md", constructor_placeholders())?,
         shaver: load_one("shaver.md", shaver_placeholders())?,
@@ -173,7 +166,7 @@ mod tests {
     fn renders_known_placeholders() {
         let tpl = PromptTemplate::parse(
             "A {{BEFORE_TREE}} B {{TARGET_TREE}} C {{USER_FEEDBACK}}".to_string(),
-            surveyor_placeholders(),
+            planner_placeholders(),
         )
         .unwrap();
         let mut ctx = serde_json::Map::new();
@@ -185,7 +178,7 @@ mod tests {
 
     #[test]
     fn unknown_placeholder_fails_to_parse() {
-        let err = PromptTemplate::parse("hello {{NOPE}}".to_string(), surveyor_placeholders())
+        let err = PromptTemplate::parse("hello {{NOPE}}".to_string(), planner_placeholders())
             .unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("NOPE"), "msg = {msg}");
@@ -194,7 +187,6 @@ mod tests {
     #[test]
     fn embedded_prompts_parse() {
         let defs = load_subagents().expect("load embedded subagents");
-        assert_eq!(defs.surveyor.name, "surveyor");
         assert_eq!(defs.planner.name, "planner");
         assert_eq!(defs.constructor.name, "constructor");
         assert_eq!(defs.shaver.name, "shaver");

@@ -1,20 +1,19 @@
 ---
 title: Partitioning
-description: How a partition moves from survey through acceptance.
+description: How a partition moves from planning through acceptance.
 ---
 
-A **Partition** carves one edge of the graph into two consecutive commits. Three subagents run in sequence — Surveyor → Planner → Constructor — supervised by a Coordinator that owns the phase machine and human-in-the-loop (HITL) review gates. If the Planner decides the edge is already indivisible, the partition can be finished instead of constructed.
+A **Partition** carves one edge of the graph into two consecutive commits. Two subagents run in sequence — Planner → Constructor — supervised by a Coordinator that owns the phase machine and human-in-the-loop (HITL) review gates. If the Planner decides the edge is already indivisible, the partition can be finished instead of constructed.
 
 Many partitions can be pending in a session at once, including siblings on the same target.
 
 ## Subagent progression
 
-Each partition walks through the three subagents in order:
+Each partition walks through the two subagents in order:
 
 ```mermaid
 flowchart BT
-    Begin([Begin partition]) --> Surveyor
-    Surveyor[Surveyor] --> Planner[Planner]
+    Begin([Begin partition]) --> Planner[Planner]
     Planner --> Indivisible{Indivisible?}
     Indivisible -- no --> Constructor[Constructor]
     Indivisible -- yes --> Finished([Finished])
@@ -23,7 +22,7 @@ flowchart BT
 
 ## Per-subagent lifecycle
 
-Each subagent follows the same phase pattern. The diagram below shows one cycle; it repeats for Surveyor, Planner, and Constructor, each with its own HITL gate (`afterSurvey`, `afterPlanning`, `afterConstruct`). Indivisible Planner outputs have their own confirmation gate (`afterIndivisible`).
+Each subagent follows the same phase pattern. The diagram below shows one cycle; it repeats for Planner and Constructor, each with its own HITL gate (`afterPlanning`, `afterConstruct`). Indivisible Planner outputs have their own confirmation gate (`afterIndivisible`).
 
 ```mermaid
 flowchart BT
@@ -36,7 +35,7 @@ flowchart BT
     Review -. abandon .-> Abandon
 ```
 
-**Constructor extras.** After a run, the Constructor returns `OK` or `BLOCKED: reason`. From construct review or a blocked state you can re-run the Constructor, or re-run the Planner with feedback and an optional strategy override (the accepted survey is preserved).
+**Constructor extras.** After a run, the Constructor returns `OK` or `BLOCKED: reason`. From construct review or a blocked state you can re-run the Constructor, or re-run the Planner with feedback and an optional strategy override.
 
 ## HITL defaults
 
@@ -52,7 +51,7 @@ Available from every non-terminal state, including while a run is in flight. Sen
 
 ## Parallel partitions
 
-Each partition owns its own worktree and phase machine. Surveys, plans, and constructors run in parallel across partitions. Only one run may be in flight per partition at a time.
+Each partition owns its own worktree and phase machine. Plans and constructors run in parallel across partitions. Only one run may be in flight per partition at a time.
 
 ## Graph mutation on acceptance
 

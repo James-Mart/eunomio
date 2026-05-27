@@ -27,7 +27,7 @@ For remote viewing in production-like mode, prefer the single-binary build with 
 
 ## Subagents run locally
 
-Subagents (Surveyor, Planner, Constructor) run via an embedded Node helper with the same filesystem and network access as the eunomio process. A malicious or prompt-injected agent could read secrets, write outside the partition worktree, or make outbound network calls.
+Subagents (Planner, Constructor) run via an embedded Node helper with the same filesystem and network access as the eunomio process. A malicious or prompt-injected agent could read secrets, write outside the partition worktree, or make outbound network calls.
 
 Only run eunomio against repositories and with Cursor credentials you trust.
 

@@ -3,7 +3,7 @@
 use axum::http::StatusCode;
 use eunomio_core::{AppError, PhaseName, PhaseState, SseEvent};
 use eunomio_helper_protocol::{HelperEvent, RunHandle, RunRequest, SubagentRunner};
-use eunomio_server::cursor_bridge::FakeSubagentRunner;
+use eunomio_server::{cursor_bridge::FakeSubagentRunner, storage_path};
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use std::path::Path;
@@ -14,8 +14,6 @@ use tokio::time::timeout;
 
 mod common;
 use common::{app::TestApp, db as test_db};
-
-const SURVEY_RESULT: &str = "```json\n{\"summary\":\"s\",\"themes\":[{\"id\":\"t-1\",\"title\":\"T\",\"description\":\"D\"}]}\n```";
 
 fn plan_result(strategy: &str) -> String {
     format!(
@@ -36,14 +34,6 @@ fn finished_run_id(runs: &serde_json::Value, kind: &str) -> String {
         .as_str()
         .unwrap()
         .to_string()
-}
-
-fn survey_script() -> Vec<HelperEvent> {
-    vec![HelperEvent::Finished {
-        run_id: "0".to_string(),
-        result: SURVEY_RESULT.to_string(),
-        duration_ms: None,
-    }]
 }
 
 fn plan_script(strategy: &str) -> Vec<HelperEvent> {
@@ -203,7 +193,6 @@ async fn session_partition_complete_at(app: &TestApp, session_id: &str) -> Optio
 #[tokio::test]
 async fn happy_path_drives_partition_to_accept() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
-        survey_script(),
         plan_script("synthetic"),
         construct_ok_script(),
     ]));
@@ -220,42 +209,11 @@ async fn happy_path_drives_partition_to_accept() {
         .await;
     assert_eq!(status, StatusCode::CREATED, "begin body: {body}");
     let partition_id = body["id"].as_str().unwrap().to_string();
-    let worktree_root = app
-        .data
-        .path()
-        .canonicalize()
-        .unwrap()
-        .join("worktrees")
-        .join(&session_id)
-        .join(&partition_id)
-        .join("worktree");
+    let worktree_root = partition_worktree_path(&app, &session_id, &partition_id);
     assert!(worktree_root.exists(), "worktree should exist after begin");
 
     let started = next_event(&mut rx).await;
     assert!(matches!(started, SseEvent::Started { .. }));
-
-    let survey_review =
-        wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
-    if let SseEvent::Phase { payload, .. } = &survey_review {
-        assert!(
-            payload.is_some(),
-            "survey awaiting_review must carry payload"
-        );
-    }
-
-    let (_, runs) = app
-        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
-        .await;
-    let survey_run_id = finished_run_id(&runs, "survey");
-
-    let (status, _) = app
-        .auth_json(
-            "POST",
-            &format!("/api/partitions/{partition_id}/survey/accept"),
-            json!({ "runId": survey_run_id }),
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK);
 
     let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
 
@@ -396,7 +354,6 @@ fn apply_five_change_slice(path: &Path) {
 #[tokio::test]
 async fn construct_accept_does_not_attach_shaving_track() {
     let runner = Arc::new(EditingRunner::new(vec![
-        EditingScript::Events(survey_script()),
         EditingScript::Events(plan_script("synthetic")),
         EditingScript::EditThenEvents(apply_five_change_slice, construct_ok_script()),
     ]));
@@ -420,21 +377,6 @@ async fn construct_accept_does_not_attach_shaving_track() {
         .await;
     assert_eq!(status, StatusCode::CREATED, "begin body: {body}");
     let partition_id = body["id"].as_str().unwrap().to_string();
-    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
-
-    let (_, runs) = app
-        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
-        .await;
-    let survey_run_id = finished_run_id(&runs, "survey");
-    let (status, _) = app
-        .auth_json(
-            "POST",
-            &format!("/api/partitions/{partition_id}/survey/accept"),
-            json!({ "runId": survey_run_id }),
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK);
-
     let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
     let (_, runs) = app
         .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
@@ -491,8 +433,8 @@ async fn construct_accept_does_not_attach_shaving_track() {
 #[tokio::test]
 async fn parallel_begins_on_same_target_succeed() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
-        survey_script(),
-        survey_script(),
+        plan_script("synthetic"),
+        plan_script("vertical"),
     ]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
@@ -522,7 +464,7 @@ async fn parallel_begins_on_same_target_succeed() {
     for _ in 0..30 {
         let ev = next_event(&mut rx).await;
         if let SseEvent::Phase {
-            name: PhaseName::Survey,
+            name: PhaseName::Plan,
             state: PhaseState::AwaitingReview,
             partition_id,
             ..
@@ -545,7 +487,6 @@ async fn parallel_begins_on_same_target_succeed() {
 #[tokio::test]
 async fn constructor_blocked_parks_at_review_and_can_re_run() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
-        survey_script(),
         plan_script("synthetic"),
         construct_blocked_script("can't slice without leftover hunks"),
         construct_ok_script(),
@@ -561,18 +502,6 @@ async fn constructor_blocked_parks_at_review_and_can_re_run() {
         )
         .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
-    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
-    let (_, runs) = app
-        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
-        .await;
-    let survey_run_id = finished_run_id(&runs, "survey");
-    let _ = app
-        .auth_json(
-            "POST",
-            &format!("/api/partitions/{partition_id}/survey/accept"),
-            json!({ "runId": survey_run_id }),
-        )
-        .await;
     let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
     let (_, runs) = app
         .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
@@ -627,15 +556,7 @@ async fn abandon_mid_run_cleans_up() {
         )
         .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
-    let worktree_root = app
-        .data
-        .path()
-        .canonicalize()
-        .unwrap()
-        .join("worktrees")
-        .join(&session_id)
-        .join(&partition_id)
-        .join("worktree");
+    let worktree_root = partition_worktree_path(&app, &session_id, &partition_id);
     assert!(worktree_root.exists());
 
     let _ = next_event(&mut rx).await;
@@ -665,7 +586,6 @@ async fn abandon_mid_run_cleans_up() {
 #[tokio::test]
 async fn hitl_off_drives_full_chain_without_explicit_accepts() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
-        survey_script(),
         plan_script("synthetic"),
         construct_ok_script(),
     ]));
@@ -680,7 +600,6 @@ async fn hitl_off_drives_full_chain_without_explicit_accepts() {
                 "coordinator": {
                     "model": { "id": "composer-2" },
                     "humanInTheLoop": {
-                        "afterSurvey": false,
                         "afterPlanning": false,
                         "afterConstruct": false
                     }
@@ -722,91 +641,6 @@ async fn hitl_off_drives_full_chain_without_explicit_accepts() {
     assert_eq!(graph["nodes"].as_array().unwrap().len(), 3);
 }
 
-async fn set_surveyor_disabled_hitl_off(app: &TestApp) {
-    let (status, _) = app
-        .auth_json(
-            "PATCH",
-            "/api/partition-settings",
-            json!({
-                "coordinator": {
-                    "model": { "id": "composer-2" },
-                    "surveyorEnabled": false,
-                    "humanInTheLoop": {
-                        "afterSurvey": false,
-                        "afterPlanning": false,
-                        "afterConstruct": false,
-                        "afterIndivisible": false,
-                    }
-                }
-            }),
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK);
-}
-
-#[tokio::test]
-async fn surveyor_disabled_skips_to_plan() {
-    let runner = Arc::new(FakeSubagentRunner::new(vec![
-        plan_script("synthetic"),
-        construct_ok_script(),
-    ]));
-    let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
-    set_surveyor_disabled_hitl_off(&app).await;
-    let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
-
-    let mut rx = app.state.coordinator.subscribe(&session_id);
-
-    let (status, body) = app
-        .auth_empty(
-            "POST",
-            &format!("/api/sessions/{session_id}/edges/{target_node_id}/partition"),
-        )
-        .await;
-    assert_eq!(status, StatusCode::CREATED, "begin body: {body}");
-    let partition_id = body["id"].as_str().unwrap().to_string();
-
-    let started = next_event(&mut rx).await;
-    assert!(matches!(started, SseEvent::Started { .. }));
-
-    let first_phase = loop {
-        let ev = next_event(&mut rx).await;
-        if let SseEvent::Phase { name, state, .. } = &ev {
-            break (*name, *state);
-        }
-    };
-    assert_eq!(first_phase.0, PhaseName::Plan);
-    assert_eq!(first_phase.1, PhaseState::Running);
-
-    let (_, runs) = app
-        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
-        .await;
-    assert!(
-        !runs
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|r| r["kind"] == "survey"),
-        "expected no survey run, got {runs}"
-    );
-
-    let mut got_finished = false;
-    for _ in 0..30 {
-        let ev = next_event(&mut rx).await;
-        if matches!(ev, SseEvent::Finished { .. }) {
-            got_finished = true;
-            break;
-        }
-        if let SseEvent::Phase {
-            state: PhaseState::AwaitingReview,
-            ..
-        } = &ev
-        {
-            panic!("HITL-off path should never park at awaiting_review, got {ev:?}");
-        }
-    }
-    assert!(got_finished, "did not see Finished event");
-}
-
 fn plan_indivisible_script(rationale: &str) -> Vec<HelperEvent> {
     vec![HelperEvent::Finished {
         run_id: "0".to_string(),
@@ -824,7 +658,6 @@ async fn set_hitl_all_off(app: &TestApp) {
                 "coordinator": {
                     "model": { "id": "composer-2" },
                     "humanInTheLoop": {
-                        "afterSurvey": false,
                         "afterPlanning": false,
                         "afterConstruct": false,
                         "afterIndivisible": false,
@@ -859,26 +692,6 @@ async fn poll_partition_phase(
 }
 
 async fn drive_partition_to_construct_review(app: &TestApp, partition_id: &str) {
-    poll_partition_phase(app, partition_id, "survey", "awaiting_review").await;
-    let (_, runs) = app
-        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
-        .await;
-    let survey_run_id = runs
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|r| r["kind"] == "survey" && r["status"] == "finished")
-        .unwrap()["id"]
-        .as_str()
-        .unwrap()
-        .to_string();
-    let _ = app
-        .auth_json(
-            "POST",
-            &format!("/api/partitions/{partition_id}/survey/accept"),
-            json!({ "runId": survey_run_id }),
-        )
-        .await;
     poll_partition_phase(app, partition_id, "plan", "awaiting_review").await;
     let (_, runs) = app
         .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
@@ -903,26 +716,12 @@ async fn drive_partition_to_construct_review(app: &TestApp, partition_id: &str) 
 }
 
 async fn drive_partition_to_plan_review(app: &TestApp, partition_id: &str) {
-    poll_partition_phase(app, partition_id, "survey", "awaiting_review").await;
-    let (_, runs) = app
-        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
-        .await;
-    let survey_run_id = finished_run_id(&runs, "survey");
-    let (status, body) = app
-        .auth_json(
-            "POST",
-            &format!("/api/partitions/{partition_id}/survey/accept"),
-            json!({ "runId": survey_run_id }),
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK, "{body}");
     poll_partition_phase(app, partition_id, "plan", "awaiting_review").await;
 }
 
 #[tokio::test]
 async fn sibling_accept_auto_abandons_other() {
     let runner = Arc::new(KindAwareRunner::new(
-        vec![survey_script(), survey_script()],
         vec![plan_script("synthetic"), plan_script("vertical")],
         vec![construct_ok_script(), construct_ok_script()],
     ));
@@ -987,7 +786,6 @@ async fn sibling_accept_auto_abandons_other() {
 #[tokio::test]
 async fn cancel_run_mid_construct_preserves_partition() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
-        survey_script(),
         plan_script("synthetic"),
         vec![HelperEvent::SdkMessage {
             run_id: "0".to_string(),
@@ -1005,19 +803,6 @@ async fn cancel_run_mid_construct_preserves_partition() {
         )
         .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
-
-    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
-    let (_, runs) = app
-        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
-        .await;
-    let survey_run_id = finished_run_id(&runs, "survey");
-    let _ = app
-        .auth_json(
-            "POST",
-            &format!("/api/partitions/{partition_id}/survey/accept"),
-            json!({ "runId": survey_run_id }),
-        )
-        .await;
     let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
     let (_, runs) = app
         .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
@@ -1074,7 +859,7 @@ async fn cancel_run_mid_construct_preserves_partition() {
 
 #[tokio::test]
 async fn cancel_run_on_non_running_returns_409() {
-    let runner = Arc::new(FakeSubagentRunner::new(vec![survey_script()]));
+    let runner = Arc::new(FakeSubagentRunner::new(vec![plan_script("synthetic")]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
@@ -1086,7 +871,7 @@ async fn cancel_run_on_non_running_returns_409() {
         )
         .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
-    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
+    let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
     let (_, runs) = app
         .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
         .await;
@@ -1110,7 +895,6 @@ async fn cancel_run_on_non_running_returns_409() {
 #[tokio::test]
 async fn second_start_run_while_in_flight_returns_409() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
-        survey_script(),
         vec![HelperEvent::SdkMessage {
             run_id: "0".to_string(),
             message: json!({"text": "thinking"}),
@@ -1127,21 +911,13 @@ async fn second_start_run_while_in_flight_returns_409() {
         )
         .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
-    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
-
-    let _ = app
-        .auth_json(
-            "POST",
-            &format!("/api/partitions/{partition_id}/runs"),
-            json!({ "kind": "survey" }),
-        )
-        .await;
+    let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::Running).await;
 
     let (status, body) = app
         .auth_json(
             "POST",
             &format!("/api/partitions/{partition_id}/runs"),
-            json!({ "kind": "survey" }),
+            json!({ "kind": "plan" }),
         )
         .await;
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
@@ -1155,7 +931,6 @@ async fn second_start_run_while_in_flight_returns_409() {
 #[tokio::test]
 async fn invalid_run_kind_returns_409() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
-        survey_script(),
         plan_script("synthetic"),
     ]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
@@ -1169,18 +944,6 @@ async fn invalid_run_kind_returns_409() {
         )
         .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
-    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
-    let (_, runs) = app
-        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
-        .await;
-    let survey_run_id = finished_run_id(&runs, "survey");
-    let _ = app
-        .auth_json(
-            "POST",
-            &format!("/api/partitions/{partition_id}/survey/accept"),
-            json!({ "runId": survey_run_id }),
-        )
-        .await;
     let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
 
     let (status, body) = app
@@ -1197,7 +960,6 @@ async fn invalid_run_kind_returns_409() {
 #[tokio::test]
 async fn back_edge_construct_to_plan_on_blocked_run() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
-        survey_script(),
         plan_script("synthetic"),
         construct_blocked_script("can't slice"),
         plan_script("vertical"),
@@ -1213,18 +975,6 @@ async fn back_edge_construct_to_plan_on_blocked_run() {
         )
         .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
-    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
-    let (_, runs) = app
-        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
-        .await;
-    let survey_run_id = finished_run_id(&runs, "survey");
-    let _ = app
-        .auth_json(
-            "POST",
-            &format!("/api/partitions/{partition_id}/survey/accept"),
-            json!({ "runId": survey_run_id }),
-        )
-        .await;
     let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
     let (_, runs) = app
         .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
@@ -1266,7 +1016,6 @@ async fn back_edge_construct_to_plan_on_blocked_run() {
 #[tokio::test]
 async fn back_edge_construct_to_plan_on_ok_candidate() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
-        survey_script(),
         plan_script("synthetic"),
         construct_ok_script(),
         plan_script("vertical"),
@@ -1304,7 +1053,6 @@ async fn back_edge_construct_to_plan_on_ok_candidate() {
 #[tokio::test]
 async fn indivisible_with_hitl_on_parks_at_review() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
-        survey_script(),
         plan_indivisible_script("one tight refactor"),
     ]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
@@ -1318,19 +1066,6 @@ async fn indivisible_with_hitl_on_parks_at_review() {
         )
         .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
-    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
-    let (_, runs) = app
-        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
-        .await;
-    let survey_run_id = finished_run_id(&runs, "survey");
-    let _ = app
-        .auth_json(
-            "POST",
-            &format!("/api/partitions/{partition_id}/survey/accept"),
-            json!({ "runId": survey_run_id }),
-        )
-        .await;
-
     let plan_review = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
     if let SseEvent::Phase { payload, .. } = &plan_review {
         let p = payload.as_ref().unwrap();
@@ -1346,7 +1081,6 @@ async fn indivisible_with_hitl_on_parks_at_review() {
 #[tokio::test]
 async fn finish_indivisible_partition_emits_finished() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
-        survey_script(),
         plan_indivisible_script("finished edge"),
     ]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
@@ -1360,20 +1094,6 @@ async fn finish_indivisible_partition_emits_finished() {
         )
         .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
-
-    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
-    let (_, runs) = app
-        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
-        .await;
-    let survey_run_id = finished_run_id(&runs, "survey");
-    let (status, _) = app
-        .auth_json(
-            "POST",
-            &format!("/api/partitions/{partition_id}/survey/accept"),
-            json!({ "runId": survey_run_id }),
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK);
 
     let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
     let (status, body) = app
@@ -1423,7 +1143,6 @@ async fn finish_indivisible_partition_emits_finished() {
 #[tokio::test]
 async fn reorder_disabled_records_audit_on_completion() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
-        survey_script(),
         plan_indivisible_script("already small"),
     ]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
@@ -1463,7 +1182,6 @@ async fn reorder_disabled_records_audit_on_completion() {
 #[tokio::test]
 async fn finish_rejects_split_plan() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
-        survey_script(),
         plan_script("synthetic"),
     ]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
@@ -1477,20 +1195,6 @@ async fn finish_rejects_split_plan() {
         )
         .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
-
-    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
-    let (_, runs) = app
-        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
-        .await;
-    let survey_run_id = finished_run_id(&runs, "survey");
-    let (status, _) = app
-        .auth_json(
-            "POST",
-            &format!("/api/partitions/{partition_id}/survey/accept"),
-            json!({ "runId": survey_run_id }),
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK);
 
     let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
     let (status, _) = app
@@ -1507,8 +1211,6 @@ async fn finish_rejects_split_plan() {
 #[tokio::test]
 async fn partition_abandon_prevents_session_partition_complete_for_pass() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
-        survey_script(),
-        survey_script(),
         plan_indivisible_script("first"),
         plan_indivisible_script("second"),
     ]));
@@ -1548,7 +1250,6 @@ async fn partition_abandon_prevents_session_partition_complete_for_pass() {
 #[tokio::test]
 async fn cancelled_run_can_be_rerun_before_session_partition_complete() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
-        survey_script(),
         vec![HelperEvent::SdkMessage {
             run_id: "0".to_string(),
             message: json!({"text": "thinking"}),
@@ -1566,20 +1267,6 @@ async fn cancelled_run_can_be_rerun_before_session_partition_complete() {
         )
         .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
-
-    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
-    let (_, runs) = app
-        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
-        .await;
-    let survey_run_id = finished_run_id(&runs, "survey");
-    let (status, body) = app
-        .auth_json(
-            "POST",
-            &format!("/api/partitions/{partition_id}/survey/accept"),
-            json!({ "runId": survey_run_id }),
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK, "{body}");
 
     let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::Running).await;
     let (_, runs) = app
@@ -1626,7 +1313,6 @@ async fn cancelled_run_can_be_rerun_before_session_partition_complete() {
 #[tokio::test]
 async fn indivisible_with_hitl_off_auto_finishes() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
-        survey_script(),
         plan_indivisible_script("indivisible"),
     ]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
@@ -1680,7 +1366,6 @@ async fn indivisible_with_hitl_off_auto_finishes() {
 #[tokio::test]
 async fn rerun_planner_from_indivisible_succeeds() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
-        survey_script(),
         plan_indivisible_script("indivisible at first"),
         plan_script("synthetic"),
     ]));
@@ -1695,19 +1380,6 @@ async fn rerun_planner_from_indivisible_succeeds() {
         )
         .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
-    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
-    let (_, runs) = app
-        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
-        .await;
-    let survey_run_id = finished_run_id(&runs, "survey");
-    let _ = app
-        .auth_json(
-            "POST",
-            &format!("/api/partitions/{partition_id}/survey/accept"),
-            json!({ "runId": survey_run_id }),
-        )
-        .await;
-
     let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
 
     let (status, _) = app
@@ -1729,19 +1401,16 @@ async fn rerun_planner_from_indivisible_succeeds() {
 }
 
 struct KindAwareRunner {
-    surveys: TokioMutex<Vec<Vec<HelperEvent>>>,
     plans: TokioMutex<Vec<Vec<HelperEvent>>>,
     constructs: TokioMutex<Vec<Vec<HelperEvent>>>,
 }
 
 impl KindAwareRunner {
     fn new(
-        surveys: Vec<Vec<HelperEvent>>,
         plans: Vec<Vec<HelperEvent>>,
         constructs: Vec<Vec<HelperEvent>>,
     ) -> Self {
         Self {
-            surveys: TokioMutex::new(surveys),
             plans: TokioMutex::new(plans),
             constructs: TokioMutex::new(constructs),
         }
@@ -1755,10 +1424,7 @@ impl SubagentRunner for KindAwareRunner {
         request: RunRequest,
         tx: mpsc::Sender<HelperEvent>,
     ) -> Result<RunHandle, AppError> {
-        let bucket: &TokioMutex<Vec<Vec<HelperEvent>>> = if request.prompt.contains("**Surveyor**")
-        {
-            &self.surveys
-        } else if request.prompt.contains("**Planner**") {
+        let bucket: &TokioMutex<Vec<Vec<HelperEvent>>> = if request.prompt.contains("**Planner**") {
             &self.plans
         } else if request.prompt.contains("**Constructor**") {
             &self.constructs
@@ -1858,7 +1524,6 @@ impl SubagentRunner for KindAwareRunner {
 #[tokio::test]
 async fn fanout_count_2_spawns_children_no_grandchildren() {
     let runner = Arc::new(KindAwareRunner::new(
-        vec![survey_script(), survey_script(), survey_script()],
         vec![
             plan_script("synthetic"),
             plan_script("synthetic"),
@@ -1879,7 +1544,6 @@ async fn fanout_count_2_spawns_children_no_grandchildren() {
                 "coordinator": {
                     "model": { "id": "composer-2" },
                     "humanInTheLoop": {
-                        "afterSurvey": false,
                         "afterPlanning": false,
                         "afterConstruct": false,
                         "afterIndivisible": false,
@@ -1937,7 +1601,6 @@ async fn fanout_count_2_spawns_children_no_grandchildren() {
 #[tokio::test]
 async fn fanout_auto_cascading_indivisible() {
     let runner = Arc::new(KindAwareRunner::new(
-        vec![survey_script(), survey_script(), survey_script()],
         vec![
             plan_script("synthetic"),
             plan_indivisible_script("indivisible-a"),
@@ -1954,7 +1617,6 @@ async fn fanout_auto_cascading_indivisible() {
                 "coordinator": {
                     "model": { "id": "composer-2" },
                     "humanInTheLoop": {
-                        "afterSurvey": false,
                         "afterPlanning": false,
                         "afterConstruct": false,
                         "afterIndivisible": false,
@@ -2036,7 +1698,7 @@ async fn count_runs_with_transcript(app: &TestApp) -> i64 {
     .await
 }
 
-fn survey_with_messages(messages: Vec<serde_json::Value>) -> Vec<HelperEvent> {
+fn plan_with_messages(messages: Vec<serde_json::Value>) -> Vec<HelperEvent> {
     let mut events: Vec<HelperEvent> = messages
         .into_iter()
         .map(|m| HelperEvent::SdkMessage {
@@ -2046,7 +1708,7 @@ fn survey_with_messages(messages: Vec<serde_json::Value>) -> Vec<HelperEvent> {
         .collect();
     events.push(HelperEvent::Finished {
         run_id: "0".to_string(),
-        result: SURVEY_RESULT.to_string(),
+        result: plan_result("synthetic"),
         duration_ms: None,
     });
     events
@@ -2054,7 +1716,7 @@ fn survey_with_messages(messages: Vec<serde_json::Value>) -> Vec<HelperEvent> {
 
 #[tokio::test]
 async fn transcripts_enabled_persists_prompt_and_transcript_text() {
-    let runner = Arc::new(FakeSubagentRunner::new(vec![survey_with_messages(vec![
+    let runner = Arc::new(FakeSubagentRunner::new(vec![plan_with_messages(vec![
         json!({"type": "assistant", "text": "thinking 1"}),
         json!({"type": "tool_use", "name": "ls"}),
     ])]));
@@ -2070,12 +1732,12 @@ async fn transcripts_enabled_persists_prompt_and_transcript_text() {
         )
         .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
-    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
+    let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
 
     let (_, runs) = app
         .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
         .await;
-    let run_id = finished_run_id(&runs, "survey");
+    let run_id = finished_run_id(&runs, "plan");
 
     let (status, transcript) = app
         .auth_empty(
@@ -2101,7 +1763,7 @@ async fn transcripts_enabled_persists_prompt_and_transcript_text() {
 
 #[tokio::test]
 async fn transcripts_disabled_still_persists_transcript_text_without_sse() {
-    let runner = Arc::new(FakeSubagentRunner::new(vec![survey_with_messages(vec![
+    let runner = Arc::new(FakeSubagentRunner::new(vec![plan_with_messages(vec![
         json!({"type": "assistant", "text": "thinking"}),
     ])]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
@@ -2125,7 +1787,7 @@ async fn transcripts_disabled_still_persists_transcript_text_without_sse() {
         if matches!(
             ev,
             SseEvent::Phase {
-                name: PhaseName::Survey,
+                name: PhaseName::Plan,
                 state: PhaseState::AwaitingReview,
                 ..
             }
@@ -2141,7 +1803,7 @@ async fn transcripts_disabled_still_persists_transcript_text_without_sse() {
     let (_, runs) = app
         .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
         .await;
-    let run_id = finished_run_id(&runs, "survey");
+    let run_id = finished_run_id(&runs, "plan");
 
     let (status, transcript) = app
         .auth_empty(
@@ -2165,19 +1827,18 @@ async fn transcripts_disabled_still_persists_transcript_text_without_sse() {
 #[tokio::test]
 async fn transcripts_cleaned_up_on_accept_construct() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
-        survey_with_messages(vec![json!({"text": "s"})]),
+        plan_with_messages(vec![json!({"text": "p"})]),
         vec![
             HelperEvent::SdkMessage {
                 run_id: "0".to_string(),
-                message: json!({"text": "p"}),
+                message: json!({"text": "c"}),
             },
             HelperEvent::Finished {
                 run_id: "0".to_string(),
-                result: plan_result("synthetic"),
+                result: "OK\n".into(),
                 duration_ms: None,
             },
         ],
-        construct_ok_script(),
     ]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
     enable_transcripts(&app).await;
@@ -2222,7 +1883,7 @@ async fn transcripts_cleaned_up_on_accept_construct() {
 
 #[tokio::test]
 async fn transcripts_cleaned_up_on_abandon() {
-    let runner = Arc::new(FakeSubagentRunner::new(vec![survey_with_messages(vec![
+    let runner = Arc::new(FakeSubagentRunner::new(vec![plan_with_messages(vec![
         json!({"text": "s"}),
     ])]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
@@ -2237,7 +1898,7 @@ async fn transcripts_cleaned_up_on_abandon() {
         )
         .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
-    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
+    let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
 
     assert!(
         count_runs_with_transcript(&app).await > 0,
@@ -2261,20 +1922,17 @@ fn partition_worktree_path(
     session_id: &str,
     partition_id: &str,
 ) -> std::path::PathBuf {
-    app.data
-        .path()
-        .canonicalize()
-        .unwrap()
-        .join("worktrees")
-        .join(session_id)
-        .join(partition_id)
-        .join("worktree")
+    storage_path::partition_worktree_path(
+        &app.data.path().canonicalize().unwrap(),
+        "local",
+        session_id,
+        partition_id,
+    )
 }
 
 #[tokio::test]
 async fn construct_spawn_resets_dirty_worktree() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![
-        survey_script(),
         plan_script("vertical"),
         construct_ok_script(),
         construct_ok_script(),
@@ -2293,18 +1951,6 @@ async fn construct_spawn_resets_dirty_worktree() {
     let worktree_root = partition_worktree_path(&app, &session_id, &partition_id);
 
     let _ = next_event(&mut rx).await;
-    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
-    let (_, runs) = app
-        .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
-        .await;
-    let survey_run_id = finished_run_id(&runs, "survey");
-    let _ = app
-        .auth_json(
-            "POST",
-            &format!("/api/partitions/{partition_id}/survey/accept"),
-            json!({ "runId": survey_run_id }),
-        )
-        .await;
     let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
     let (_, runs) = app
         .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))
@@ -2356,7 +2002,7 @@ async fn get_subagent_prompts_returns_embedded_bodies() {
     let app = TestApp::spawn_authenticated().await;
     let (status, body) = app.auth_empty("GET", "/api/subagent-prompts").await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
-    for key in ["surveyor", "planner", "constructor"] {
+    for key in ["planner", "constructor"] {
         let text = body[key].as_str().unwrap();
         assert!(!text.is_empty(), "{key} prompt should be non-empty");
     }
@@ -2387,7 +2033,7 @@ async fn node_session_lookup_unknown_returns_404() {
 
 #[tokio::test]
 async fn invalid_prompt_override_returns_400() {
-    let runner = Arc::new(FakeSubagentRunner::new(vec![survey_script()]));
+    let runner = Arc::new(FakeSubagentRunner::new(vec![plan_script("synthetic")]));
     let app = TestApp::spawn_authenticated_with_runner(runner).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
@@ -2398,13 +2044,13 @@ async fn invalid_prompt_override_returns_400() {
         )
         .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
-    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
+    let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
 
     let (status, _) = app
         .auth_json(
             "POST",
             &format!("/api/partitions/{partition_id}/runs"),
-            json!({ "kind": "survey", "promptOverride": "hello {{NOPE}}" }),
+            json!({ "kind": "plan", "promptOverride": "hello {{NOPE}}" }),
         )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -2412,10 +2058,10 @@ async fn invalid_prompt_override_returns_400() {
 
 #[tokio::test]
 async fn prompt_override_appears_in_transcript_prompt() {
-    let custom = "You are a **Custom Surveyor**. Trees: {{BEFORE_TREE}} / {{TARGET_TREE}}. Feedback: {{USER_FEEDBACK}}.";
+    let custom = "You are a **Custom Planner**. Trees: {{BEFORE_TREE}} / {{TARGET_TREE}}. Strategy: {{STRATEGY_OVERRIDE}}. Feedback: {{USER_FEEDBACK}}.";
     let runner = Arc::new(FakeSubagentRunner::new(vec![
-        survey_script(),
-        survey_script(),
+        plan_script("synthetic"),
+        plan_script("vertical"),
     ]));
     let app = TestApp::spawn_authenticated_with_runner(runner).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
@@ -2427,18 +2073,18 @@ async fn prompt_override_appears_in_transcript_prompt() {
         )
         .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
-    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
+    let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
 
     let (status, run) = app
         .auth_json(
             "POST",
             &format!("/api/partitions/{partition_id}/runs"),
-            json!({ "kind": "survey", "promptOverride": custom }),
+            json!({ "kind": "plan", "promptOverride": custom }),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED, "run body: {run}");
     let run_id = run["id"].as_str().unwrap().to_string();
-    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
+    let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
 
     let (status, transcript) = app
         .auth_empty(
@@ -2449,7 +2095,7 @@ async fn prompt_override_appears_in_transcript_prompt() {
     assert_eq!(status, StatusCode::OK);
     let prompt = transcript["prompt"].as_str().unwrap();
     assert!(
-        prompt.contains("**Custom Surveyor**"),
+        prompt.contains("**Custom Planner**"),
         "expected custom prompt in transcript, got: {prompt}"
     );
 }
@@ -2460,8 +2106,8 @@ async fn subagent_run_cli_smoke() {
     use eunomio_core::RunKind;
 
     let runner = Arc::new(FakeSubagentRunner::new(vec![
-        survey_script(),
-        survey_script(),
+        plan_script("synthetic"),
+        plan_script("vertical"),
     ]));
     let app = TestApp::spawn_authenticated_with_runner(runner).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
@@ -2473,7 +2119,7 @@ async fn subagent_run_cli_smoke() {
         )
         .await;
     let partition_id = body["id"].as_str().unwrap().to_string();
-    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
+    let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -2486,14 +2132,14 @@ async fn subagent_run_cli_smoke() {
     run(SubagentRunArgs {
         base_url: format!("http://{addr}"),
         partition_id: partition_id_for_cli,
-        kind: RunKind::Survey,
+        kind: RunKind::Plan,
         prompt_file: None,
         session_cookie: Some(app.cookie().to_string()),
     })
     .await
     .unwrap();
 
-    let _ = wait_for_phase(&mut rx, PhaseName::Survey, PhaseState::AwaitingReview).await;
+    let _ = wait_for_phase(&mut rx, PhaseName::Plan, PhaseState::AwaitingReview).await;
 
     let (_, runs) = app
         .auth_empty("GET", &format!("/api/partitions/{partition_id}/runs"))

@@ -248,7 +248,6 @@ impl Coordinator {
     pub fn default_prompts(&self) -> SubagentDefaultPrompts {
         let defs = &self.inner.subagents;
         SubagentDefaultPrompts {
-            surveyor: defs.surveyor.template.body().to_string(),
             planner: defs.planner.template.body().to_string(),
             constructor: defs.constructor.template.body().to_string(),
             shaver: defs.shaver.template.body().to_string(),

@@ -35,7 +35,7 @@ _Avoid_: using "diff" as a synonym for **Edge** (the domain entity) — say "the
 The two seed Nodes every Session starts with. `base` is the merge-base tree of `baseRef` and `sourceRef`; `final` is the `sourceRef` tree parented on `base`. The strings `"base"` and `"final"` are their default Titles _and_ their Position labels — the words appear in two unrelated places, which is convenient but not load-bearing.
 
 **Title**:
-A descriptive string attached to each Node, used verbatim as the commit subject when a branch is later created from any path through that Node. Shown in the UI when the user selects a Node, not on the Node's graph card. Default for seed Nodes is `"base"` / `"final"`; rewritten on every Acceptance of a Partition on the Node's Edge; user-editable in the UI otherwise. See also **Description** for the paired non-editable string.
+A descriptive string attached to each Node. Shown in the UI when the user selects a Node, not on the Node's graph card. Default for seed Nodes is `"base"` / `"final"`; rewritten on every Acceptance of a Partition on the Node's Edge. System-owned, not user-editable. See also **Description** for the paired non-editable string.
 _Avoid_: nickname, name. (See **Position label** for the on-graph string.)
 
 **Description**:
@@ -97,11 +97,11 @@ Per-user marker that the current user finished reviewing a Node's incoming **Edg
 A two-Node graph view (`base → final`) showing the seed diff before any Partitions. Selecting **final** shows the `base→final` diff with no synthesized marks; selecting **base** shows an empty diff pane.
 
 **Theme**:
-One coherent cluster of changes inside a diff — a feature, a refactor, a bug fix, a layer rewrite — that could be reviewed, described, or reverted on its own. Produced by the Surveyor as the `themes[]` list inside a ChangeSurvey. Themes are the candidate set the Planner draws from when it chooses the `Synthetic` strategy; under `Vertical` or `Horizontal` the planner uses them as supporting context but slices along different axes.
+One coherent cluster of changes inside a diff — a feature, a refactor, a bug fix, a layer rewrite — that could be reviewed, described, or reverted on its own. Themes are identified by the Planner and are the candidate set it draws from when it chooses the `Synthetic` strategy; under `Vertical` or `Horizontal` the planner uses them as supporting context but slices along different axes.
 _Avoid_: concern (carries a negative valence), topic, item.
 
 **Coordinator**:
-The orchestrator that schedules and supervises Surveyor / Planner / Constructor Runs for a Partition. Not itself a subagent.
+The orchestrator that schedules and supervises Planner / Constructor Runs for a Partition. Not itself a subagent.
 
 **Transcript**:
 The folded text stream of a subagent **Run**'s chain-of-thought and tool-call markers, stored on the Run row as it executes. The UI toggle controls visibility and live streaming, not capture.
@@ -110,13 +110,13 @@ The folded text stream of a subagent **Run**'s chain-of-thought and tool-call ma
 The subagent that writes to a Partition's worktree to build the Slice the Planner identified. The only writable subagent. Returns either `OK` or `BLOCKED: <reason>` on a single line.
 
 **Partition settings**:
-User-global configuration that applies to every Partition across every Session for this user. Stored as a single JSON file under the **State directory** (`~/.eunomio/settings.json`), not on the `sessions` row. Structured by subagent role (Surveyor / Planner / Constructor / Shaver) plus Coordinator. The Coordinator owns HITL flags, Timeline enablement, fan-out limits, and the default **ModelSelection** (base model id plus optional params such as a fast tier) that applies to every subagent unless overridden on the subagent's own tab.
+User-global configuration that applies to every Partition across every Session for this user. Stored as a single JSON file under the **State directory** (`~/.eunomio/settings.json`), not on the `sessions` row. Structured by subagent role (Planner / Constructor / Shaver) plus Coordinator. The Coordinator owns HITL flags, Timeline enablement, fan-out limits, and the default **ModelSelection** (base model id plus optional params such as a fast tier) that applies to every subagent unless overridden on the subagent's own tab.
 
 **Phase**:
-A stage of a Partition — `Survey`, `Plan`, or `Construct`. The Coordinator drives the Partition through phases in this fixed order. Phases are the granularity at which Review gates apply.
+A stage of a Partition — `Plan` or `Construct`. The Coordinator drives the Partition through phases in this fixed order. Phases are the granularity at which Review gates apply.
 
 **Review gate**:
-A Coordinator-controlled halt at a Phase boundary, governed by the matching `humanInTheLoop.*` flag in Partition settings. Survey, Plan, Construct, and Indivisible confirmation gates default to ON. The Construct gate is where Acceptance happens; an indivisible Plan gate can be finished instead of accepted as a split.
+A Coordinator-controlled halt at a Phase boundary, governed by the matching `humanInTheLoop.*` flag in Partition settings. Plan, Construct, and Indivisible confirmation gates default to ON. The Construct gate is where Acceptance happens; an indivisible Plan gate can be finished instead of accepted as a split.
 
 **Acceptance**:
 The terminal-success outcome of a Partition: inserts the new Slice Node, reparents the target Node onto the Slice, rewrites the target's Title, removes the Partition's worktree, and auto-Abandons every other Partition pending on the same target. Triggered by the user at the Construct Review gate, or automatically when `afterConstruct` is off.
@@ -125,10 +125,10 @@ The terminal-success outcome of a Partition: inserts the new Slice Node, reparen
 The terminal-success outcome for an indivisible Partition. It accepts the Planner's indivisible verdict, deletes the Pending Partition and its worktree without changing the canonical graph, and may start background Timeline generation for the target Node's incoming Edge. Ordinary Abandon remains discard-only and never generates a Timeline.
 
 **Candidate view**:
-A graph-view mode the user enters via a dropdown when one or more Partitions are pending Acceptance. Begins as a 2-Node mini-graph (the target's prior parent and the canonical target) for the life of Survey and Plan; at the Construct review gate with a split Plan and candidate Slice, expands to three Nodes (prior parent, candidate Slice, renamed target) so the user can inspect the proposed graph state before Accepting.
+A graph-view mode the user enters via a dropdown when one or more Partitions are pending Acceptance. Begins as a 2-Node mini-graph (the target's prior parent and the canonical target) for the life of Plan; at the Construct review gate with a split Plan and candidate Slice, expands to three Nodes (prior parent, candidate Slice, renamed target) so the user can inspect the proposed graph state before Accepting.
 
 **Sibling Partitions**:
-Two or more pending Partitions sharing the same target Node. Allowed by design — the user can run alternative Partitions (e.g. one Vertical and one Horizontal) on the same target, compare them in the graph-view dropdown, and execute their Surveys, Plans, and Constructors in parallel (each owns its own worktree and phase machine). Accepting any one of them auto-Abandons the others.
+Two or more pending Partitions sharing the same target Node. Allowed by design — the user can run alternative Partitions (e.g. one Vertical and one Horizontal) on the same target, compare them in the graph-view dropdown, and execute their Plans and Constructors in parallel (each owns its own worktree and phase machine). Accepting any one of them auto-Abandons the others.
 
 **Indivisible verdict**:
 A Planner output declaring that the diff between a Partition's BeforeTree and TargetTree is already a single cohesive change and should not be split further. Serialised as `{ outcome: "indivisible", rationale: "…" }` on the Planner's JSON output, parallel to the Constructor's `BLOCKED` outcome. Terminates a branch of the **Auto fan-out** loop. Governed by `humanInTheLoop.afterIndivisible` in Partition settings (default on): when on, the Partition parks at the Plan Review gate for the user to confirm or push back; when off, the Partition is auto-finished without surfacing the gate.
@@ -164,6 +164,6 @@ The tenancy axis. Every tenant-scoped row carries an `org_id`; a request's princ
 - "nickname" (used colloquially) is the same thing as **Title** — resolved: canonical term is **Title**.
 - "executor" (used colloquially) is the same thing as **Constructor** — resolved: canonical term is **Constructor**.
 - "lifecycle" was previously used as a domain noun for the per-Partition flow — resolved: **Partition** is the entity. "Lifecycle" must not be used as a substitute for "Partition" (e.g. "begin a Lifecycle", "Lifecycle row"). It remains a legitimate _descriptor_ of a Partition's flow through its Phases — both in prose ("the Partition's lifecycle") and as a qualified identifier for things that describe that flow (e.g. the `Lifecycle` snapshot type, `LifecycleStepper` UI widget, `usePartitionLifecycle` hook).
-- "concern" was previously the name for a survey item — resolved: canonical term is **Theme**. "Concern" is avoided because it carries a negative valence (the survey describes what's in the diff, neutrally; it does not flag worries).
-- "user concern" was previously a separate upfront input channel to the Surveyor and Planner — resolved: collapsed into `user_feedback`, supplied only at Review gates on re-runs. There is no upfront user-supplied prose on a Partition.
+- "concern" was previously a candidate term for a diff item — resolved: canonical term is **Theme**. "Concern" is avoided because it carries a negative valence; themes describe what's in the diff neutrally and do not flag worries.
+- "user concern" was previously a separate upfront input channel — resolved: collapsed into `user_feedback`, supplied only at Review gates on re-runs. There is no upfront user-supplied prose on a Partition.
 - "deployment-mode" / `EUNOMIO_MODE` — there is no runtime mode flag; the deployment shape *is* the running binary. "Local mode" and "Hosted mode" refer to the two binaries (`eunomio-bin-local` vs the future `eunomio-bin-hosted`), not a runtime branch inside one process.

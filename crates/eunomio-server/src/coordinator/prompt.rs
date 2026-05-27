@@ -6,7 +6,6 @@ use crate::{
         self,
         loader::{
             constructor_placeholders, planner_placeholders, resolve_prompt_template,
-            surveyor_placeholders,
         },
         planner::PriorAttempt,
         PromptTemplate,
@@ -52,10 +51,6 @@ impl Coordinator {
         let target_tree = target_node.tree_sha.clone();
 
         let prompt = match kind {
-            RunKind::Survey => {
-                let template = self.resolve_template(RunKind::Survey, prompt_override)?;
-                self.survey_prompt(before_tree, target_tree, user_feedback, &template)
-            }
             RunKind::Plan => {
                 let template = self.resolve_template(RunKind::Plan, prompt_override)?;
                 self.plan_prompt(
@@ -92,27 +87,11 @@ impl Coordinator {
     ) -> Result<PromptTemplate, AppError> {
         let defs = &self.inner.subagents;
         let (default, allowed) = match kind {
-            RunKind::Survey => (&defs.surveyor.template, surveyor_placeholders()),
             RunKind::Plan => (&defs.planner.template, planner_placeholders()),
             RunKind::Construct => (&defs.constructor.template, constructor_placeholders()),
         };
         resolve_prompt_template(default, allowed, prompt_override)
             .map_err(|e| AppError::BadRequest(e.to_string()))
-    }
-
-    fn survey_prompt(
-        &self,
-        before_tree: String,
-        target_tree: String,
-        user_feedback: Option<&str>,
-        template: &PromptTemplate,
-    ) -> String {
-        let ctx = subagents::surveyor::SurveyContext {
-            before_tree,
-            target_tree,
-            user_feedback: user_feedback.unwrap_or("").to_string(),
-        };
-        subagents::surveyor::render_prompt(&ctx, template)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -127,10 +106,6 @@ impl Coordinator {
         strategy_override: Option<PartitionStrategy>,
         template: &PromptTemplate,
     ) -> Result<String, AppError> {
-        let survey_json = partition
-            .change_survey_json
-            .clone()
-            .unwrap_or_else(|| "{}".to_string());
         let strategy_override_str = strategy_override
             .map(|s| s.as_str().to_string())
             .unwrap_or_else(|| "auto".to_string());
@@ -141,7 +116,6 @@ impl Coordinator {
             parent_commit,
             before_tree,
             target_tree,
-            change_survey_json: survey_json,
             strategy_override: strategy_override_str,
             user_feedback: user_feedback.unwrap_or("").to_string(),
             prior_attempt,

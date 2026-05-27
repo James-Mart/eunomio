@@ -1,6 +1,6 @@
 # Cursor SDK bridge: Node SEA helper invoked as a per-call subprocess
 
-Eunomio is a Rust binary that needs to call `@cursor/sdk` for every interaction with Cursor agents — model listing today, subagent runs (surveyor / planner / constructor) for Partitions later. The bridge has to preserve the single-binary CLI deploy story from `ARCHITECTURE.md` while letting us use the real SDK rather than a hand-rolled REST client.
+Eunomio is a Rust binary that needs to call `@cursor/sdk` for every interaction with Cursor agents — model listing today, subagent runs (planner / constructor) for Partitions later. The bridge has to preserve the single-binary CLI deploy story from `ARCHITECTURE.md` while letting us use the real SDK rather than a hand-rolled REST client.
 
 We compile a small Node helper (`helper/src/cursor.mjs`) plus `@cursor/sdk` into a single self-contained `cursor-helper` executable using `esbuild` (to bundle) and Node's Single Executable Applications feature (to inject the bundle into a copy of the `node` runtime). The resulting binary is embedded into the eunomio executable via `rust-embed` at `cargo build --release` time, extracted to a temp directory on first use, and invoked as a per-call subprocess with subcommand arguments (e.g. `cursor-helper list-models`) and JSON over stdout. Each invocation does one thing and exits; future subagent runs will be additional subcommands on the same binary.
 

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 pub mod auth;
-pub mod branching;
 pub mod coordinator;
 pub mod cursor_bridge;
 pub mod edge_file_viewed;
@@ -21,6 +20,7 @@ pub mod sessions;
 pub mod shavings;
 pub mod sse;
 pub mod state;
+pub mod storage_path;
 pub mod subagents;
 pub mod synthesized_content;
 pub mod tunnel;

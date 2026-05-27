@@ -272,6 +272,7 @@ impl Coordinator {
         let worktree_path = worktree::provision(
             &git_root,
             &state.data_dir,
+            org_id,
             session_id,
             &worktree_id,
             &base.commit_sha,
@@ -547,6 +548,7 @@ async fn replay_order(
     let worktree_path = worktree::provision(
         &git_root,
         &state.data_dir,
+        org_id,
         session_id,
         &worktree_id,
         &base.commit_sha,

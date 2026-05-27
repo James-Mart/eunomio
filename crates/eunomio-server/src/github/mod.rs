@@ -9,7 +9,10 @@ static PULL_URL_RE: OnceLock<Regex> = OnceLock::new();
 
 fn pull_url_re() -> &'static Regex {
     PULL_URL_RE.get_or_init(|| {
-        Regex::new(r"^https://github\.com/([^/]+)/([^/]+?)(?:\.git)?/pull/(\d+)/?$").unwrap()
+        Regex::new(
+            r"^https://github\.com/([^/]+)/([^/]+?)(?:\.git)?/pull/(\d+)(?:/[^?#]*)?(?:\?[^#]*)?(?:#.*)?$",
+        )
+        .unwrap()
     })
 }
 
@@ -25,7 +28,7 @@ pub fn parse_github_pull_url(input: &str) -> Result<ParsedPullUrl, AppError> {
     let caps = pull_url_re().captures(trimmed).ok_or_else(|| {
         AppError::BadRequest(
             "expected a GitHub pull request URL (https://github.com/org/repo/pull/N); \
-             for other hosts use the Branch tab"
+             for other hosts use the Repository tab"
                 .into(),
         )
     })?;
@@ -63,7 +66,7 @@ fn map_pull_response(
 ) -> Result<ResolvedPullRequest, AppError> {
     if pull.head.repo.full_name != pull.base.repo.full_name {
         return Err(AppError::BadRequest(
-            "fork pull requests are not supported — use the Branch tab".into(),
+            "fork pull requests are not supported — use the Repository tab".into(),
         ));
     }
     Ok(ResolvedPullRequest {
@@ -95,12 +98,12 @@ pub async fn resolve_pull_request(url: &str) -> Result<ResolvedPullRequest, AppE
     let status = resp.status();
     if status == reqwest::StatusCode::NOT_FOUND || status == reqwest::StatusCode::UNAUTHORIZED {
         return Err(AppError::BadRequest(
-            "PR not found or not accessible — check the URL or use the Branch tab".into(),
+            "PR not found or not accessible — check the URL or use the Repository tab".into(),
         ));
     }
     if status == reqwest::StatusCode::FORBIDDEN {
         return Err(AppError::BadRequest(
-            "GitHub rate limit exceeded — try again later or use the Branch tab".into(),
+            "GitHub rate limit exceeded — try again later or use the Repository tab".into(),
         ));
     }
     if !status.is_success() {
@@ -150,6 +153,24 @@ mod tests {
     #[test]
     fn reject_http_scheme() {
         assert!(parse_github_pull_url("http://github.com/org/repo/pull/1").is_err());
+    }
+
+    #[test]
+    fn parse_pull_url_with_changes_tab_and_review_hash() {
+        let parsed = parse_github_pull_url(
+            "https://github.com/gofractally/psibase/pull/1878/changes#r3313308196",
+        )
+        .unwrap();
+        assert_eq!(parsed.owner, "gofractally");
+        assert_eq!(parsed.repo, "psibase");
+        assert_eq!(parsed.number, 1878);
+    }
+
+    #[test]
+    fn parse_pull_url_with_files_tab() {
+        let parsed =
+            parse_github_pull_url("https://github.com/org/repo/pull/42/files").unwrap();
+        assert_eq!(parsed.number, 42);
     }
 
     #[test]

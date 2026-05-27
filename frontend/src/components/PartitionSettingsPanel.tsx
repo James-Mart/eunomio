@@ -9,7 +9,6 @@ import {
   FileIcon,
   KeyIcon,
   ProjectRoadmapIcon,
-  SearchIcon,
   TasklistIcon,
   type IconProps,
 } from "@primer/octicons-react";
@@ -49,7 +48,7 @@ import { useAbortableEffect } from "@/lib/useAbortableEffect";
 import { useIsDesktop } from "@/lib/useIsDesktop";
 import { cn } from "@/lib/utils";
 
-type SubagentCategory = "surveyor" | "planner" | "constructor" | "shaver" | "reorder";
+type SubagentCategory = "planner" | "constructor" | "shaver" | "reorder";
 
 type IconComponent = React.ComponentType<IconProps>;
 
@@ -60,7 +59,6 @@ const CATEGORIES: Record<SettingsCategory, CategoryMeta> = {
   general: { label: "General", icon: FileIcon },
   hotkeys: { label: "Hotkeys", icon: CommandPaletteIcon },
   coordinator: { label: "Coordinator", icon: ProjectRoadmapIcon },
-  surveyor: { label: "Surveyor", icon: SearchIcon },
   planner: { label: "Planner", icon: TasklistIcon },
   constructor: { label: "Constructor", icon: CodeIcon },
   shaver: { label: "Timeline", icon: TasklistIcon },
@@ -69,7 +67,6 @@ const CATEGORIES: Record<SettingsCategory, CategoryMeta> = {
 
 const TOP_ORDER: SettingsCategory[] = ["general", "hotkeys", "coordinator", "account"];
 const SUBAGENT_ORDER: SubagentCategory[] = [
-  "surveyor",
   "planner",
   "constructor",
   "shaver",
@@ -158,14 +155,6 @@ export default function PartitionSettingsPanel() {
       "Failed to save settings",
     );
 
-  const onSurveyorEnabledChange = (next: boolean) =>
-    settings &&
-    applyOptimistic(
-      "coordinator",
-      { ...settings.coordinator, surveyorEnabled: next },
-      "Failed to save settings",
-    );
-
   const onTimelineEnabledChange = (next: boolean) =>
     settings &&
     applyOptimistic(
@@ -222,7 +211,6 @@ export default function PartitionSettingsPanel() {
           settings={settings}
           models={models}
           onModelChange={onCoordinatorModelChange}
-          onSurveyorEnabledChange={onSurveyorEnabledChange}
           onTimelineEnabledChange={onTimelineEnabledChange}
           onReorderEnabledChange={onReorderEnabledChange}
           onHitlChange={onHitlChange}
@@ -544,7 +532,6 @@ function CoordinatorPanel({
   settings,
   models,
   onModelChange,
-  onSurveyorEnabledChange,
   onTimelineEnabledChange,
   onReorderEnabledChange,
   onHitlChange,
@@ -553,7 +540,6 @@ function CoordinatorPanel({
   settings: PartitionSettings | null;
   models: ModelsState;
   onModelChange: (next: ModelSelection) => void;
-  onSurveyorEnabledChange: (next: boolean) => void;
   onTimelineEnabledChange: (next: boolean) => void;
   onReorderEnabledChange: (next: boolean) => void;
   onHitlChange: (next: HumanInTheLoopSettings) => void;
@@ -561,13 +547,11 @@ function CoordinatorPanel({
 }) {
   const hitl =
     settings?.coordinator.humanInTheLoop ?? {
-      afterSurvey: false,
-      afterPlanning: false,
-      afterConstruct: false,
-      afterIndivisible: false,
+      afterPlanning: true,
+      afterConstruct: true,
+      afterIndivisible: true,
     };
   const disabled = !settings;
-  const surveyorEnabled = settings?.coordinator.surveyorEnabled ?? false;
   const timelineEnabled = settings?.coordinator.timelineEnabled ?? true;
   const reorderEnabled = settings?.coordinator.reorderEnabled ?? true;
   const selected = settings?.coordinator.model ?? DEFAULT_MODEL_SELECTION;
@@ -593,24 +577,6 @@ function CoordinatorPanel({
       </section>
 
       <section className="space-y-3">
-        <div className="flex items-start gap-3">
-          <Checkbox
-            id="coordinator-surveyor-enabled"
-            checked={surveyorEnabled}
-            disabled={disabled}
-            onChange={(e) => onSurveyorEnabledChange(e.target.checked)}
-            className="mt-0.5"
-          />
-          <div className="space-y-0.5">
-            <Label htmlFor="coordinator-surveyor-enabled" className="font-normal">
-              Enable surveyor
-            </Label>
-            <p className="text-xs text-muted-foreground">
-              Run a separate Survey phase before Plan. When off, the planner
-              surveys the diff inline.
-            </p>
-          </div>
-        </div>
         <div className="flex items-start gap-3">
           <Checkbox
             id="coordinator-timeline-enabled"
@@ -651,14 +617,6 @@ function CoordinatorPanel({
       <section className="space-y-3">
         <h4 className="text-sm font-medium">Human-in-the-loop</h4>
         <div className="space-y-3">
-          <HitlRow
-            id="hitl-after-survey"
-            label="Pause after survey"
-            description="Wait for me to review the survey before planning."
-            checked={hitl.afterSurvey}
-            disabled={disabled || !surveyorEnabled}
-            onChange={(checked) => onHitlChange({ ...hitl, afterSurvey: checked })}
-          />
           <HitlRow
             id="hitl-after-planning"
             label="Pause after planning"

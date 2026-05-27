@@ -12,8 +12,15 @@ use eunomio_sandbox_linux::LinuxSandboxRuntime;
 use eunomio_server::cursor_bridge::CursorHelperRunner;
 use eunomio_server::{build_state, AppState, BuildStateOptions};
 use eunomio_sqlite::SqliteDatastore;
-use std::path::PathBuf;
+use anyhow::Context;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+
+pub async fn ensure_data_dir(data_dir: &Path) -> anyhow::Result<()> {
+    tokio::fs::create_dir_all(data_dir)
+        .await
+        .with_context(|| format!("create_dir_all {}", data_dir.display()))
+}
 
 /// Wire the local deployment stack the same way `main.rs` does (for integration tests).
 pub async fn build_local_state(
@@ -22,6 +29,7 @@ pub async fn build_local_state(
     launch_pull_request: Option<String>,
     runner: Option<Arc<dyn SubagentRunner>>,
 ) -> anyhow::Result<AppState> {
+    ensure_data_dir(&data_dir).await?;
     let datastore: Arc<dyn Datastore> =
         Arc::new(SqliteDatastore::open(&data_dir.join("eunomio.db")).await?);
     let keystore: Arc<dyn KeyStore> =

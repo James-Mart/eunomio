@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  BranchToolPanel,
   InfoToolPanel,
   PartitionToolPanel,
   ToolsEmpty,
@@ -13,17 +12,15 @@ import {
   type ToolsContext,
 } from "@/components/tools/ToolPanels";
 
-type ToolsTab = "partition" | "info" | "branch";
+type ToolsTab = "partition" | "info";
 
 export default function ToolsPane(ctx: ToolsContext) {
   const [tab, setTab] = useState<ToolsTab>("partition");
   const showNodeTabs = showNodeTools(ctx);
-  const showBranchTab = showNodeTabs && ctx.isLocal;
 
   useEffect(() => {
     if (!showNodeTabs && tab !== "partition") setTab("partition");
-    if (!showBranchTab && tab === "branch") setTab("partition");
-  }, [showNodeTabs, showBranchTab, tab]);
+  }, [showNodeTabs, tab]);
 
   if (isToolsEmpty(ctx)) {
     return (
@@ -46,11 +43,6 @@ export default function ToolsPane(ctx: ToolsContext) {
             Info
           </TabsTrigger>
         )}
-        {showBranchTab && (
-          <TabsTrigger variant="underline" value="branch">
-            Branch
-          </TabsTrigger>
-        )}
       </TabsList>
       <TabsContent value="partition" className="mt-0 w-full flex-1 min-h-0">
         {PartitionToolPanel(ctx)}
@@ -58,11 +50,6 @@ export default function ToolsPane(ctx: ToolsContext) {
       {showNodeTabs && (
         <TabsContent value="info" className="mt-0 flex-1 min-h-0">
           {InfoToolPanel(ctx)}
-        </TabsContent>
-      )}
-      {showBranchTab && (
-        <TabsContent value="branch" className="mt-0 flex-1 min-h-0">
-          {BranchToolPanel(ctx)}
         </TabsContent>
       )}
     </Tabs>

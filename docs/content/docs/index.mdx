@@ -5,7 +5,7 @@ description: Turn a noisy ref diff into a clean, reviewable commit history.
 
 Eunomio helps you turn a messy "ref A → ref B" diff into a **clean, reviewable commit history** — without hand-editing commits.
 
-You steer a small fleet of AI subagents that survey the diff, plan how to split it, and construct one commit at a time inside an isolated git worktree. The result is an explorable graph of virtual commits; from any node you can spin off a real branch whose tip matches that point in the chain.
+You steer a small fleet of AI subagents that plan how to split a diff and construct one commit at a time inside an isolated git worktree. The result is an explorable graph of virtual commits; from any node you can spin off a real branch whose tip matches that point in the chain.
 
 Think of it as: you have a WIP branch and want a PR with a few logical commits and the same final code. Eunomio is the orchestration layer that makes that happen.
 
@@ -17,4 +17,4 @@ Developers who want **human-in-the-loop control** over how a large diff gets car
 
 - [Local build](/docs/getting-started/local-build) — build and run the `eunomio` CLI from source
 - [Terminology](/docs/concepts/terminology) — core concepts you'll see in the UI
-- [Partitioning](/docs/using-eunomio/partitioning) — how a Partition moves from survey to acceptance
+- [Partitioning](/docs/using-eunomio/partitioning) — how a Partition moves from planning to acceptance

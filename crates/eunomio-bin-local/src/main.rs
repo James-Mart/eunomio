@@ -86,6 +86,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
         .context("could not determine data dir; pass --data-dir")?;
 
     tracing::info!(data_dir = %data_dir.display(), port = args.port, "starting eunomio");
+    eunomio_bin_local::ensure_data_dir(&data_dir).await?;
 
     if args.new {
         let db_path = data_dir.join("eunomio.db");

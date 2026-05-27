@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{state::AppState, subagents::surveyor::SurveyOutput, worktree, AppError};
+use crate::{state::AppState, worktree, AppError};
 use eunomio_core::types::*;
 use std::path::PathBuf;
 use uuid::Uuid;
@@ -8,66 +8,6 @@ use uuid::Uuid;
 use super::{ensure_at_gate, parse_split_plan, Coordinator};
 
 impl Coordinator {
-    pub async fn accept_survey(
-        &self,
-        state: &AppState,
-        org_id: &str,
-        partition_id: &str,
-        req: AcceptSurveyRequest,
-    ) -> Result<Partition, AppError> {
-        let row = state
-            .datastore
-            .partitions()
-            .get(org_id, partition_id)
-            .await?;
-        ensure_at_gate(&row, PhaseName::Survey, "survey")?;
-        self.do_accept_survey(state, org_id, partition_id, &req.run_id)
-            .await
-    }
-
-    pub(super) async fn do_accept_survey(
-        &self,
-        state: &AppState,
-        org_id: &str,
-        partition_id: &str,
-        run_id: &str,
-    ) -> Result<Partition, AppError> {
-        let run = state.datastore.runs().get(org_id, run_id).await?;
-        if run.partition_id != partition_id {
-            return Err(AppError::BadRequest(
-                "runId does not belong to this partition".into(),
-            ));
-        }
-        let result_json = run
-            .result_json
-            .as_deref()
-            .ok_or_else(|| AppError::BadRequest("survey run has no parsed result".into()))?;
-        let _: SurveyOutput = serde_json::from_str(result_json)
-            .map_err(|e| AppError::BadRequest(format!("invalid survey result: {e}")))?;
-        state
-            .datastore
-            .partitions()
-            .accept_survey(org_id, partition_id, result_json.to_string())
-            .await?;
-        let new_row = state
-            .datastore
-            .partitions()
-            .get(org_id, partition_id)
-            .await?;
-        self.spawn_run_boxed(
-            state.clone(),
-            org_id.to_string(),
-            partition_id.to_string(),
-            StartRunRequest {
-                kind: RunKind::Plan,
-                parent_run_id: Some(run_id.to_string()),
-                ..Default::default()
-            },
-        )
-        .await?;
-        Ok(new_row.into())
-    }
-
     pub async fn accept_plan(
         &self,
         state: &AppState,

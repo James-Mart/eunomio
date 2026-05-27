@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{state::AppState, worktree, AppError};
-use std::path::Path;
+use crate::{state::AppState, storage_path, worktree, AppError};
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 const LOCAL_ORG_ID: &str = "local";
 
@@ -19,6 +20,7 @@ impl Coordinator {
         repair_stuck_shaver_runs(state).await?;
         let alive = prune_dead_partition_rows(state).await?;
         sweep_orphan_worktree_dirs(state, &alive).await;
+        sweep_orphan_repo_dirs(state).await?;
         recover_missing_shaving_tracks(self, state).await?;
         retry_incomplete_finalizations(self, state).await?;
         Ok(())
@@ -104,81 +106,118 @@ async fn repair_stuck_runs(state: &AppState) -> Result<(), AppError> {
     Ok(())
 }
 
-async fn prune_dead_partition_rows(state: &AppState) -> Result<Vec<String>, AppError> {
+async fn prune_dead_partition_rows(state: &AppState) -> Result<HashSet<PathBuf>, AppError> {
     let rows = state
         .datastore
         .partitions()
-        .list_id_session_worktree(LOCAL_ORG_ID)
+        .list_all_id_org_session_worktree()
         .await?;
-    let mut alive = Vec::with_capacity(rows.len());
-    for (id, _session_id, worktree_path) in rows {
-        if Path::new(&worktree_path).exists() {
-            alive.push(id);
+    let mut alive = HashSet::with_capacity(rows.len());
+    for (id, org_id, _session_id, worktree_path) in rows {
+        let path = PathBuf::from(&worktree_path);
+        if path.exists() {
+            alive.insert(path);
         } else {
             tracing::warn!(
                 partition_id = %id,
+                org_id = %org_id,
                 worktree = %worktree_path,
                 "partition worktree missing on disk; deleting row"
             );
             state
                 .datastore
                 .partitions()
-                .delete_with_runs(LOCAL_ORG_ID, &id)
+                .delete_with_runs(&org_id, &id)
                 .await?;
         }
     }
     Ok(alive)
 }
 
-async fn sweep_orphan_worktree_dirs(state: &AppState, alive: &[String]) {
+async fn sweep_orphan_worktree_dirs(state: &AppState, alive: &HashSet<PathBuf>) {
     let worktrees_root = state.data_dir.join("worktrees");
     if !worktrees_root.exists() {
         return;
     }
-    let mut sessions_iter = match tokio::fs::read_dir(&worktrees_root).await {
-        Ok(it) => it,
-        Err(e) => {
-            tracing::warn!(error = %e, "reading worktrees root failed");
-            return;
-        }
-    };
-    while let Ok(Some(session_entry)) = sessions_iter.next_entry().await {
-        let session_path = session_entry.path();
-        if !session_path.is_dir() {
+    let worktrees = collect_worktree_paths(&worktrees_root);
+    for worktree_path in worktrees {
+        if alive.contains(&worktree_path) {
             continue;
         }
-        let mut parts_iter = match tokio::fs::read_dir(&session_path).await {
+        tracing::info!(path = %worktree_path.display(), "removing orphan worktree");
+        if let Some(parent) = worktree_path.parent() {
+            let _ = tokio::fs::remove_dir_all(parent).await;
+        }
+    }
+}
+
+fn collect_worktree_paths(root: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    collect_worktree_paths_inner(root, &mut out);
+    out
+}
+
+fn collect_worktree_paths_inner(path: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(read_dir) = std::fs::read_dir(path) else {
+        return;
+    };
+    for entry in read_dir.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        if path.file_name().and_then(|n| n.to_str()) == Some("worktree") {
+            out.push(path);
+        } else {
+            collect_worktree_paths_inner(&path, out);
+        }
+    }
+}
+
+async fn sweep_orphan_repo_dirs(state: &AppState) -> Result<(), AppError> {
+    let repos_root = state.data_dir.join("repos");
+    if !repos_root.exists() {
+        return Ok(());
+    }
+    let identities = state.datastore.sessions().list_repo_identities().await?;
+    let expected: HashSet<PathBuf> = identities
+        .iter()
+        .map(|i| storage_path::clone_path(&state.data_dir, &i.org_id, &i.normalized_remote))
+        .collect();
+
+    let mut orgs_iter = match tokio::fs::read_dir(&repos_root).await {
+        Ok(it) => it,
+        Err(e) => {
+            tracing::warn!(error = %e, "reading repos root failed");
+            return Ok(());
+        }
+    };
+    while let Ok(Some(org_entry)) = orgs_iter.next_entry().await {
+        let org_path = org_entry.path();
+        if !org_path.is_dir() {
+            continue;
+        }
+        let old_layout_bare = org_path.join("HEAD").exists() && org_path.join("objects").is_dir();
+        if old_layout_bare {
+            tracing::info!(path = %org_path.display(), "removing old-layout managed clone");
+            let _ = tokio::fs::remove_dir_all(&org_path).await;
+            continue;
+        }
+        let mut remotes_iter = match tokio::fs::read_dir(&org_path).await {
             Ok(it) => it,
             Err(_) => continue,
         };
-        while let Ok(Some(part_entry)) = parts_iter.next_entry().await {
-            let part_path = part_entry.path();
-            if !part_path.is_dir() {
+        while let Ok(Some(remote_entry)) = remotes_iter.next_entry().await {
+            let clone_path = remote_entry.path();
+            if !clone_path.is_dir() || expected.contains(&clone_path) {
                 continue;
             }
-            let pid_opt = part_path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .map(str::to_string);
-            let worktree_path = part_path.join("worktree");
-            if !worktree_path.exists() {
+            if !storage_path::repo_metadata_path(&clone_path).exists() {
                 continue;
             }
-            if pid_opt.as_ref().map(|p| alive.contains(p)).unwrap_or(false) {
-                continue;
-            }
-            tracing::info!(path = %worktree_path.display(), "removing orphan partition worktree");
-            let session_id = session_path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
-            if let Ok(git_root) =
-                crate::repo_store::session_git_root(state, LOCAL_ORG_ID, session_id).await
-            {
-                worktree::teardown(&git_root, &worktree_path).await;
-            } else {
-                let _ = tokio::fs::remove_dir_all(part_path).await;
-            }
+            tracing::info!(path = %clone_path.display(), "removing orphan managed clone");
+            let _ = tokio::fs::remove_dir_all(&clone_path).await;
         }
     }
+    Ok(())
 }

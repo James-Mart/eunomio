@@ -7,7 +7,6 @@ import { toast } from "sonner";
 import {
   api,
   ApiError,
-  type ChangeSurvey,
   type Partition,
   type Plan,
   type Run,
@@ -26,7 +25,6 @@ import {
 import {
   ConstructReview,
   PlanReview,
-  SurveyReview,
 } from "@/components/review";
 import PartitionTranscripts from "@/components/PartitionTranscripts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -81,7 +79,6 @@ export default function PartitionTab({
     void refresh();
   }, [
     refresh,
-    activeLifecycle?.survey,
     activeLifecycle?.plan,
     activeLifecycle?.construct,
   ]);
@@ -143,26 +140,6 @@ export default function PartitionTab({
           message={activeLifecycle?.lastError?.message ?? "Unknown error"}
           onAbandon={abandon}
         />
-      ) : phase === "awaitingSurvey" ? (
-        partition?.changeSurvey ? (
-          <SurveyReview
-            partitionId={partition.id}
-            survey={partition.changeSurvey ?? readSurveyFromRuns(runs)!}
-            surveyRunId={pickRunId(runs, "survey")!}
-            onAbandon={abandon}
-          />
-        ) : (
-          readSurveyFromRuns(runs) ? (
-            <SurveyReview
-              partitionId={activeLifecycle!.partitionId}
-              survey={readSurveyFromRuns(runs)!}
-              surveyRunId={pickRunId(runs, "survey")!}
-              onAbandon={abandon}
-            />
-          ) : (
-            <RunningView lifecycle={activeLifecycle!} onAbandon={abandon} />
-          )
-        )
       ) : phase === "awaitingPlan" ? (
         readPlanFromRuns(runs) ? (
           <PlanReview
@@ -206,7 +183,6 @@ export default function PartitionTab({
 type Phase =
   | "idle"
   | "running"
-  | "awaitingSurvey"
   | "awaitingPlan"
   | "awaitingConstruct"
   | "finished"
@@ -222,16 +198,13 @@ function derivePhase(lifecycle: Lifecycle | undefined): Phase {
   if (lifecycle.construct === "running") return "running";
   if (lifecycle.plan === "awaiting_review") return "awaitingPlan";
   if (lifecycle.plan === "running") return "running";
-  if (lifecycle.survey === "awaiting_review") return "awaitingSurvey";
   return "running";
 }
 
 function deriveStepperStates(lc: Lifecycle | undefined): LifecycleStates {
-  const survey = lc?.survey ?? "pending";
   const plan = lc?.plan ?? "pending";
   const construct = lc?.construct ?? "pending";
   return {
-    survey: plan !== "pending" || construct !== "pending" ? "done" : survey,
     plan: construct !== "pending" ? "done" : plan,
     construct,
   };
@@ -324,7 +297,6 @@ function RunningView({
 function runningLabel(lifecycle: Lifecycle): string {
   if (lifecycle.construct === "running") return "Constructing candidate commit…";
   if (lifecycle.plan === "running") return "Planning partition…";
-  if (lifecycle.survey === "running") return "Surveying changes…";
   return "Agent working…";
 }
 
@@ -356,12 +328,6 @@ function ErrorView({
 function pickRunId(runs: Run[], kind: Run["kind"]): string | null {
   const r = runs.find((r) => r.kind === kind && r.status === "finished");
   return r?.id ?? null;
-}
-
-function readSurveyFromRuns(runs: Run[]): ChangeSurvey | null {
-  const r = runs.find((r) => r.kind === "survey" && r.status === "finished");
-  if (!r || !r.result) return null;
-  return r.result as ChangeSurvey;
 }
 
 function readPlanFromRuns(runs: Run[]): Plan | null {

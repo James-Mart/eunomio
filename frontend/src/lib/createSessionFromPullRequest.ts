@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 import { api, type ResolvedPullRequest, type Session } from "./api";
+import { normalizeGithubPullRequestUrl } from "./remoteRepoHost";
 
 export type CreateSessionPhase = "resolving" | "fetching" | "creating";
 
@@ -22,8 +23,14 @@ export async function createSessionFromPullRequest(
   pullRequestUrl: string,
   onPhase?: (phase: CreateSessionPhase) => void,
 ): Promise<Session> {
+  const normalized = normalizeGithubPullRequestUrl(pullRequestUrl);
+  if (!normalized) {
+    throw new Error(
+      "expected a GitHub pull request URL (https://github.com/org/repo/pull/N)",
+    );
+  }
   onPhase?.("resolving");
-  const resolved = await api.resolvePullRequest(pullRequestUrl);
+  const resolved = await api.resolvePullRequest(normalized);
   return createSessionFromResolved(resolved, onPhase);
 }
 

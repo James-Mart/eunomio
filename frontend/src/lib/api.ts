@@ -82,8 +82,6 @@ export type ShavingTrack = {
   stepDiffs: Diff[];
 };
 
-export type BranchResult = { branchName: string; commitSha: string };
-
 export type GeneralSettings = {
   transcriptsEnabled: boolean;
 };
@@ -123,7 +121,6 @@ export type SubagentSettings = {
 };
 
 export type HumanInTheLoopSettings = {
-  afterSurvey: boolean;
   afterPlanning: boolean;
   afterConstruct: boolean;
   afterIndivisible: boolean;
@@ -137,7 +134,6 @@ export type CoordinatorSettings = {
   model: ModelSelection;
   humanInTheLoop: HumanInTheLoopSettings;
   maxIterations: IterationLimit;
-  surveyorEnabled: boolean;
   timelineEnabled: boolean;
   reorderEnabled: boolean;
 };
@@ -146,7 +142,6 @@ export interface PartitionSettings {
   general: GeneralSettings;
   hotkeys: HotkeySettings;
   coordinator: CoordinatorSettings;
-  surveyor: SubagentSettings;
   planner: SubagentSettings;
   constructor: SubagentSettings;
   shaver: SubagentSettings;
@@ -157,7 +152,6 @@ export interface PartitionSettingsPatch {
   general?: GeneralSettings;
   hotkeys?: HotkeySettings;
   coordinator?: CoordinatorSettings;
-  surveyor?: SubagentSettings;
   planner?: SubagentSettings;
   constructor?: SubagentSettings;
   shaver?: SubagentSettings;
@@ -188,22 +182,11 @@ export type ReorderAudit = {
 export type PartitionStrategy = "synthetic" | "vertical" | "horizontal";
 export type StrategyOverride = PartitionStrategy | "auto";
 
-export type PhaseName = "survey" | "plan" | "construct";
+export type PhaseName = "plan" | "construct";
 export type PhaseState = "running" | "awaiting_review" | "error";
 
-export type RunKind = "survey" | "plan" | "construct";
+export type RunKind = "plan" | "construct";
 export type RunStatus = "running" | "finished" | "error" | "cancelled";
-
-export type ChangeSurveyTheme = {
-  id: string;
-  title: string;
-  description: string;
-};
-
-export type ChangeSurvey = {
-  summary: string;
-  themes: ChangeSurveyTheme[];
-};
 
 export type PlanEdge = {
   id: string;
@@ -240,7 +223,6 @@ export type Partition = {
   sessionId: string;
   targetNodeId: string;
   strategy: PartitionStrategy | null;
-  changeSurvey: ChangeSurvey | null;
   plan: Plan | null;
   phase: PhaseName;
   phaseState: PhaseState;
@@ -423,16 +405,9 @@ export const api = {
       `/sessions/${sessionId}/diff?${params.toString()}`,
     );
   },
-  renameNode: (sessionId: string, nodeId: string, title: string) =>
-    request<GraphNode>("PATCH", `/sessions/${sessionId}/nodes/${nodeId}`, { title }),
   setNodeReviewed: (sessionId: string, nodeId: string, reviewed: boolean) =>
     request<void>("PUT", `/sessions/${sessionId}/nodes/${nodeId}/reviewed`, {
       reviewed,
-    }),
-  branchFromNode: (sessionId: string, nodeId: string, branchName: string, force = false) =>
-    request<BranchResult>("POST", `/sessions/${sessionId}/nodes/${nodeId}/branch`, {
-      branchName,
-      force,
     }),
   deleteSession: (id: string) => request<void>("DELETE", `/sessions/${id}`),
   getPartitionSettings: () => request<PartitionSettings>("GET", `/partition-settings`),
@@ -469,8 +444,6 @@ export const api = {
       "GET",
       `/partitions/${partitionId}/runs/${runId}/transcript`,
     ),
-  acceptSurvey: (partitionId: string, runId: string) =>
-    request<Partition>("POST", `/partitions/${partitionId}/survey/accept`, { runId }),
   acceptPlan: (partitionId: string, runId: string) =>
     request<Partition>("POST", `/partitions/${partitionId}/plan/accept`, { runId }),
   acceptConstruct: (partitionId: string) =>

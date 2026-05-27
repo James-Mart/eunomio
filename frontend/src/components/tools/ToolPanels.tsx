@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 import type { Partition, PartitionStrategy, ReorderAudit } from "@/lib/api";
-import BranchTab from "@/components/BranchTab";
 import InfoTab from "@/components/InfoTab";
 import PartitionTab from "@/components/PartitionTab";
 
@@ -12,7 +11,6 @@ export type PendingPartitionOption = {
 
 export type ToolsContext = {
   sessionId: string;
-  isLocal: boolean;
   nodeId: string | null;
   nodeTitle: string | null;
   nodeDescription: string | null;
@@ -24,7 +22,6 @@ export type ToolsContext = {
   onSelectPartition: (p: Partition) => void;
   onPartitionStarted: (p: Partition) => void;
   onPartitionEnded: () => void;
-  onChange?: () => void;
 };
 
 export function showNodeTools(ctx: ToolsContext): boolean {
@@ -55,24 +52,11 @@ export function InfoToolPanel(ctx: ToolsContext) {
   return (
     <InfoTab
       key={ctx.nodeId ?? "none"}
-      sessionId={ctx.sessionId}
       nodeId={ctx.nodeId!}
       nodeTitle={ctx.nodeTitle!}
       nodeDescription={ctx.nodeDescription ?? ""}
       nodeStrategy={ctx.nodeStrategy}
       reorderAudit={ctx.reorderAudit}
-      onChange={ctx.onChange}
-    />
-  );
-}
-
-export function BranchToolPanel(ctx: ToolsContext) {
-  return (
-    <BranchTab
-      key={ctx.nodeId ?? "none"}
-      sessionId={ctx.sessionId}
-      nodeId={ctx.nodeId!}
-      nodeTitle={ctx.nodeTitle!}
     />
   );
 }

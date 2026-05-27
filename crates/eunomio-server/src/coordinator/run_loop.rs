@@ -463,19 +463,6 @@ impl Coordinator {
         raw: String,
     ) -> Result<(), AppError> {
         match active.kind {
-            RunKind::Survey => {
-                self.finalize_parsed_json_run(
-                    state,
-                    active,
-                    &raw,
-                    |raw| {
-                        subagents::surveyor::parse_output(raw)
-                            .map_err(|e| anyhow!("parsing survey output: {e}"))
-                    },
-                    "survey json",
-                )
-                .await
-            }
             RunKind::Plan => {
                 self.finalize_parsed_json_run(
                     state,
@@ -522,9 +509,6 @@ impl Coordinator {
         }
     }
 
-    /// Survey and Plan share an identical "parse, JSON-encode, persist,
-    /// dispatch to the gate" tail; this consolidates it so adding a new
-    /// terminal event variant only takes one change.
     async fn finalize_parsed_json_run<T: Serialize>(
         &self,
         state: &AppState,
@@ -569,8 +553,7 @@ impl Coordinator {
 fn validate_run_kind_transition(phase: PhaseName, kind: RunKind) -> Result<(), AppError> {
     let ok = matches!(
         (phase, kind),
-        (PhaseName::Survey, RunKind::Survey)
-            | (PhaseName::Plan, RunKind::Plan)
+        (PhaseName::Plan, RunKind::Plan)
             | (PhaseName::Construct, RunKind::Construct)
             | (PhaseName::Construct, RunKind::Plan)
     );

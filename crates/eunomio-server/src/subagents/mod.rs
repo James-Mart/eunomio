@@ -6,10 +6,9 @@ pub mod constructor;
 pub mod planner;
 pub mod reorder;
 pub mod shaver;
-pub mod surveyor;
 
 pub use loader::{
     constructor_placeholders, load_subagents, planner_placeholders, reorder_placeholders,
-    resolve_prompt_template, shaver_placeholders, surveyor_placeholders, ParseError,
-    PromptTemplate, SubagentDef, Subagents,
+    resolve_prompt_template, shaver_placeholders, ParseError, PromptTemplate, SubagentDef,
+    Subagents,
 };

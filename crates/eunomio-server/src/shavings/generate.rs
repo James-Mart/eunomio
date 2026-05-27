@@ -4,7 +4,7 @@ use crate::{
     git::{self, TreeChange, TreeChangeStatus},
     repo_store,
     shavings::validate,
-    AppState, NewShavingTrackInsert, ShavingStep,
+    storage_path, AppState, NewShavingTrackInsert, ShavingStep,
 };
 use anyhow::{anyhow, Context, Result};
 use std::path::{Path, PathBuf};
@@ -39,6 +39,7 @@ async fn attach_track(state: &AppState, input: AttachTrackInput) -> Result<()> {
     let worktree = provision_shaving_worktree(
         &git_root,
         &state.data_dir,
+        &input.org_id,
         &input.session_id,
         &input.parent_commit_sha,
     )
@@ -203,15 +204,13 @@ fn display_path(change: &TreeChange) -> &str {
 async fn provision_shaving_worktree(
     repo_root: &Path,
     data_dir: &Path,
+    org_id: &str,
     session_id: &str,
     parent_commit: &str,
 ) -> Result<PathBuf> {
-    let worktree_path = data_dir
-        .join("worktrees")
-        .join(session_id)
-        .join("shaving-gen")
-        .join(Uuid::new_v4().to_string())
-        .join("worktree");
+    let id = Uuid::new_v4().to_string();
+    let worktree_path =
+        storage_path::generated_worktree_path(data_dir, org_id, session_id, "shaving-gen", &id);
     if let Some(parent_dir) = worktree_path.parent() {
         tokio::fs::create_dir_all(parent_dir)
             .await

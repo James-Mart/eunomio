@@ -41,13 +41,27 @@ async fn validate_session_accepts_valid_local_refs() {
 }
 
 #[tokio::test]
-async fn validate_session_rejects_missing_source_ref() {
+async fn validate_session_does_not_resolve_refs() {
     let app = TestApp::spawn_authenticated_with_repo(repo_with_feature_branch).await;
 
     let (status, body) = app
         .auth_json(
             "POST",
             "/api/sessions/validate",
+            local_session_body(&app.repo_path(), "main", "no-such-branch"),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "body: {body}");
+}
+
+#[tokio::test]
+async fn create_session_rejects_missing_source_ref() {
+    let app = TestApp::spawn_authenticated_with_repo(repo_with_feature_branch).await;
+
+    let (status, body) = app
+        .auth_json(
+            "POST",
+            "/api/sessions",
             local_session_body(&app.repo_path(), "main", "no-such-branch"),
         )
         .await;

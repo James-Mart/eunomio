@@ -33,8 +33,6 @@ pub struct PartitionSettings {
     #[serde(default)]
     pub coordinator: CoordinatorSettings,
     #[serde(default)]
-    pub surveyor: SubagentSettings,
-    #[serde(default)]
     pub planner: SubagentSettings,
     #[serde(default)]
     pub constructor: SubagentSettings,
@@ -53,8 +51,6 @@ pub struct CoordinatorSettings {
     pub human_in_the_loop: HumanInTheLoop,
     #[serde(default = "default_iteration_limit")]
     pub max_iterations: IterationLimit,
-    #[serde(default)]
-    pub surveyor_enabled: bool,
     #[serde(default = "default_true")]
     pub timeline_enabled: bool,
     #[serde(default = "default_true")]
@@ -67,7 +63,6 @@ impl Default for CoordinatorSettings {
             model: ModelSelection::default(),
             human_in_the_loop: HumanInTheLoop::default(),
             max_iterations: default_iteration_limit(),
-            surveyor_enabled: false,
             timeline_enabled: true,
             reorder_enabled: true,
         }
@@ -77,8 +72,6 @@ impl Default for CoordinatorSettings {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HumanInTheLoop {
-    #[serde(default)]
-    pub after_survey: bool,
     #[serde(default)]
     pub after_planning: bool,
     #[serde(default)]
@@ -90,10 +83,9 @@ pub struct HumanInTheLoop {
 impl Default for HumanInTheLoop {
     fn default() -> Self {
         Self {
-            after_survey: false,
-            after_planning: false,
-            after_construct: false,
-            after_indivisible: false,
+            after_planning: true,
+            after_construct: true,
+            after_indivisible: true,
         }
     }
 }
@@ -148,8 +140,6 @@ pub struct PartitionSettingsPatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coordinator: Option<CoordinatorSettings>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub surveyor: Option<SubagentSettings>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub planner: Option<SubagentSettings>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub constructor: Option<SubagentSettings>,
@@ -169,9 +159,6 @@ impl PartitionSettings {
         }
         if let Some(v) = patch.coordinator {
             self.coordinator = v;
-        }
-        if let Some(v) = patch.surveyor {
-            self.surveyor = v;
         }
         if let Some(v) = patch.planner {
             self.planner = v;

@@ -32,7 +32,6 @@ impl PartitionStrategy {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum PhaseName {
-    Survey,
     Plan,
     Construct,
 }
@@ -40,7 +39,6 @@ pub enum PhaseName {
 impl PhaseName {
     pub fn as_str(&self) -> &'static str {
         match self {
-            PhaseName::Survey => "survey",
             PhaseName::Plan => "plan",
             PhaseName::Construct => "construct",
         }
@@ -48,7 +46,6 @@ impl PhaseName {
 
     pub fn parse(s: &str) -> Option<Self> {
         match s {
-            "survey" => Some(PhaseName::Survey),
             "plan" => Some(PhaseName::Plan),
             "construct" => Some(PhaseName::Construct),
             _ => None,
@@ -90,7 +87,6 @@ pub struct Partition {
     pub session_id: String,
     pub target_node_id: String,
     pub strategy: Option<PartitionStrategy>,
-    pub change_survey: Option<serde_json::Value>,
     pub plan: Option<serde_json::Value>,
     pub phase: PhaseName,
     pub phase_state: PhaseState,
@@ -108,7 +104,6 @@ pub struct PartitionRow {
     pub session_id: String,
     pub target_node_id: String,
     pub strategy: Option<PartitionStrategy>,
-    pub change_survey_json: Option<String>,
     pub plan_json: Option<String>,
     pub candidate_slice_tree_sha: Option<String>,
     pub candidate_slice_commit_sha: Option<String>,
@@ -121,10 +116,6 @@ pub struct PartitionRow {
 
 impl From<PartitionRow> for Partition {
     fn from(row: PartitionRow) -> Self {
-        let change_survey = row
-            .change_survey_json
-            .as_deref()
-            .and_then(|s| serde_json::from_str(s).ok());
         let plan = row
             .plan_json
             .as_deref()
@@ -134,7 +125,6 @@ impl From<PartitionRow> for Partition {
             session_id: row.session_id,
             target_node_id: row.target_node_id,
             strategy: row.strategy,
-            change_survey,
             plan,
             phase: row.phase,
             phase_state: row.phase_state,

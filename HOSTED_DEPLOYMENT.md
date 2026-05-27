@@ -347,7 +347,7 @@ Eunomio uses the Cursor SDK's local runtime — the agent process runs on the eu
 
 Every `cursor-helper` invocation runs inside a sandbox that enforces, before user prompt is read:
 
-- **Filesystem scope:** read+write access to the partition's worktree (`~/.eunomio/worktrees/<sessionId>/<partitionId>/worktree/` or the hosted equivalent) and a small scratch dir; readonly access to a minimal toolchain (`git`, `node`, `rg`, etc.). No access to other worktrees, the credentials file, `~/.ssh`, the secrets cache, or `/proc/*/environ`.
+- **Filesystem scope:** read+write access to the partition's worktree (`~/.eunomio/worktrees/<orgSlug>/<sessionId>/<partitionId>/worktree/` or the hosted equivalent) and a small scratch dir; readonly access to a minimal toolchain (`git`, `node`, `rg`, etc.). No access to other worktrees, the credentials file, `~/.ssh`, the secrets cache, or `/proc/*/environ`.
 - **Network scope:** outbound to (a) the Cursor API endpoints used by the SDK, and (b) the session's git remote host. Everything else — RFC1918, link-local, cloud metadata IPs, arbitrary internet — is blocked.
 - **Process scope:** dropped privileges, no ability to ptrace siblings, no setuid binaries, resource limits (CPU time, memory, file descriptors, open processes).
 

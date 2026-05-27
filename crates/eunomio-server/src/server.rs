@@ -4,7 +4,7 @@ use crate::{
     auth::{
         auth_routes, public_auth_routes, require_csrf_header, require_principal, CurrentPrincipal,
     },
-    branching, edge_file_viewed, edges, embed,
+    edge_file_viewed, edges, embed,
     launch::public_launch_routes,
     middleware::host_guard,
     node_reviewed, partition_settings, sessions, sse,
@@ -17,7 +17,7 @@ use axum::{
     http::StatusCode,
     middleware::{from_fn, from_fn_with_state},
     response::{sse::Event, IntoResponse, Sse},
-    routing::{delete, get, patch, post, put},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 use eunomio_core::types::*;
@@ -48,12 +48,10 @@ fn protected_routes() -> Router<AppState> {
             put(edge_file_viewed::put_edge_file_viewed),
         )
         .route("/api/sessions/:id/diff", get(get_diff))
-        .route("/api/sessions/:id/nodes/:node_id", patch(rename_node))
         .route(
             "/api/sessions/:id/nodes/:node_id/reviewed",
             put(node_reviewed::put_node_reviewed),
         )
-        .route("/api/sessions/:id/nodes/:node_id/branch", post(branch_node))
         .route(
             "/api/partition-settings",
             get(get_partition_settings).patch(patch_partition_settings),
@@ -75,10 +73,6 @@ fn protected_routes() -> Router<AppState> {
         .route(
             "/api/partitions/:partition_id/runs/:run_id",
             delete(cancel_run),
-        )
-        .route(
-            "/api/partitions/:partition_id/survey/accept",
-            post(accept_survey),
         )
         .route(
             "/api/partitions/:partition_id/plan/accept",
@@ -348,49 +342,6 @@ async fn get_diff(
     }))
 }
 
-async fn rename_node(
-    State(state): State<AppState>,
-    principal: CurrentPrincipal,
-    Path((session_id, node_id)): Path<(String, String)>,
-    Json(req): Json<RenameNodeRequest>,
-) -> Result<Json<GraphNode>, ServerError> {
-    if req.title.trim().is_empty() {
-        return Err(AppError::BadRequest("title must be non-empty".into()).into());
-    }
-    state
-        .datastore
-        .sessions()
-        .ensure(&principal.org_id, &session_id)
-        .await?;
-    let node = state
-        .datastore
-        .nodes()
-        .update_title(&principal.org_id, &session_id, &node_id, &req.title)
-        .await?;
-    Ok(Json(node))
-}
-
-async fn branch_node(
-    State(state): State<AppState>,
-    principal: CurrentPrincipal,
-    Path((session_id, node_id)): Path<(String, String)>,
-    Json(req): Json<BranchFromNodeRequest>,
-) -> Result<Json<BranchFromNodeResponse>, ServerError> {
-    let tip = branching::branch_from_node(
-        &state,
-        &principal.org_id,
-        &session_id,
-        &node_id,
-        &req.branch_name,
-        req.force,
-    )
-    .await?;
-    Ok(Json(BranchFromNodeResponse {
-        branch_name: req.branch_name,
-        commit_sha: tip,
-    }))
-}
-
 async fn get_partition_settings(
     State(state): State<AppState>,
     principal: CurrentPrincipal,
@@ -596,20 +547,6 @@ async fn get_run_transcript(
         state
             .coordinator
             .get_transcript(&state, &principal.org_id, &partition_id, &run_id)
-            .await?,
-    ))
-}
-
-async fn accept_survey(
-    State(state): State<AppState>,
-    principal: CurrentPrincipal,
-    Path(partition_id): Path<String>,
-    Json(req): Json<AcceptSurveyRequest>,
-) -> Result<Json<Partition>, ServerError> {
-    Ok(Json(
-        state
-            .coordinator
-            .accept_survey(&state, &principal.org_id, &partition_id, req)
             .await?,
     ))
 }

@@ -13,7 +13,6 @@ export type SettingsCategory =
   | "general"
   | "hotkeys"
   | "coordinator"
-  | "surveyor"
   | "planner"
   | "constructor"
   | "shaver"

@@ -45,10 +45,9 @@ fn remote_path_segments(url: &str) -> Vec<String> {
 
 pub fn repo_display_parts(
     normalized_remote: &str,
-    is_local: bool,
     literal_remote: &str,
 ) -> (Option<String>, String) {
-    if is_local {
+    if normalized_remote.starts_with("local:") {
         let name = std::path::Path::new(literal_remote)
             .file_name()
             .and_then(|s| s.to_str())

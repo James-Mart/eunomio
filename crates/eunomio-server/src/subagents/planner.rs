@@ -47,7 +47,6 @@ pub struct PlanContext {
     pub parent_commit: String,
     pub before_tree: String,
     pub target_tree: String,
-    pub change_survey_json: String,
     pub strategy_override: String,
     pub user_feedback: String,
     pub prior_attempt: Option<PriorAttempt>,
@@ -58,10 +57,6 @@ pub fn render_prompt(ctx: &PlanContext, template: &PromptTemplate) -> String {
     map.insert("PARENT_COMMIT".into(), serde_json::json!(ctx.parent_commit));
     map.insert("BEFORE_TREE".into(), serde_json::json!(ctx.before_tree));
     map.insert("TARGET_TREE".into(), serde_json::json!(ctx.target_tree));
-    map.insert(
-        "CHANGE_SURVEY_JSON".into(),
-        serde_json::json!(ctx.change_survey_json),
-    );
     map.insert(
         "STRATEGY_OVERRIDE".into(),
         serde_json::json!(ctx.strategy_override),

@@ -1,19 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{
-    partition_settings::load_for_partition, repo_store, state::AppState, worktree, AppError,
-};
+use crate::{partition_settings::load_for_partition, state::AppState, worktree, AppError};
 use eunomio_core::types::*;
 
 use super::Coordinator;
-
-fn first_run_kind(settings: &PartitionSettings) -> RunKind {
-    if settings.coordinator.surveyor_enabled {
-        RunKind::Survey
-    } else {
-        RunKind::Plan
-    }
-}
 
 impl Coordinator {
     pub async fn begin_partition(
@@ -62,8 +52,6 @@ impl Coordinator {
                 IterationLimit::Auto => None,
             }
         });
-        let first_kind = first_run_kind(&settings);
-
         let (_, parent_node) = state
             .datastore
             .nodes()
@@ -78,18 +66,6 @@ impl Coordinator {
             .sessions()
             .user_id(org_id, session_id)
             .await?;
-        let fields = state
-            .datastore
-            .sessions()
-            .repo_fields(org_id, session_id)
-            .await?;
-        repo_store::fetch_for_session(
-            &state.data_dir,
-            &fields.normalized_remote,
-            &fields.literal_remote,
-            fields.is_local,
-        )
-        .await?;
         let git_root = crate::repo_store::session_git_root(state, org_id, session_id).await?;
 
         let now = eunomio_core::unix_seconds();
@@ -102,7 +78,7 @@ impl Coordinator {
                 session_id: session_id.to_string(),
                 target_node_id: target_node_id.to_string(),
                 worktree_path: String::new(),
-                initial_phase: first_kind.phase(),
+                initial_phase: PhaseName::Plan,
                 remaining_depth,
                 now,
             })
@@ -111,6 +87,7 @@ impl Coordinator {
         let worktree_path = match worktree::provision(
             &git_root,
             &state.data_dir,
+            org_id,
             session_id,
             &inserted_id,
             &parent.commit_sha,
@@ -166,7 +143,7 @@ impl Coordinator {
             org_id.to_string(),
             inserted_id,
             StartRunRequest {
-                kind: first_kind,
+                kind: RunKind::Plan,
                 ..Default::default()
             },
         )

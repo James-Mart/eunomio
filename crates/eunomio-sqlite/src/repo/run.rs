@@ -9,6 +9,7 @@ use eunomio_core::{
     types::*,
     AppError,
 };
+use rusqlite::types::Type;
 use std::sync::Arc;
 use tokio_rusqlite::Connection;
 use uuid::Uuid;
@@ -32,7 +33,7 @@ fn run_row_mapper(row: &rusqlite::Row<'_>) -> rusqlite::Result<RunRow> {
         partition_id: row.get(1)?,
         session_id: row.get(2)?,
         target_node_id: row.get(3)?,
-        kind: RunKind::parse(&row.get::<_, String>(4)?).unwrap_or(RunKind::Survey),
+        kind: parse_run_kind(row, 4)?,
         parent_run_id: row.get(5)?,
         status: RunStatus::parse(&row.get::<_, String>(6)?).unwrap_or(RunStatus::Error),
         result_json: row.get(7)?,
@@ -41,6 +42,17 @@ fn run_row_mapper(row: &rusqlite::Row<'_>) -> rusqlite::Result<RunRow> {
         transcript_text: row.get(10)?,
         started_at: row.get(11)?,
         finished_at: row.get(12)?,
+    })
+}
+
+fn parse_run_kind(row: &rusqlite::Row<'_>, idx: usize) -> rusqlite::Result<RunKind> {
+    let raw: String = row.get(idx)?;
+    RunKind::parse(&raw).ok_or_else(|| {
+        rusqlite::Error::FromSqlConversionFailure(
+            idx,
+            Type::Text,
+            format!("unknown run kind: {raw}").into(),
+        )
     })
 }
 

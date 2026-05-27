@@ -16,8 +16,24 @@ pub enum CreateOutcome {
     Existed,
 }
 
-pub async fn validate(state: &AppState, dto: &CreateSessionRequest) -> Result<(), AppError> {
-    prepare_seed(state, dto).await?;
+pub async fn validate(_state: &AppState, dto: &CreateSessionRequest) -> Result<(), AppError> {
+    let parsed = repo_store::parse_remote_url(&dto.remote_url)?;
+    if parsed.is_local {
+        git::ensure_repo(Path::new(&parsed.literal_remote))
+            .await
+            .map_err(|e| {
+                AppError::BadRequest(format!(
+                    "{} is not a git repository: {e}",
+                    parsed.literal_remote
+                ))
+            })?;
+    }
+    if dto.base_ref.trim().is_empty() {
+        return Err(AppError::BadRequest("baseRef is required".into()));
+    }
+    if dto.source_ref.trim().is_empty() {
+        return Err(AppError::BadRequest("sourceRef is required".into()));
+    }
     Ok(())
 }
 
@@ -33,25 +49,9 @@ pub async fn create(
         source_ref,
     } = dto;
 
-    let parsed = repo_store::parse_remote_url(&remote_url)?;
-
-    if let Some(existing) = state
-        .datastore
-        .sessions()
-        .find_by_refs(org_id, &parsed.normalized_remote, &base_ref, &source_ref)
-        .await?
-    {
-        let session = state
-            .datastore
-            .sessions()
-            .get(org_id, &existing.id)
-            .await?
-            .ok_or(AppError::NotFound)?;
-        return Ok((session, CreateOutcome::Existed));
-    }
-
     let (parsed, seed) = prepare_seed(
         state,
+        org_id,
         &CreateSessionRequest {
             remote_url: remote_url.clone(),
             base_ref: base_ref.clone(),
@@ -59,6 +59,22 @@ pub async fn create(
         },
     )
     .await?;
+
+    if let Some(existing) = state
+        .datastore
+        .sessions()
+        .find_by_snapshot(
+            org_id,
+            &parsed.normalized_remote,
+            &base_ref,
+            &source_ref,
+            &seed.resolved_base_commit,
+            &seed.resolved_source_commit,
+        )
+        .await?
+    {
+        return Ok((existing, CreateOutcome::Existed));
+    }
 
     let session_id = Uuid::new_v4().to_string();
     let base_node_id = Uuid::new_v4().to_string();
@@ -74,9 +90,10 @@ pub async fn create(
             session_id.clone(),
             parsed.normalized_remote.clone(),
             parsed.literal_remote.clone(),
-            parsed.is_local,
             base_ref.clone(),
             source_ref.clone(),
+            seed.resolved_base_commit,
+            seed.resolved_source_commit,
             seed.base_tree,
             seed.final_tree,
             base_node_id.clone(),
@@ -130,8 +147,8 @@ pub async fn delete(state: &AppState, org_id: &str, session_id: &str) -> Result<
         .await?;
     repo_store::maybe_remove_clone(
         &state.data_dir,
+        org_id,
         &fields.normalized_remote,
-        fields.is_local,
         remaining,
     )
     .await?;
@@ -141,15 +158,18 @@ pub async fn delete(state: &AppState, org_id: &str, session_id: &str) -> Result<
 
 async fn prepare_seed(
     state: &AppState,
+    org_id: &str,
     dto: &CreateSessionRequest,
 ) -> Result<(repo_store::ParsedRemote, SessionSeed), AppError> {
     let parsed = repo_store::parse_remote_url(&dto.remote_url)?;
-    let git_root = repo_store::materialize_git_root(&state.data_dir, &parsed).await?;
-    let seed = seed_session(&git_root, parsed.is_local, &dto.base_ref, &dto.source_ref).await?;
+    let git_root = repo_store::materialize_git_root(&state.data_dir, org_id, &parsed).await?;
+    let seed = seed_session(&git_root, &dto.base_ref, &dto.source_ref).await?;
     Ok((parsed, seed))
 }
 
 struct SessionSeed {
+    resolved_base_commit: String,
+    resolved_source_commit: String,
     base_tree: String,
     final_tree: String,
     base_commit: String,
@@ -158,21 +178,12 @@ struct SessionSeed {
 
 async fn seed_session(
     git_root: &Path,
-    is_local: bool,
     base_ref: &str,
     source_ref: &str,
 ) -> Result<SessionSeed, AppError> {
     let resolved_source = git::resolve_ref_name(git_root, source_ref)
         .await
-        .map_err(|e| {
-            if is_local {
-                AppError::BadRequest(format!("rev-parse {source_ref} failed: {e}"))
-            } else {
-                AppError::BadRequest(format!(
-                    "rev-parse {source_ref} failed: {e} (network remotes require fetchable refs)"
-                ))
-            }
-        })?;
+        .map_err(|e| AppError::BadRequest(format!("rev-parse {source_ref} failed: {e}")))?;
 
     let mb = git::merge_base(git_root, base_ref, &resolved_source)
         .await
@@ -202,6 +213,8 @@ async fn seed_session(
         .map_err(|e| AppError::Internal(anyhow::anyhow!("commit-tree final: {e}")))?;
 
     Ok(SessionSeed {
+        resolved_base_commit: mb,
+        resolved_source_commit: source_commit,
         base_tree,
         final_tree,
         base_commit,

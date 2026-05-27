@@ -202,27 +202,6 @@ pub struct ListPartitionsQuery {
     pub target_node_id: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RenameNodeRequest {
-    pub title: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BranchFromNodeRequest {
-    pub branch_name: String,
-    #[serde(default)]
-    pub force: bool,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BranchFromNodeResponse {
-    pub branch_name: String,
-    pub commit_sha: String,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelParamValue {
@@ -329,7 +308,6 @@ pub struct RepoHints {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SubagentDefaultPrompts {
-    pub surveyor: String,
     pub planner: String,
     pub constructor: String,
     pub shaver: String,

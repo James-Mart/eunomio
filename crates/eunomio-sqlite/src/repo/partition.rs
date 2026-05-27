@@ -4,6 +4,7 @@ use super::{require_affected_sqlite, DbResultExt};
 use crate::db;
 use async_trait::async_trait;
 use eunomio_core::{traits::PartitionRepo, types::*, AppError};
+use rusqlite::types::Type;
 use std::sync::Arc;
 use tokio_rusqlite::Connection;
 use uuid::Uuid;
@@ -28,15 +29,25 @@ fn partition_row_mapper(row: &rusqlite::Row<'_>) -> rusqlite::Result<PartitionRo
         strategy: row
             .get::<_, Option<String>>(5)?
             .and_then(|s| PartitionStrategy::parse(&s)),
-        change_survey_json: row.get(6)?,
-        plan_json: row.get(7)?,
-        candidate_slice_tree_sha: row.get(8)?,
-        candidate_slice_commit_sha: row.get(9)?,
-        phase: PhaseName::parse(&row.get::<_, String>(10)?).unwrap_or(PhaseName::Survey),
-        phase_state: PhaseState::parse(&row.get::<_, String>(11)?).unwrap_or(PhaseState::Error),
-        worktree_path: row.get(12)?,
-        remaining_depth: row.get(13)?,
-        created_at: row.get(14)?,
+        plan_json: row.get(6)?,
+        candidate_slice_tree_sha: row.get(7)?,
+        candidate_slice_commit_sha: row.get(8)?,
+        phase: parse_phase(row, 9)?,
+        phase_state: PhaseState::parse(&row.get::<_, String>(10)?).unwrap_or(PhaseState::Error),
+        worktree_path: row.get(11)?,
+        remaining_depth: row.get(12)?,
+        created_at: row.get(13)?,
+    })
+}
+
+fn parse_phase(row: &rusqlite::Row<'_>, idx: usize) -> rusqlite::Result<PhaseName> {
+    let raw: String = row.get(idx)?;
+    PhaseName::parse(&raw).ok_or_else(|| {
+        rusqlite::Error::FromSqlConversionFailure(
+            idx,
+            Type::Text,
+            format!("unknown partition phase: {raw}").into(),
+        )
     })
 }
 
@@ -49,7 +60,7 @@ impl PartitionRepo for SqlitePartitionRepo {
             .conn
             .call(move |conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT p.id, p.org_id, p.user_id, p.session_id, p.target_node_id, p.strategy, p.change_survey_json, p.plan_json, p.candidate_slice_tree_sha, p.candidate_slice_commit_sha, p.phase, p.phase_state, p.worktree_path, p.remaining_depth, p.created_at \
+                    "SELECT p.id, p.org_id, p.user_id, p.session_id, p.target_node_id, p.strategy, p.plan_json, p.candidate_slice_tree_sha, p.candidate_slice_commit_sha, p.phase, p.phase_state, p.worktree_path, p.remaining_depth, p.created_at \
                  FROM partitions p \
                  WHERE p.id = ?1 AND p.org_id = ?2",
                 )?;
@@ -78,12 +89,12 @@ impl PartitionRepo for SqlitePartitionRepo {
             .call(move |conn| {
                 let (sql, has_filter) = match &target_owned {
                     Some(_) => (
-                        "SELECT id, org_id, user_id, session_id, target_node_id, strategy, change_survey_json, plan_json, candidate_slice_tree_sha, candidate_slice_commit_sha, phase, phase_state, worktree_path, remaining_depth, created_at \
+                        "SELECT id, org_id, user_id, session_id, target_node_id, strategy, plan_json, candidate_slice_tree_sha, candidate_slice_commit_sha, phase, phase_state, worktree_path, remaining_depth, created_at \
                      FROM partitions WHERE org_id = ?1 AND session_id = ?2 AND target_node_id = ?3 ORDER BY created_at",
                         true,
                     ),
                     None => (
-                        "SELECT id, org_id, user_id, session_id, target_node_id, strategy, change_survey_json, plan_json, candidate_slice_tree_sha, candidate_slice_commit_sha, phase, phase_state, worktree_path, remaining_depth, created_at \
+                        "SELECT id, org_id, user_id, session_id, target_node_id, strategy, plan_json, candidate_slice_tree_sha, candidate_slice_commit_sha, phase, phase_state, worktree_path, remaining_depth, created_at \
                      FROM partitions WHERE org_id = ?1 AND session_id = ?2 ORDER BY created_at",
                         false,
                     ),
@@ -270,28 +281,6 @@ impl PartitionRepo for SqlitePartitionRepo {
                 let n = conn.execute(
                     "UPDATE partitions SET plan_json = NULL, strategy = NULL, candidate_slice_tree_sha = NULL, candidate_slice_commit_sha = NULL WHERE id = ?1 AND org_id = ?2",
                     tokio_rusqlite::params![partition_id, org_id],
-                )?;
-                require_affected_sqlite(n)?;
-                Ok(())
-            })
-            .await
-            .map_not_found()?;
-        Ok(())
-    }
-
-    async fn accept_survey(
-        &self,
-        org_id: &str,
-        partition_id: &str,
-        change_survey_json: String,
-    ) -> Result<(), AppError> {
-        let org_id = org_id.to_string();
-        let partition_id = partition_id.to_string();
-        self.conn
-            .call(move |conn| {
-                let n = conn.execute(
-                    "UPDATE partitions SET change_survey_json = ?1, phase = 'plan', phase_state = 'running' WHERE id = ?2 AND org_id = ?3",
-                    tokio_rusqlite::params![change_survey_json, partition_id, org_id],
                 )?;
                 require_affected_sqlite(n)?;
                 Ok(())
@@ -616,6 +605,31 @@ impl PartitionRepo for SqlitePartitionRepo {
                             row.get::<_, String>(0)?,
                             row.get::<_, String>(1)?,
                             row.get::<_, String>(2)?,
+                        ))
+                    })?
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(rows)
+            })
+            .await
+            .map_err(crate::repo::map_sqlite_err)?;
+        Ok(rows)
+    }
+
+    async fn list_all_id_org_session_worktree(
+        &self,
+    ) -> Result<Vec<(String, String, String, String)>, AppError> {
+        let rows: Vec<(String, String, String, String)> = self
+            .conn
+            .call(move |conn| {
+                let mut stmt =
+                    conn.prepare("SELECT id, org_id, session_id, worktree_path FROM partitions")?;
+                let rows = stmt
+                    .query_map([], |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
+                            row.get::<_, String>(3)?,
                         ))
                     })?
                     .collect::<Result<Vec<_>, _>>()?;

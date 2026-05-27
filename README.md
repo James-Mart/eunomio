@@ -58,5 +58,5 @@ crates/
 frontend/                 Vite + React + TS + Tailwind
 helper/                   cursor-helper (Node SEA)
 docs/                     Fumadocs user documentation site
-subagents/                prompt markdown for surveyor/planner/constructor
+subagents/                prompt markdown for planner/constructor helpers
 ```

@@ -88,18 +88,21 @@ pub trait SessionRepo: Send + Sync {
         org_id: &str,
         session_id: &str,
     ) -> Result<(String, String), AppError>;
-    async fn find_by_refs(
+    async fn find_by_snapshot(
         &self,
         org_id: &str,
         normalized_remote: &str,
         base_ref: &str,
         source_ref: &str,
+        resolved_base_commit: &str,
+        resolved_source_commit: &str,
     ) -> Result<Option<Session>, AppError>;
     async fn count_for_normalized(
         &self,
         org_id: &str,
         normalized_remote: &str,
     ) -> Result<i64, AppError>;
+    async fn list_repo_identities(&self) -> Result<Vec<SessionRepoIdentity>, AppError>;
     async fn clear_session_partition_state(
         &self,
         org_id: &str,
@@ -151,9 +154,10 @@ pub trait SessionRepo: Send + Sync {
         session_id: String,
         normalized_remote: String,
         literal_remote: String,
-        is_local: bool,
         base_ref: String,
         source_ref: String,
+        resolved_base_commit: String,
+        resolved_source_commit: String,
         base_tree: String,
         final_tree: String,
         base_node_id: String,
@@ -195,19 +199,6 @@ pub trait NodeRepo: Send + Sync {
         session_id: &str,
         target_node_id: &str,
     ) -> Result<Option<(String, Option<String>, Option<String>)>, AppError>;
-    async fn update_title(
-        &self,
-        org_id: &str,
-        session_id: &str,
-        node_id: &str,
-        title: &str,
-    ) -> Result<GraphNode, AppError>;
-    async fn walk_to_base(
-        &self,
-        org_id: &str,
-        session_id: &str,
-        node_id: &str,
-    ) -> Result<Vec<WalkNode>, AppError>;
     async fn session_for_node_id(&self, org_id: &str, node_id: &str) -> Result<String, AppError>;
     async fn distinct_trees_in_session(
         &self,
@@ -248,12 +239,6 @@ pub trait PartitionRepo: Send + Sync {
     ) -> Result<(), AppError>;
     async fn insert_pending(&self, row: NewPartitionInsert) -> Result<String, AppError>;
     async fn clear_plan_and_slice(&self, org_id: &str, partition_id: &str) -> Result<(), AppError>;
-    async fn accept_survey(
-        &self,
-        org_id: &str,
-        partition_id: &str,
-        change_survey_json: String,
-    ) -> Result<(), AppError>;
     #[allow(clippy::too_many_arguments)]
     async fn finalize_construct_accept(
         &self,
@@ -335,6 +320,9 @@ pub trait PartitionRepo: Send + Sync {
         &self,
         org_id: &str,
     ) -> Result<Vec<(String, String, String)>, AppError>;
+    async fn list_all_id_org_session_worktree(
+        &self,
+    ) -> Result<Vec<(String, String, String, String)>, AppError>;
 }
 
 #[async_trait]

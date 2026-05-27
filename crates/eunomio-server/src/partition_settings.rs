@@ -74,7 +74,6 @@ async fn read_or_init(path: &PathBuf) -> Result<PartitionSettings> {
 
 pub fn resolve_model(settings: &PartitionSettings, role: PhaseName) -> ModelSelection {
     let role_settings = match role {
-        PhaseName::Survey => &settings.surveyor,
         PhaseName::Plan => &settings.planner,
         PhaseName::Construct => &settings.constructor,
     };

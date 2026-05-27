@@ -115,10 +115,6 @@ impl Coordinator {
         let run_id = run_id.to_string();
         tokio::spawn(async move {
             let res = match kind {
-                RunKind::Survey => coord
-                    .do_accept_survey(&state_owned, &org_id, &partition_id, &run_id)
-                    .await
-                    .map(|_| ()),
                 RunKind::Plan => coord
                     .do_accept_plan(&state_owned, &org_id, &partition_id, &run_id)
                     .await
@@ -138,7 +134,6 @@ impl Coordinator {
 
 fn gate_for(kind: RunKind, hitl: HumanInTheLoop) -> bool {
     match kind {
-        RunKind::Survey => hitl.after_survey,
         RunKind::Plan => hitl.after_planning,
         RunKind::Construct => hitl.after_construct,
     }

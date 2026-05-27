@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{git, AppError, RepoHints};
+use crate::{git, storage_path, AppError, RepoHints};
 use anyhow::{anyhow, Result};
+use serde_json::json;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -17,7 +18,7 @@ fn clone_locks() -> CloneLockMap {
         .clone()
 }
 
-async fn with_slug_lock<T, E, F, Fut>(slug: &str, _data_dir: &Path, f: F) -> Result<T, E>
+async fn with_slug_lock<T, E, F, Fut>(slug: &str, f: F) -> Result<T, E>
 where
     F: FnOnce() -> Fut,
     Fut: std::future::Future<Output = Result<T, E>>,
@@ -77,17 +78,8 @@ fn resolve_local_literal(input: &str) -> Result<String, AppError> {
     Ok(canonical.to_string_lossy().into_owned())
 }
 
-pub fn clone_path(data_dir: &Path, normalized_remote: &str) -> PathBuf {
-    let slug = git::slug_from_identity(normalized_remote);
-    data_dir.join("repos").join(slug)
-}
-
-pub fn git_root(data_dir: &Path, parsed: &ParsedRemote) -> PathBuf {
-    if parsed.is_local {
-        PathBuf::from(&parsed.literal_remote)
-    } else {
-        clone_path(data_dir, &parsed.normalized_remote)
-    }
+pub fn clone_path(data_dir: &Path, org_id: &str, normalized_remote: &str) -> PathBuf {
+    storage_path::clone_path(data_dir, org_id, normalized_remote)
 }
 
 pub async fn session_git_root(
@@ -100,18 +92,16 @@ pub async fn session_git_root(
         .sessions()
         .repo_fields(org_id, session_id)
         .await?;
-    Ok(git_root(
+    Ok(clone_path(
         &state.data_dir,
-        &ParsedRemote {
-            literal_remote: fields.literal_remote,
-            is_local: fields.is_local,
-            normalized_remote: fields.normalized_remote,
-        },
+        org_id,
+        &fields.normalized_remote,
     ))
 }
 
 pub async fn materialize_git_root(
     data_dir: &Path,
+    org_id: &str,
     parsed: &ParsedRemote,
 ) -> Result<PathBuf, AppError> {
     if parsed.is_local {
@@ -123,16 +113,22 @@ pub async fn materialize_git_root(
                     parsed.literal_remote
                 ))
             })?;
-        return Ok(PathBuf::from(&parsed.literal_remote));
     }
 
-    let slug = git::slug_from_identity(&parsed.normalized_remote);
-    let clone_dir = clone_path(data_dir, &parsed.normalized_remote);
-    tokio::fs::create_dir_all(data_dir.join("repos"))
+    let slug = format!(
+        "{}:{}",
+        storage_path::org_slug(org_id),
+        storage_path::remote_slug(&parsed.normalized_remote)
+    );
+    let clone_dir = clone_path(data_dir, org_id, &parsed.normalized_remote);
+    let parent = clone_dir
+        .parent()
+        .ok_or_else(|| AppError::Internal(anyhow!("clone path has no parent")))?;
+    tokio::fs::create_dir_all(parent)
         .await
         .map_err(|e| AppError::Internal(anyhow!("create repos dir: {e}")))?;
 
-    with_slug_lock(&slug, data_dir, || async {
+    with_slug_lock(&slug, || async {
         if clone_dir.exists() {
             git::remote_set_url(&clone_dir, &parsed.literal_remote)
                 .await
@@ -145,53 +141,44 @@ pub async fn materialize_git_root(
                 .await
                 .map_err(|e| AppError::BadRequest(format!("git clone --bare: {e}")))?;
         }
+        write_repo_metadata(&clone_dir, org_id, &parsed.normalized_remote).await?;
         Ok(clone_dir)
     })
     .await
 }
 
-pub async fn fetch_for_session(
-    data_dir: &Path,
+async fn write_repo_metadata(
+    clone_dir: &Path,
+    org_id: &str,
     normalized_remote: &str,
-    literal_remote: &str,
-    is_local: bool,
 ) -> Result<(), AppError> {
-    if is_local {
-        return Ok(());
-    }
-    let git_root = clone_path(data_dir, normalized_remote);
-    git::remote_set_url(&git_root, literal_remote)
+    let path = storage_path::repo_metadata_path(clone_dir);
+    let serialized = serde_json::to_vec_pretty(&json!({
+        "orgId": org_id,
+        "normalizedRemote": normalized_remote,
+    }))
+    .map_err(|e| AppError::Internal(anyhow!("serialize repo metadata: {e}")))?;
+    tokio::fs::write(path, serialized)
         .await
-        .map_err(|e| AppError::BadRequest(format!("git remote set-url: {e}")))?;
-    git::fetch_origin(&git_root)
-        .await
-        .map_err(|e| AppError::BadRequest(format!("git fetch: {e}")))?;
+        .map_err(|e| AppError::Internal(anyhow!("write repo metadata: {e}")))?;
     Ok(())
 }
 
 pub async fn maybe_remove_clone(
     data_dir: &Path,
+    org_id: &str,
     normalized_remote: &str,
-    is_local: bool,
     remaining_sessions: i64,
 ) -> Result<(), AppError> {
-    if is_local || remaining_sessions > 0 {
+    if remaining_sessions > 0 {
         return Ok(());
     }
-    if !normalized_remote.starts_with("remote:") {
-        return Ok(());
-    }
-    let clone_dir = clone_path(data_dir, normalized_remote);
+    let clone_dir = clone_path(data_dir, org_id, normalized_remote);
     if clone_dir.exists() {
         tokio::fs::remove_dir_all(&clone_dir)
             .await
             .map_err(|e| AppError::Internal(anyhow!("remove clone dir: {e}")))?;
     }
-    let lock_path = data_dir.join("repos").join(format!(
-        "{}.lock",
-        git::slug_from_identity(normalized_remote)
-    ));
-    let _ = tokio::fs::remove_file(lock_path).await;
     Ok(())
 }
 

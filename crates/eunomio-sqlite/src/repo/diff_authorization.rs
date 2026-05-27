@@ -115,14 +115,17 @@ mod tests {
             for session_id in ["session-a", "session-b"] {
                 conn.execute(
                     "INSERT INTO sessions (
-                      id, org_id, user_id, normalized_remote, literal_remote, is_local,
-                      base_ref, source_ref, base_tree, final_tree, base_node_id, created_at
-                    ) VALUES (?1, 'org', 'user', ?2, ?2, 1, 'main', 'feature', ?3, ?4, 'base', 1)",
+                      id, org_id, user_id, normalized_remote, literal_remote,
+                      base_ref, source_ref, resolved_base_commit, resolved_source_commit,
+                      base_tree, final_tree, base_node_id, created_at
+                    ) VALUES (?1, 'org', 'user', ?2, ?2, 'main', 'feature', ?5, ?6, ?3, ?4, 'base', 1)",
                     rusqlite::params![
                         session_id,
                         format!("remote-{session_id}"),
                         format!("base-{session_id}"),
                         format!("head-{session_id}"),
+                        format!("commit-base-{session_id}"),
+                        format!("commit-head-{session_id}"),
                     ],
                 )?;
                 conn.execute(

@@ -49,8 +49,15 @@ export function remoteRepoHost(url: string): RemoteRepoHost {
 }
 
 const GITHUB_PULL_URL_RE =
-  /^https:\/\/github\.com\/[^/]+\/[^/]+?(?:\.git)?\/pull\/\d+\/?$/;
+  /^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/pull\/(\d+)(?:\/[^?#]*)?(?:\?[^#]*)?(?:#.*)?$/;
+
+export function normalizeGithubPullRequestUrl(url: string): string | null {
+  const match = url.trim().match(GITHUB_PULL_URL_RE);
+  if (!match) return null;
+  const [, owner, repo, number] = match;
+  return `https://github.com/${owner}/${repo}/pull/${number}`;
+}
 
 export function isGithubPullRequestUrl(url: string): boolean {
-  return GITHUB_PULL_URL_RE.test(url.trim());
+  return normalizeGithubPullRequestUrl(url) !== null;
 }

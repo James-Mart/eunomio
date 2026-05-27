@@ -533,18 +533,6 @@ pub async fn worktree_remove(repo: &Path, path: &Path) -> Result<()> {
     Ok(())
 }
 
-pub async fn branch_create(repo: &Path, name: &str, commit: &str, force: bool) -> Result<()> {
-    let mut args: Vec<&str> = vec!["branch"];
-    if force {
-        args.push("-f");
-    }
-    args.push("--end-of-options");
-    args.push(name);
-    args.push(commit);
-    run(repo, &args).await?;
-    Ok(())
-}
-
 pub async fn update_ref(repo: &Path, ref_name: &str, commit: &str) -> Result<()> {
     run(repo, &["update-ref", ref_name, commit])
         .await
@@ -709,21 +697,6 @@ pub async fn repo_name(repo: &Path) -> Result<String> {
         .unwrap_or_else(|| repo.to_string_lossy().into_owned()))
 }
 
-pub async fn branch_exists(repo: &Path, name: &str) -> Result<bool> {
-    let out = Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .args([
-            "show-ref",
-            "--verify",
-            "--quiet",
-            &format!("refs/heads/{name}"),
-        ])
-        .output()
-        .await?;
-    Ok(out.status.success())
-}
-
 pub fn normalize_network_url(url: &str) -> String {
     let trimmed = url.trim().trim_end_matches('/').trim_end_matches(".git");
     if let Some(rest) = trimmed.strip_prefix("file://") {
@@ -749,12 +722,6 @@ pub fn normalize_remote_identity(literal: &str, is_local: bool) -> String {
     } else {
         format!("remote:{}", normalize_network_url(literal))
     }
-}
-
-pub fn slug_from_identity(identity: &str) -> String {
-    use sha2::Digest;
-    let digest = sha2::Sha256::digest(identity.as_bytes());
-    digest.iter().take(8).map(|b| format!("{b:02x}")).collect()
 }
 
 pub fn is_local_repo_input(input: &str) -> bool {
@@ -830,7 +797,7 @@ pub async fn clone_bare(url: &str, path: &Path) -> Result<()> {
         .to_str()
         .ok_or_else(|| anyhow!("clone path is not valid UTF-8: {}", path.display()))?;
     let out = Command::new("git")
-        .args(["clone", "--bare", url, path_str])
+        .args(["clone", "--bare", "--no-hardlinks", url, path_str])
         .output()
         .await?;
     if !out.status.success() {

@@ -63,23 +63,20 @@ git cat-file -t {{BEFORE_TREE}}   # expect "tree"
    **top 5 themes**; if the diff has more candidates, merge or drop the
    least significant. Describe themes **neutrally**: summarise what is
    in the diff, do not flag worries about it.
-3. For `synthetic` strategy candidates, use `themes[]` from
-   CHANGE_SURVEY_JSON (see Inputs) when non-empty; otherwise use the
-   themes you identified in step 2.
-4. Estimate edge size (~one story point ≈ ~150 changed lines / few files).
+3. Estimate edge size (~one story point ≈ ~150 changed lines / few files).
    If ≤ ~one story point, apply "When to call indivisible" — if all criteria
    hold, output Indivisible and stop. If > ~one story point, ask: can you
    name one reviewable first commit where **both** slice and leftover each
    earn a commit slot (see split quality below)? If not, output Indivisible
    and stop.
-5. Pick a strategy (`synthetic` / `vertical` / `horizontal`)
+4. Pick a strategy (`synthetic` / `vertical` / `horizontal`)
    by asking: which strategy's **best single slice** would feel most
    natural to review on its own? A good slice is tightly coupled
    internally and minimally coupled to the leftover. Prefer slices
    that compile / typecheck on their own. The slice must be buildable
    under the chosen strategy's Constructor rules (see constructibility
    in Rules). Respect STRATEGY_OVERRIDE (see Inputs) if set.
-6. Within that strategy, pick the slice itself and describe both edges
+5. Within that strategy, pick the slice itself and describe both edges
    (slice first, leftover second). Every changed hunk in the diff must
    live in exactly one edge — no duplicates, no omissions. A single
    file's hunks may be split across the two edges.
@@ -94,8 +91,6 @@ git cat-file -t {{BEFORE_TREE}}   # expect "tree"
 - STRATEGY_OVERRIDE: `{{STRATEGY_OVERRIDE}}` — `auto` on a first attempt;
   otherwise one of `synthetic` / `vertical` / `horizontal`, set when the
   user asked for a re-plan with a specific strategy.
-- CHANGE_SURVEY_JSON: `{{CHANGE_SURVEY_JSON}}` — prior ChangeSurvey from a
-  separate Survey run, when one exists; use `themes[]` when non-empty.
 - USER_FEEDBACK: `{{USER_FEEDBACK}}` — feedback on a prior plan, or
   `(none)`. Treat as the user's read on what your previous attempt got
   wrong: a critique of an edge, an objection to the boundary, or a
@@ -109,13 +104,11 @@ git cat-file -t {{BEFORE_TREE}}   # expect "tree"
 - **synthetic** — extract a topically coherent theme (one feature, one
   refactor, one bug fix) that **requires a synthesized intermediate** code
   state — a slice tree containing content in neither BeforeTree nor
-  TargetTree — to separate that theme cleanly from the rest. Use
-  `themes[]` from CHANGE_SURVEY_JSON when non-empty; otherwise use themes
-  from step 2. If the best theme is already a clean hunk-subset of
-  TargetTree, pick `vertical` or `horizontal` instead — that's not a
-  synthetic slice. On edges > ~one story point, prefer synthetic over
-  Indivisible when a theme can be separated with a synthesized
-  intermediate.
+  TargetTree — to separate that theme cleanly from the rest. If the best
+  theme is already a clean hunk-subset of TargetTree, pick `vertical` or
+  `horizontal` instead — that's not a synthetic slice. On edges > ~one
+  story point, prefer synthetic over Indivisible when a theme can be
+  separated with a synthesized intermediate.
 - **vertical** — extract a thin end-to-end tracer bullet that cuts
   through every architectural layer the diff touches, producing a
   self-contained working slice.
@@ -139,8 +132,8 @@ Lean toward Indivisible when most of these hold:
   commit in the final history — not "the slice doesn't tell the whole
   story yet."
 
-**Companion themes** (Indivisible even with 2+ Survey themes, when
-combined edge ≤ ~one story point):
+**Companion themes** (Indivisible even with 2+ themes, when combined edge
+≤ ~one story point):
 
 - feature + its tests, bug fix + pinning test, refactor + mechanical
   caller updates.

@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{git, AppError};
+use crate::{git, storage_path, AppError};
 use anyhow::anyhow;
 use std::path::{Path, PathBuf};
 
 /// Layout for a partition's worktree:
 ///
 /// ```text
-/// <data_dir>/worktrees/<session_id>/<partition_id>/worktree
+/// <data_dir>/worktrees/<org_slug>/<session_id>/<partition_id>/worktree
 /// ```
 ///
 /// Creates the parent directory and runs `git worktree add --detach
@@ -16,15 +16,13 @@ use std::path::{Path, PathBuf};
 pub async fn provision(
     repo_root: &Path,
     data_dir: &Path,
+    org_id: &str,
     session_id: &str,
     partition_id: &str,
     parent_commit: &str,
 ) -> Result<PathBuf, AppError> {
-    let worktree_path = data_dir
-        .join("worktrees")
-        .join(session_id)
-        .join(partition_id)
-        .join("worktree");
+    let worktree_path =
+        storage_path::partition_worktree_path(data_dir, org_id, session_id, partition_id);
     if let Some(parent_dir) = worktree_path.parent() {
         tokio::fs::create_dir_all(parent_dir)
             .await

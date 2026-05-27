@@ -6,7 +6,6 @@ import {
   AlertIcon,
   CheckCircleIcon,
   CodeIcon,
-  SearchIcon,
   PauseIcon,
   TasklistIcon,
 } from "@primer/octicons-react";
@@ -17,7 +16,6 @@ import type { PhaseName, PhaseState } from "@/lib/sessionEvents";
 type IconComponent = React.ComponentType<IconProps>;
 
 const STEPS: { name: PhaseName; label: string; icon: IconComponent }[] = [
-  { name: "survey", label: "Survey", icon: SearchIcon },
   { name: "plan", label: "Plan", icon: TasklistIcon },
   { name: "construct", label: "Construct", icon: CodeIcon },
 ];
@@ -25,7 +23,7 @@ const STEPS: { name: PhaseName; label: string; icon: IconComponent }[] = [
 export type LifecycleStateValue = PhaseState | "pending" | "done";
 export type LifecycleStates = Record<PhaseName, LifecycleStateValue>;
 
-const PHASE_ORDER: readonly PhaseName[] = ["survey", "plan", "construct"];
+const PHASE_ORDER: readonly PhaseName[] = ["plan", "construct"];
 
 export function lifecycleStatesFromPhase(
   phase: PhaseName,

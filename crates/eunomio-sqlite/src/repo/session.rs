@@ -20,9 +20,8 @@ impl SqliteSessionRepo {
 fn session_row_mapper(row: &rusqlite::Row<'_>) -> rusqlite::Result<Session> {
     let normalized_remote: String = row.get(1)?;
     let literal_remote: String = row.get(2)?;
-    let is_local: bool = row.get::<_, i64>(3)? != 0;
-    let (repo_owner, repo_name) =
-        display::repo_display_parts(&normalized_remote, is_local, &literal_remote);
+    let is_local = normalized_remote.starts_with("local:");
+    let (repo_owner, repo_name) = display::repo_display_parts(&normalized_remote, &literal_remote);
     Ok(Session {
         id: row.get(0)?,
         normalized_remote,
@@ -30,11 +29,11 @@ fn session_row_mapper(row: &rusqlite::Row<'_>) -> rusqlite::Result<Session> {
         is_local,
         repo_owner,
         repo_name,
-        base_ref: row.get(4)?,
-        source_ref: row.get(5)?,
-        base_node_id: row.get(6)?,
-        created_at: row.get(7)?,
-        session_partition_complete_at: row.get(8)?,
+        base_ref: row.get(3)?,
+        source_ref: row.get(4)?,
+        base_node_id: row.get(5)?,
+        created_at: row.get(6)?,
+        session_partition_complete_at: row.get(7)?,
     })
 }
 
@@ -95,14 +94,13 @@ impl SessionRepo for SqliteSessionRepo {
             .conn
             .call(move |conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT normalized_remote, literal_remote, is_local FROM sessions WHERE id = ?1 AND org_id = ?2",
+                    "SELECT normalized_remote, literal_remote FROM sessions WHERE id = ?1 AND org_id = ?2",
                 )?;
                 let mut rows = stmt.query(tokio_rusqlite::params![session_id, org_id])?;
                 if let Some(row) = rows.next()? {
                     Ok(Some(SessionRepoFields {
                         normalized_remote: row.get(0)?,
                         literal_remote: row.get(1)?,
-                        is_local: row.get::<_, i64>(2)? != 0,
                     }))
                 } else {
                     Ok(None)
@@ -118,7 +116,7 @@ impl SessionRepo for SqliteSessionRepo {
             .conn
             .call(move |conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT id, normalized_remote, literal_remote, is_local, base_ref, source_ref, base_node_id, created_at, session_partition_complete_at \
+                    "SELECT id, normalized_remote, literal_remote, base_ref, source_ref, base_node_id, created_at, session_partition_complete_at \
                      FROM sessions WHERE org_id = ?1 ORDER BY created_at DESC",
                 )?;
                 let rows = stmt
@@ -137,7 +135,7 @@ impl SessionRepo for SqliteSessionRepo {
             .conn
             .call(move |conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT id, normalized_remote, literal_remote, is_local, base_ref, source_ref, base_node_id, created_at, session_partition_complete_at \
+                    "SELECT id, normalized_remote, literal_remote, base_ref, source_ref, base_node_id, created_at, session_partition_complete_at \
                      FROM sessions WHERE id = ?1 AND org_id = ?2",
                 )?;
                 let mut rows = stmt.query(tokio_rusqlite::params![session_id, org_id])?;
@@ -216,31 +214,37 @@ impl SessionRepo for SqliteSessionRepo {
         row.ok_or(AppError::NotFound)
     }
 
-    async fn find_by_refs(
+    async fn find_by_snapshot(
         &self,
         org_id: &str,
         normalized_remote: &str,
         base_ref: &str,
         source_ref: &str,
+        resolved_base_commit: &str,
+        resolved_source_commit: &str,
     ) -> Result<Option<Session>, AppError> {
         let org_id = org_id.to_string();
         let normalized_remote = normalized_remote.to_string();
         let base_ref = base_ref.to_string();
         let source_ref = source_ref.to_string();
+        let resolved_base_commit = resolved_base_commit.to_string();
+        let resolved_source_commit = resolved_source_commit.to_string();
         let existing = self
             .conn
             .call(move |conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT id, normalized_remote, literal_remote, is_local, base_ref, source_ref, base_node_id, created_at, session_partition_complete_at \
+                    "SELECT id, normalized_remote, literal_remote, base_ref, source_ref, base_node_id, created_at, session_partition_complete_at \
                      FROM sessions \
-                     WHERE org_id = ?1 AND normalized_remote = ?2 AND base_ref = ?3 AND source_ref = ?4 \
+                     WHERE org_id = ?1 AND normalized_remote = ?2 AND base_ref = ?3 AND source_ref = ?4 AND resolved_base_commit = ?5 AND resolved_source_commit = ?6 \
                      LIMIT 1",
                 )?;
                 let mut rows = stmt.query(tokio_rusqlite::params![
                     org_id,
                     normalized_remote,
                     base_ref,
-                    source_ref
+                    source_ref,
+                    resolved_base_commit,
+                    resolved_source_commit
                 ])?;
                 if let Some(row) = rows.next()? {
                     Ok(Some(session_row_mapper(row)?))
@@ -273,6 +277,27 @@ impl SessionRepo for SqliteSessionRepo {
             .await
             .map_err(crate::repo::map_sqlite_err)?;
         Ok(count)
+    }
+
+    async fn list_repo_identities(&self) -> Result<Vec<SessionRepoIdentity>, AppError> {
+        let rows = self
+            .conn
+            .call(move |conn| {
+                let mut stmt =
+                    conn.prepare("SELECT DISTINCT org_id, normalized_remote FROM sessions")?;
+                let rows = stmt
+                    .query_map([], |row| {
+                        Ok(SessionRepoIdentity {
+                            org_id: row.get(0)?,
+                            normalized_remote: row.get(1)?,
+                        })
+                    })?
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(rows)
+            })
+            .await
+            .map_err(crate::repo::map_sqlite_err)?;
+        Ok(rows)
     }
 
     async fn clear_session_partition_state(
@@ -523,9 +548,10 @@ impl SessionRepo for SqliteSessionRepo {
         session_id: String,
         normalized_remote: String,
         literal_remote: String,
-        is_local: bool,
         base_ref: String,
         source_ref: String,
+        resolved_base_commit: String,
+        resolved_source_commit: String,
         base_tree: String,
         final_tree: String,
         base_node_id: String,
@@ -534,22 +560,22 @@ impl SessionRepo for SqliteSessionRepo {
         final_commit: String,
         now: i64,
     ) -> Result<(), AppError> {
-        let is_local_int = i64::from(is_local);
         self.conn
             .call(move |conn| {
                 let tx = conn.transaction()?;
                 tx.execute(
-                    "INSERT INTO sessions (id, org_id, user_id, normalized_remote, literal_remote, is_local, base_ref, source_ref, base_tree, final_tree, base_node_id, created_at) \
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                    "INSERT INTO sessions (id, org_id, user_id, normalized_remote, literal_remote, base_ref, source_ref, resolved_base_commit, resolved_source_commit, base_tree, final_tree, base_node_id, created_at) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
                     tokio_rusqlite::params![
                         session_id,
                         org_id.clone(),
                         user_id,
                         normalized_remote,
                         literal_remote,
-                        is_local_int,
                         base_ref,
                         source_ref,
+                        resolved_base_commit,
+                        resolved_source_commit,
                         base_tree,
                         final_tree,
                         base_node_id,
@@ -685,8 +711,8 @@ mod tests {
                 [],
             )?;
             c.execute(
-                "INSERT INTO sessions (id, org_id, user_id, normalized_remote, literal_remote, is_local, base_ref, source_ref, base_tree, final_tree, base_node_id, created_at) \
-                 VALUES ('s1', 'local', 'u1', 'local:/tmp', 'local:/tmp', 1, 'main', 'main', 't0', 't1', 'base', 1)",
+                "INSERT INTO sessions (id, org_id, user_id, normalized_remote, literal_remote, base_ref, source_ref, resolved_base_commit, resolved_source_commit, base_tree, final_tree, base_node_id, created_at) \
+                 VALUES ('s1', 'local', 'u1', 'local:/tmp', '/tmp', 'main', 'main', 'c0', 'c1', 't0', 't1', 'base', 1)",
                 [],
             )?;
             c.execute(
@@ -696,12 +722,12 @@ mod tests {
             )?;
             c.execute(
                 "INSERT INTO partitions (id, org_id, user_id, session_id, target_node_id, phase, phase_state, worktree_path, created_at) \
-                 VALUES ('p1', 'local', 'u1', 's1', 'n1', 'survey', 'idle', '/tmp/wt', 1)",
+                 VALUES ('p1', 'local', 'u1', 's1', 'n1', 'plan', 'running', '/tmp/wt', 1)",
                 [],
             )?;
             c.execute(
                 "INSERT INTO runs (id, org_id, user_id, partition_id, session_id, target_node_id, kind, status, started_at) \
-                 VALUES ('r1', 'local', 'u1', 'p1', 's1', 'n1', 'survey', 'running', 1)",
+                 VALUES ('r1', 'local', 'u1', 'p1', 's1', 'n1', 'plan', 'running', 1)",
                 [],
             )?;
             c.execute(

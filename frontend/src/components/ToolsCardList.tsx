@@ -2,7 +2,6 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  BranchToolPanel,
   InfoToolPanel,
   PartitionToolPanel,
   ToolsEmpty,
@@ -35,14 +34,6 @@ export default function ToolsCardList(ctx: ToolsContext) {
         </Card>
       )}
 
-      {showCards && ctx.isLocal && (
-        <Card>
-          <CardHeader className="p-4 pb-2">
-            <CardTitle className="text-base font-semibold">Branch</CardTitle>
-          </CardHeader>
-          <CardContent className="p-4 pt-2">{BranchToolPanel(ctx)}</CardContent>
-        </Card>
-      )}
     </div>
   );
 }

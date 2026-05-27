@@ -27,7 +27,6 @@ export type ConstructPayload =
 export type Lifecycle = {
   partitionId: string;
   targetNodeId: string;
-  survey: PhaseState | "pending";
   plan: PhaseState | "pending";
   construct: PhaseState | "pending";
   constructPayload?: ConstructPayload;
@@ -232,7 +231,6 @@ function blankLifecycle(partitionId: string, targetNodeId: string): Lifecycle {
   return {
     partitionId,
     targetNodeId,
-    survey: "pending",
     plan: "pending",
     construct: "pending",
   };

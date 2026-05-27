@@ -157,14 +157,14 @@ The term **"lazy review"** is not a standard name in the literature. The closest
 
 ### Scene 8 — How it works · 1:22–1:38
 
-**Visual:** Session graph `base → final`. **Begin partition** on the big edge. Surveyor → Planner → Constructor pipeline with **Review gates** (pause icons). Accept: `base → 1 → final` — smaller diff on the new edge. Repeat once. Human figure at each gate — steering, not spectating.
+**Visual:** Session graph `base → final`. **Begin partition** on the big edge. Planner → Constructor pipeline with **Review gates** (pause icons). Accept: `base → 1 → final` — smaller diff on the new edge. Repeat once. Human figure at each gate — steering, not spectating.
 
 **On-screen text:** `Split the diff. Review each piece. You decide.`
 
 **VO:**
 
 > You point eunomio at a ref-to-ref diff.
-> Agents survey it, plan how to split it, and construct one commit at a time — in isolated git worktrees.
+> Agents plan how to split it and construct one commit at a time — in isolated git worktrees.
 > You review at every step. Accept, push back, or abandon.
 > The diff shrinks. The history becomes something a human can actually review — and defend.
 
@@ -214,7 +214,7 @@ The term **"lazy review"** is not a standard name in the literature. The closest
 > It's AI helping _you_ do human code review — full human in the loop, with the process rebuilt for how review actually works.
 >
 > You point eunomio at a ref-to-ref diff.
-> Agents survey it, plan how to split it, and construct one commit at a time — in isolated git worktrees.
+> Agents plan how to split it and construct one commit at a time — in isolated git worktrees.
 > You review at every step. Accept, push back, or abandon.
 > The diff shrinks. The history becomes something a human can actually review — and defend.
 >

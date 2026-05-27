@@ -55,8 +55,8 @@ Only `eunomio-bin-local` depends on every impl crate; `eunomio-server` sees depl
 - `~/.eunomio/last_username` — last logged-in username (login form default)
 - `~/.eunomio/users/<userId>/credentials` — per-user BYOK Cursor API key (mode `0600`)
 - `~/.eunomio/users/<userId>/settings.json` — per-user partition settings
-- `~/.eunomio/repos/<slug>/` — managed bare clones for network-remote sessions
-- `~/.eunomio/worktrees/<sessionId>/<partitionId>/worktree/` — one detached worktree per pending partition
+- `~/.eunomio/repos/<orgSlug>/<remoteSlug>/` — org-scoped managed bare clones for local and network-remote sessions
+- `~/.eunomio/worktrees/<orgSlug>/<sessionId>/<partitionId>/worktree/` — one detached worktree per pending partition
 - `~/.eunomio/bin/cloudflared` — auto-downloaded on first tunnel use if not on `$PATH`
 
 ### Run modes
@@ -156,24 +156,23 @@ A **Session** owns a linear chain of **Nodes** from `base` to `final`. **Edges**
 
 Seed nodes use fresh `git commit-tree` objects decoupled from the user's branch history. Position labels (`base`, `1`, `2`, …, `final`) recompute at render; **Titles** are commit subjects on branch creation.
 
-Pending partitions expose a **candidate view** (2-node during survey/plan, 3-node at construct review). Accepting one partition on a target auto-abandons sibling partitions on that target. No leaf-alternative preservation — see [`docs/adr/0002-partition-mutation-no-leaf-alternative.md`](docs/adr/0002-partition-mutation-no-leaf-alternative.md).
+Pending partitions expose a **candidate view** (2-node during plan, 3-node at construct review). Accepting one partition on a target auto-abandons sibling partitions on that target. No leaf-alternative preservation — see [`docs/adr/0002-partition-mutation-no-leaf-alternative.md`](docs/adr/0002-partition-mutation-no-leaf-alternative.md).
 
 ### Partition lifecycle
 
-Three subagents under a **Coordinator**: Surveyor (read-only survey) → Planner (strategy + two edge descriptions) → Constructor (writes partition worktree; returns `OK` or `BLOCKED: reason`).
+Two subagents under a **Coordinator**: Planner (strategy + two edge descriptions) → Constructor (writes partition worktree; returns `OK` or `BLOCKED: reason`).
 
-HITL gates: `afterSurvey`, `afterPlanning`, `afterConstruct` — all default on. Forward-only except re-plan from construct review or `BLOCKED`.
+HITL gates: `afterPlanning`, `afterConstruct`, and `afterIndivisible` — all default on. Forward-only except re-plan from construct review or `BLOCKED`.
 
-Partition row fields include `phase`, `phase_state`, accepted survey/plan JSON, candidate slice tree+commit SHA, and `worktree_path`. Row deleted on accept or abandon.
+Partition row fields include `phase`, `phase_state`, accepted plan JSON, candidate slice tree+commit SHA, and `worktree_path`. Row deleted on accept or abandon.
 
 ### Git mechanics
 
 - Intermediate commits are loose objects; `nodes.commit_sha` and partition candidate SHAs keep them reachable
-- Per-partition worktree: `<DATA_DIR>/worktrees/<sessionId>/<partitionId>/worktree/`, added detached at parent commit, removed on terminal action
+- Per-partition worktree: `<DATA_DIR>/worktrees/<orgSlug>/<sessionId>/<partitionId>/worktree/`, added detached at parent commit, removed on terminal action
 - Constructor OK: capture worktree via `write-tree` + `commit-tree`, reset worktree to parent for re-runs
 - Acceptance: insert slice node, rewrite target parent+title, abandon siblings, remove worktree
 - Abandon: SIGTERM in-flight helper, remove worktree, delete partition + runs rows
-- Branch creation: walk node → base, rebuild commits with `commit-tree` using node titles; never mutates graph
 
 ### Subagents
 
@@ -181,7 +180,6 @@ Prompts in `subagents/<role>.md`, embedded via `rust-embed`. Backend modules per
 
 | Agent | Writes | Output |
 | --- | --- | --- |
-| Surveyor | nothing | `ChangeSurvey` JSON |
 | Planner | nothing | `Plan` JSON (strategy + exactly two edges) |
 | Constructor | partition worktree | `OK` or `BLOCKED: reason` |
 
@@ -199,15 +197,14 @@ Axum app scoped per session and partition. Key routes:
 
 - Session CRUD, `GET /api/repo` hints
 - Graph + edge diffs, generic tree diff for candidate view
-- Partition begin/accept/abandon, runs, survey/plan/construct accept
-- `POST .../nodes/:nodeId/branch` — branch from graph node
+- Partition begin/accept/abandon, runs, plan/construct accept
 - `GET .../events` SSE for run lifecycle
 
 Many partitions may be pending on the same target; at most one run in flight per `partition_id`.
 
 ### UI shape
 
-React + Vite. Graph pane (`@xyflow/react`) with canonical chain + candidate dropdown. Left pane tabs: Diff, Info (editable title), Branch (local sessions only), Partition (lifecycle stepper + review components per subagent).
+React + Vite. Graph pane (`@xyflow/react`) with canonical chain + candidate dropdown. Left pane tabs: Diff, Info (read-only node details), Partition (lifecycle stepper + review components per subagent).
 
 ---
 

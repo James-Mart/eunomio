@@ -434,7 +434,7 @@ The eunomio frontend implements these guidelines with a concrete token system in
 | Typography | Mona Sans (`@fontsource/mona-sans`) |
 | Icons | Octicons (`@primer/octicons-react`) |
 | Header | `#010409` surface (`--header-bg`); tier 1: logo + `owner / repo` breadcrumb; session routes show mono `baseRef ← sourceRef` (emphasis on sourceRef); tier 2: underline **Session \| Settings** tabs |
-| Settings page | Full-page layout at `/settings`; desktop: fixed left category sidebar + scrolling main; mobile: drill-down category index → detail with sticky back bar; **Subagents** group for Surveyor / Planner / Constructor |
+| Settings page | Full-page layout at `/settings`; desktop: fixed left category sidebar + scrolling main; mobile: drill-down category index → detail with sticky back bar; **Subagents** group for Planner / Constructor |
 
 Button policy: most actions use outline/bordered buttons; green primary is reserved for high-commit submits (e.g. Create session). Code diffs use the `github-dark` theme from `@pierre/diffs`.
 

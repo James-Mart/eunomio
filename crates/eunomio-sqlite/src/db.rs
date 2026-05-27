@@ -56,9 +56,10 @@ CREATE TABLE IF NOT EXISTS sessions (
   user_id TEXT NOT NULL REFERENCES users(id),
   normalized_remote TEXT NOT NULL,
   literal_remote TEXT NOT NULL,
-  is_local INTEGER NOT NULL,
   base_ref TEXT NOT NULL,
   source_ref TEXT NOT NULL,
+  resolved_base_commit TEXT NOT NULL,
+  resolved_source_commit TEXT NOT NULL,
   base_tree TEXT NOT NULL,
   final_tree TEXT NOT NULL,
   base_node_id TEXT NOT NULL,
@@ -71,8 +72,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS sessions_by_remote ON sessions (normalized_remote);
 CREATE INDEX IF NOT EXISTS sessions_by_org ON sessions (org_id);
 CREATE INDEX IF NOT EXISTS sessions_by_user ON sessions (user_id);
-CREATE UNIQUE INDEX IF NOT EXISTS sessions_unique_pair
-  ON sessions (normalized_remote, base_ref, source_ref);
+CREATE UNIQUE INDEX IF NOT EXISTS sessions_unique_snapshot
+  ON sessions (org_id, normalized_remote, base_ref, source_ref, resolved_base_commit, resolved_source_commit);
 
 CREATE TABLE IF NOT EXISTS nodes (
   session_id TEXT NOT NULL,
@@ -97,7 +98,6 @@ CREATE TABLE IF NOT EXISTS partitions (
   session_id TEXT NOT NULL,
   target_node_id TEXT NOT NULL,
   strategy TEXT,
-  change_survey_json TEXT,
   plan_json TEXT,
   candidate_slice_tree_sha TEXT,
   candidate_slice_commit_sha TEXT,
