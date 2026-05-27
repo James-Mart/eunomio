@@ -10,7 +10,11 @@ import {
 } from "react";
 import { processFile, type FileDiffMetadata } from "@pierre/diffs";
 import { FileDiff, Virtualizer } from "@pierre/diffs/react";
-import { FileTree, useFileTree, useFileTreeSelection } from "@pierre/trees/react";
+import {
+  FileTree,
+  useFileTree,
+  useFileTreeSelection,
+} from "@pierre/trees/react";
 import { ChevronDownIcon, ChevronRightIcon } from "@primer/octicons-react";
 
 import {
@@ -131,21 +135,20 @@ export default function EdgePane(props: Props) {
     let cancelled = false;
     setFetchedEdge(null);
     setError(null);
-    const fetch = targetNodeId !== undefined
-      ? api
-          .getEdge(sessionId, targetNodeId)
-          .then((e) => ({
+    const fetch =
+      targetNodeId !== undefined
+        ? api.getEdge(sessionId, targetNodeId).then((e) => ({
             diff: e.diff,
             files: e.files,
             synthesized: e.synthesized,
           }))
-      : api
-          .getDiff(sessionId, fromTree!, toTree!, beforeRef, afterRef)
-          .then((d) => ({
-            diff: d.diff,
-            files: d.files,
-            synthesized: d.synthesized,
-          }));
+        : api
+            .getDiff(sessionId, fromTree!, toTree!, beforeRef, afterRef)
+            .then((d) => ({
+              diff: d.diff,
+              files: d.files,
+              synthesized: d.synthesized,
+            }));
     fetch
       .then((e) => {
         if (!cancelled) setFetchedEdge(e);
@@ -161,7 +164,15 @@ export default function EdgePane(props: Props) {
     return () => {
       cancelled = true;
     };
-  }, [sessionId, targetNodeId, fromTree, toTree, beforeRef, afterRef, loadedEdge]);
+  }, [
+    sessionId,
+    targetNodeId,
+    fromTree,
+    toTree,
+    beforeRef,
+    afterRef,
+    loadedEdge,
+  ]);
 
   const edge = loadedEdge ?? fetchedEdge;
 
@@ -213,7 +224,9 @@ export default function EdgePane(props: Props) {
   const onFileDiffPostRender = useCallback(
     (file: FileDiffMetadata) => (node: HTMLElement) => {
       const childForFile = lookupRef.current.child.get(file.name);
-      const parentForFile = lookupRef.current.parent.get(file.prevName ?? file.name);
+      const parentForFile = lookupRef.current.parent.get(
+        file.prevName ?? file.name,
+      );
       if (!childForFile && !parentForFile) return;
       decorateFileContainer(node, childForFile, parentForFile);
     },
@@ -290,13 +303,14 @@ export default function EdgePane(props: Props) {
   const activeFilePath = selectedPaths.at(-1) ?? null;
 
   const selectFileInTree = useCallback(
-    (path: string) => {
+    (path: string, options?: { focus?: boolean }) => {
+      const focus = options?.focus ?? true;
       for (const p of model.getSelectedPaths()) {
         if (p !== path) model.getItem(p)?.deselect();
       }
       const item = model.getItem(path);
       if (item && !item.isSelected()) item.select();
-      item?.focus();
+      if (focus) item?.focus();
     },
     [model],
   );
@@ -325,7 +339,10 @@ export default function EdgePane(props: Props) {
   }
 
   if (fileDiffs.length === 0) {
-    const message = targetNodeId !== undefined ? "No diff — this is the base Node." : "No diff.";
+    const message =
+      targetNodeId !== undefined
+        ? "No diff — this is the base Node."
+        : "No diff.";
     return (
       <div className="flex h-full items-center justify-center p-4 text-sm text-muted-foreground">
         {message}
@@ -374,12 +391,23 @@ export default function EdgePane(props: Props) {
                 typeof n.closest === "function" &&
                 n.closest("[data-edge-viewed-control]") !== null,
             );
+            const inMetadata = path.some(
+              (n) =>
+                n instanceof Element &&
+                typeof n.closest === "function" &&
+                n.closest("[data-metadata]") !== null,
+            );
             const inHeader = path.some(
               (n) =>
                 n instanceof Element &&
                 typeof n.matches === "function" &&
                 n.matches("[data-diffs-header]"),
             );
+            if (onToggleViewed && inMetadata && !clickedViewed) {
+              handleToggleViewed(file.name, !isViewed);
+              selectFileInTree(file.name, { focus: false });
+              return;
+            }
             if (inHeader && !clickedViewed) {
               toggleCollapsed(file.name);
               selectFileInTree(file.name);
@@ -425,28 +453,41 @@ export default function EdgePane(props: Props) {
                 )}
                 renderHeaderMetadata={() =>
                   onToggleViewed ? (
-                    <label
+                    <div
                       data-edge-viewed-control
-                      className="inline-flex cursor-pointer items-center gap-1.5 pl-2 text-xs text-muted-foreground"
-                      onClick={(e) => e.stopPropagation()}
-                      onKeyDown={(e) => e.stopPropagation()}
+                      role="checkbox"
+                      aria-checked={isViewed}
+                      aria-label={
+                        isViewed
+                          ? `Mark ${file.name} as not viewed`
+                          : `Mark ${file.name} as viewed`
+                      }
+                      className="flex h-full min-h-full flex-1 cursor-pointer items-center justify-end gap-1.5 self-stretch pl-2 text-xs text-muted-foreground"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleViewed(file.name, !isViewed);
+                        selectFileInTree(file.name, { focus: false });
+                      }}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onKeyDown={(e) => {
+                        e.stopPropagation();
+                        if (e.key === " " || e.key === "Enter") {
+                          e.preventDefault();
+                          handleToggleViewed(file.name, !isViewed);
+                          selectFileInTree(file.name, { focus: false });
+                        }
+                      }}
                     >
                       <input
                         type="checkbox"
                         checked={isViewed}
-                        className="h-4 w-4 rounded border-border"
-                        onClick={(e) => e.stopPropagation()}
-                        aria-label={
-                          isViewed
-                            ? `Mark ${file.name} as not viewed`
-                            : `Mark ${file.name} as viewed`
-                        }
-                        onChange={(e) =>
-                          handleToggleViewed(file.name, e.target.checked)
-                        }
+                        readOnly
+                        tabIndex={-1}
+                        aria-hidden="true"
+                        className="pointer-events-none h-4 w-4 rounded border-border"
                       />
                       Viewed
-                    </label>
+                    </div>
                   ) : null
                 }
               />
@@ -579,8 +620,7 @@ function extractPathsFromGitHeader(section: string): {
   newPath?: string;
 } {
   const newlineIdx = section.indexOf("\n");
-  const firstLine =
-    newlineIdx >= 0 ? section.slice(0, newlineIdx) : section;
+  const firstLine = newlineIdx >= 0 ? section.slice(0, newlineIdx) : section;
   const m = /^diff --git a\/(.+) b\/(.+)$/.exec(firstLine);
   if (!m) return {};
   return { oldPath: m[1], newPath: m[2] };

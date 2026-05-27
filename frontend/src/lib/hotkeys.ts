@@ -27,6 +27,8 @@ export const TIMELINE_HOTKEY_BINDINGS: TimelineHotkeyBinding[] = [
 
 export function shouldIgnoreHotkeyTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
+  // Diff "viewed" toggles are mouse-first; bracket keys should still scrub timeline.
+  if (target.closest("[data-edge-viewed-control]")) return false;
   const el = target.closest(
     "input:not([type='range']), textarea, select, button, a, [contenteditable='true'], [role='tree']",
   );

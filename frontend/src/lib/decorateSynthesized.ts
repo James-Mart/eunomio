@@ -8,7 +8,10 @@ const SYNTH_LINE_ATTR = "data-eunomio-synthesized";
 const SYNTH_GUTTER_ATTR = "data-eunomio-synthesized-gutter";
 
 const STICKY_HEADER_CSS =
-  "[data-diffs-header] { position: sticky; top: 0; z-index: 5; cursor: pointer; background-color: var(--diffs-bg-separator); border-bottom: 1px solid var(--diffs-bg-buffer); }";
+  "[data-diffs-header] { position: sticky; top: 0; z-index: 5; cursor: pointer; background-color: var(--diffs-bg-separator); border-bottom: 1px solid var(--diffs-bg-buffer); }" +
+  "[data-diffs-header] [data-metadata] { align-self: stretch; align-items: stretch; }" +
+  '[data-diffs-header] [data-metadata] > slot[name="header-metadata"]::slotted(*) { display: flex; align-self: stretch; flex: 1 1 auto; min-height: 100%; height: 100%; }' +
+  "[data-diffs-header] [data-metadata] [data-edge-viewed-control] { align-self: stretch; display: flex; align-items: center; flex: 1 1 auto; min-height: 100%; height: 100%; }";
 
 // Per-word shimmer + per-line gutter glyph injected into each FileDiff's shadow
 // DOM via the library's `unsafeCSS` option. Decoration spans we create at
@@ -31,11 +34,13 @@ const UNMODIFIED_LINES_CSS =
   "[data-separator=line-info-basic] [data-expand-button]:hover" +
   "{background-color:hsl(var(--link)/0.25);color:hsl(var(--link));}";
 
-export const FILEDIFF_CSS = STICKY_HEADER_CSS + SYNTHESIZED_CSS + UNMODIFIED_LINES_CSS;
+export const FILEDIFF_CSS =
+  STICKY_HEADER_CSS + SYNTHESIZED_CSS + UNMODIFIED_LINES_CSS;
 
 const SYNTH_TOOLTIP = {
   child: "Synthesized — removed relative to the Reference pair's after tree.",
-  parent: "Synthesized removal — restored relative to the Reference pair's before tree.",
+  parent:
+    "Synthesized removal — restored relative to the Reference pair's before tree.",
 } as const;
 
 type LineSpans = ReadonlyArray<readonly [number, number]>;
@@ -63,10 +68,13 @@ export function decorateFileContainer(
   childForFile: Map<number, LineSpans> | undefined,
   parentForFile: Map<number, LineSpans> | undefined,
 ) {
-  const root = (node as HTMLElement & { shadowRoot: ShadowRoot | null }).shadowRoot;
+  const root = (node as HTMLElement & { shadowRoot: ShadowRoot | null })
+    .shadowRoot;
   if (!root) return;
 
-  const lines = root.querySelectorAll<HTMLElement>("[data-line][data-line-type]");
+  const lines = root.querySelectorAll<HTMLElement>(
+    "[data-line][data-line-type]",
+  );
   for (const lineEl of lines) {
     if (lineEl.hasAttribute(SYNTH_LINE_ATTR)) continue;
     const type = lineEl.getAttribute("data-line-type") ?? "";
@@ -93,7 +101,11 @@ export function decorateFileContainer(
   }
 }
 
-function decorateLine(lineEl: HTMLElement, spans: LineSpans, side: "child" | "parent") {
+function decorateLine(
+  lineEl: HTMLElement,
+  spans: LineSpans,
+  side: "child" | "parent",
+) {
   lineEl.setAttribute(SYNTH_LINE_ATTR, side);
   // Process spans right-to-left so earlier offsets stay valid as the DOM is
   // mutated.
