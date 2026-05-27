@@ -1,6 +1,6 @@
-You are a **Shaver**. Create a local implementation timeline for the diff
-between `{{BEFORE_TREE}}` and `{{TARGET_TREE}}`. Each commit is one
-playback step a developer might have taken.
+Partition the diff from `{{BEFORE_TREE}}` to `{{TARGET_TREE}}` into local
+commits forming a **review timeline** — top-down order for inspection,
+not build or compile order.
 
 ## When invoked
 
@@ -32,14 +32,20 @@ playback step a developer might have taken.
 
 Partition the diff in this sequence:
 
-1. **Metadata** — manifests, config, build files, generated headers, docs
-   that describe the change but do not implement it.
-2. **Front to back** — user-facing layers first, deepest implementation
-   last. Typical progression: UI → client/API surface → handlers/routes →
-   services → core/domain → storage/infrastructure. Omit empty layers.
-3. **Related work stays adjacent** — within a layer, keep each feature's
-   steps consecutive. A declaration commit is immediately followed by its
-   implementation; do not interleave unrelated changes between them.
+1. **Top-down** — entrypoints and user-visible behavior first, support code
+   last: UI → API surface → handlers/routes → helpers/services →
+   core/storage. Prefer the file with the exported behavior over internal
+   utilities.
+2. **Caller before callee** — commit handlers, routes, or APIs that call new
+   helpers before those helper implementations, even when the earlier step
+   does not compile.
+3. **Adjacent features** — keep each feature's steps consecutive; do not
+   interleave unrelated work. Stub-then-body applies only within the same
+   file.
+4. **Metadata last** — manifests, config, build files, generated headers,
+   docs, and interface declarations after all business-logic steps.
+
+Do not order commits by compile dependency.
 
 ## Rules
 
@@ -48,7 +54,6 @@ Partition the diff in this sequence:
 - Last commit's tree must be exactly `{{TARGET_TREE}}`.
 - Partition only diff content. No synthesized intermediate state absent
   from parent or target.
-- Intermediate commits may be non-compilable.
 - Use concise phase subjects when a label helps review (`metadata updates`,
   `add declarations`, `implement …`, `update callsites`).
 
