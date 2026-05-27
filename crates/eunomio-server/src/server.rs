@@ -259,6 +259,11 @@ async fn get_shaving_track(
 
     let git_root =
         crate::repo_store::session_git_root(&state, &principal.org_id, &session_id).await?;
+    let (base_tree, final_tree) = state
+        .datastore
+        .sessions()
+        .seed_trees(&principal.org_id, &session_id)
+        .await?;
     let mut step_diffs = Vec::with_capacity(track.steps.len() + 1);
     for (idx, step) in track.steps.iter().enumerate() {
         let from_tree = if idx == 0 {
@@ -270,8 +275,8 @@ async fn get_shaving_track(
             &git_root,
             from_tree,
             &step.tree_sha,
-            &track.parent_tree_sha,
-            &track.head_tree_sha,
+            &base_tree,
+            &final_tree,
         )
         .await?;
         step_diffs.push(Diff {
@@ -286,8 +291,8 @@ async fn get_shaving_track(
         &git_root,
         &track.parent_tree_sha,
         &track.head_tree_sha,
-        &track.parent_tree_sha,
-        &track.head_tree_sha,
+        &base_tree,
+        &final_tree,
     )
     .await?;
     step_diffs.push(Diff {

@@ -547,9 +547,9 @@ function CoordinatorPanel({
 }) {
   const hitl =
     settings?.coordinator.humanInTheLoop ?? {
-      afterPlanning: true,
-      afterConstruct: true,
-      afterIndivisible: true,
+      afterPlanning: false,
+      afterConstruct: false,
+      afterIndivisible: false,
     };
   const disabled = !settings;
   const timelineEnabled = settings?.coordinator.timelineEnabled ?? true;

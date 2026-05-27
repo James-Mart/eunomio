@@ -26,7 +26,7 @@ Each subagent follows the same phase pattern. The diagram below shows one cycle;
 
 ```mermaid
 flowchart BT
-    Run[/Subagent runs/] --> Gate{HITL gate? default ON}
+    Run[/Subagent runs/] --> Gate{HITL gate? default OFF}
     Gate -- on --> Review([Review output])
     Gate -- off --> Next([Proceed])
     Review -- accept --> Next
@@ -39,7 +39,7 @@ flowchart BT
 
 ## HITL defaults
 
-All gates default to **on**. Turn any off in partition settings for a more automated run — the SDK call still happens; the gate just does not park. With `afterIndivisible` off, indivisible partitions finish automatically.
+All gates default to **off**. Turn any on in partition settings when you want to review that phase before the Coordinator advances. With `afterIndivisible` off, indivisible partitions finish automatically.
 
 ## Re-run paths
 

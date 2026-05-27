@@ -83,9 +83,9 @@ pub struct HumanInTheLoop {
 impl Default for HumanInTheLoop {
     fn default() -> Self {
         Self {
-            after_planning: true,
-            after_construct: true,
-            after_indivisible: true,
+            after_planning: false,
+            after_construct: false,
+            after_indivisible: false,
         }
     }
 }

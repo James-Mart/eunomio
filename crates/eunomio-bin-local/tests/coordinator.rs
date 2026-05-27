@@ -197,6 +197,7 @@ async fn happy_path_drives_partition_to_accept() {
         construct_ok_script(),
     ]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    set_hitl_all_on(&app).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
 
     let mut rx = app.state.coordinator.subscribe(&session_id);
@@ -366,6 +367,7 @@ async fn construct_accept_does_not_attach_shaving_track() {
         )
         .await,
     );
+    set_hitl_all_on(&app).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
 
@@ -437,6 +439,7 @@ async fn parallel_begins_on_same_target_succeed() {
         plan_script("vertical"),
     ]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    set_hitl_all_on(&app).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
 
     let mut rx = app.state.coordinator.subscribe(&session_id);
@@ -492,6 +495,7 @@ async fn constructor_blocked_parks_at_review_and_can_re_run() {
         construct_ok_script(),
     ]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    set_hitl_all_on(&app).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
 
     let mut rx = app.state.coordinator.subscribe(&session_id);
@@ -546,6 +550,7 @@ async fn abandon_mid_run_cleans_up() {
         },
     ]]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    set_hitl_all_on(&app).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
 
     let mut rx = app.state.coordinator.subscribe(&session_id);
@@ -590,6 +595,7 @@ async fn hitl_off_drives_full_chain_without_explicit_accepts() {
         construct_ok_script(),
     ]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    set_hitl_all_on(&app).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
 
     let (status, _) = app
@@ -669,6 +675,26 @@ async fn set_hitl_all_off(app: &TestApp) {
     assert_eq!(status, StatusCode::OK);
 }
 
+async fn set_hitl_all_on(app: &TestApp) {
+    let (status, _) = app
+        .auth_json(
+            "PATCH",
+            "/api/partition-settings",
+            json!({
+                "coordinator": {
+                    "model": { "id": "composer-2" },
+                    "humanInTheLoop": {
+                        "afterPlanning": true,
+                        "afterConstruct": true,
+                        "afterIndivisible": true,
+                    }
+                }
+            }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+}
+
 async fn poll_partition_phase(
     app: &TestApp,
     partition_id: &str,
@@ -726,6 +752,7 @@ async fn sibling_accept_auto_abandons_other() {
         vec![construct_ok_script(), construct_ok_script()],
     ));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    set_hitl_all_on(&app).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
 
@@ -793,6 +820,7 @@ async fn cancel_run_mid_construct_preserves_partition() {
         }],
     ]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    set_hitl_all_on(&app).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
 
@@ -861,6 +889,7 @@ async fn cancel_run_mid_construct_preserves_partition() {
 async fn cancel_run_on_non_running_returns_409() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![plan_script("synthetic")]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    set_hitl_all_on(&app).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
 
@@ -894,13 +923,14 @@ async fn cancel_run_on_non_running_returns_409() {
 
 #[tokio::test]
 async fn second_start_run_while_in_flight_returns_409() {
-    let runner = Arc::new(FakeSubagentRunner::new(vec![
-        vec![HelperEvent::SdkMessage {
+    let runner = Arc::new(FakeSubagentRunner::new(vec![vec![
+        HelperEvent::SdkMessage {
             run_id: "0".to_string(),
             message: json!({"text": "thinking"}),
-        }],
-    ]));
+        },
+    ]]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    set_hitl_all_on(&app).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
 
@@ -930,10 +960,9 @@ async fn second_start_run_while_in_flight_returns_409() {
 
 #[tokio::test]
 async fn invalid_run_kind_returns_409() {
-    let runner = Arc::new(FakeSubagentRunner::new(vec![
-        plan_script("synthetic"),
-    ]));
+    let runner = Arc::new(FakeSubagentRunner::new(vec![plan_script("synthetic")]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    set_hitl_all_on(&app).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
 
@@ -965,6 +994,7 @@ async fn back_edge_construct_to_plan_on_blocked_run() {
         plan_script("vertical"),
     ]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    set_hitl_all_on(&app).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
 
@@ -1021,6 +1051,7 @@ async fn back_edge_construct_to_plan_on_ok_candidate() {
         plan_script("vertical"),
     ]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    set_hitl_all_on(&app).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
 
@@ -1052,10 +1083,11 @@ async fn back_edge_construct_to_plan_on_ok_candidate() {
 
 #[tokio::test]
 async fn indivisible_with_hitl_on_parks_at_review() {
-    let runner = Arc::new(FakeSubagentRunner::new(vec![
-        plan_indivisible_script("one tight refactor"),
-    ]));
+    let runner = Arc::new(FakeSubagentRunner::new(vec![plan_indivisible_script(
+        "one tight refactor",
+    )]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    set_hitl_all_on(&app).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
 
@@ -1080,10 +1112,11 @@ async fn indivisible_with_hitl_on_parks_at_review() {
 
 #[tokio::test]
 async fn finish_indivisible_partition_emits_finished() {
-    let runner = Arc::new(FakeSubagentRunner::new(vec![
-        plan_indivisible_script("finished edge"),
-    ]));
+    let runner = Arc::new(FakeSubagentRunner::new(vec![plan_indivisible_script(
+        "finished edge",
+    )]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    set_hitl_all_on(&app).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
 
@@ -1142,15 +1175,25 @@ async fn finish_indivisible_partition_emits_finished() {
 
 #[tokio::test]
 async fn reorder_disabled_records_audit_on_completion() {
-    let runner = Arc::new(FakeSubagentRunner::new(vec![
-        plan_indivisible_script("already small"),
-    ]));
+    let runner = Arc::new(FakeSubagentRunner::new(vec![plan_indivisible_script(
+        "already small",
+    )]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    set_hitl_all_on(&app).await;
     let (status, body) = app
         .auth_json(
             "PATCH",
             "/api/partition-settings",
-            json!({ "coordinator": { "reorderEnabled": false } }),
+            json!({
+                "coordinator": {
+                    "reorderEnabled": false,
+                    "humanInTheLoop": {
+                        "afterPlanning": true,
+                        "afterConstruct": true,
+                        "afterIndivisible": true
+                    }
+                }
+            }),
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -1181,10 +1224,9 @@ async fn reorder_disabled_records_audit_on_completion() {
 
 #[tokio::test]
 async fn finish_rejects_split_plan() {
-    let runner = Arc::new(FakeSubagentRunner::new(vec![
-        plan_script("synthetic"),
-    ]));
+    let runner = Arc::new(FakeSubagentRunner::new(vec![plan_script("synthetic")]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    set_hitl_all_on(&app).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
 
@@ -1215,6 +1257,7 @@ async fn partition_abandon_prevents_session_partition_complete_for_pass() {
         plan_indivisible_script("second"),
     ]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    set_hitl_all_on(&app).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
 
     let (_, body) = app
@@ -1257,6 +1300,7 @@ async fn cancelled_run_can_be_rerun_before_session_partition_complete() {
         plan_indivisible_script("rerun indivisible"),
     ]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    set_hitl_all_on(&app).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
 
@@ -1312,10 +1356,11 @@ async fn cancelled_run_can_be_rerun_before_session_partition_complete() {
 
 #[tokio::test]
 async fn indivisible_with_hitl_off_auto_finishes() {
-    let runner = Arc::new(FakeSubagentRunner::new(vec![
-        plan_indivisible_script("indivisible"),
-    ]));
+    let runner = Arc::new(FakeSubagentRunner::new(vec![plan_indivisible_script(
+        "indivisible",
+    )]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    set_hitl_all_on(&app).await;
     set_hitl_all_off(&app).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
@@ -1370,6 +1415,7 @@ async fn rerun_planner_from_indivisible_succeeds() {
         plan_script("synthetic"),
     ]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    set_hitl_all_on(&app).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
 
@@ -1406,10 +1452,7 @@ struct KindAwareRunner {
 }
 
 impl KindAwareRunner {
-    fn new(
-        plans: Vec<Vec<HelperEvent>>,
-        constructs: Vec<Vec<HelperEvent>>,
-    ) -> Self {
+    fn new(plans: Vec<Vec<HelperEvent>>, constructs: Vec<Vec<HelperEvent>>) -> Self {
         Self {
             plans: TokioMutex::new(plans),
             constructs: TokioMutex::new(constructs),
@@ -1536,6 +1579,7 @@ async fn fanout_count_2_spawns_children_no_grandchildren() {
         ],
     ));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    set_hitl_all_on(&app).await;
     let (status, _) = app
         .auth_json(
             "PATCH",
@@ -1609,6 +1653,7 @@ async fn fanout_auto_cascading_indivisible() {
         vec![construct_ok_script()],
     ));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    set_hitl_all_on(&app).await;
     let (status, _) = app
         .auth_json(
             "PATCH",
@@ -1721,6 +1766,7 @@ async fn transcripts_enabled_persists_prompt_and_transcript_text() {
         json!({"type": "tool_use", "name": "ls"}),
     ])]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    set_hitl_all_on(&app).await;
     enable_transcripts(&app).await;
 
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
@@ -1767,6 +1813,7 @@ async fn transcripts_disabled_still_persists_transcript_text_without_sse() {
         json!({"type": "assistant", "text": "thinking"}),
     ])]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    set_hitl_all_on(&app).await;
 
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
@@ -1841,6 +1888,7 @@ async fn transcripts_cleaned_up_on_accept_construct() {
         ],
     ]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    set_hitl_all_on(&app).await;
     enable_transcripts(&app).await;
 
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
@@ -1887,6 +1935,7 @@ async fn transcripts_cleaned_up_on_abandon() {
         json!({"text": "s"}),
     ])]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    set_hitl_all_on(&app).await;
     enable_transcripts(&app).await;
 
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
@@ -1938,6 +1987,7 @@ async fn construct_spawn_resets_dirty_worktree() {
         construct_ok_script(),
     ]));
     let app = TestApp::spawn_authenticated_with_runner(runner.clone()).await;
+    set_hitl_all_on(&app).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
 
@@ -2035,6 +2085,7 @@ async fn node_session_lookup_unknown_returns_404() {
 async fn invalid_prompt_override_returns_400() {
     let runner = Arc::new(FakeSubagentRunner::new(vec![plan_script("synthetic")]));
     let app = TestApp::spawn_authenticated_with_runner(runner).await;
+    set_hitl_all_on(&app).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
     let (_, body) = app
@@ -2064,6 +2115,7 @@ async fn prompt_override_appears_in_transcript_prompt() {
         plan_script("vertical"),
     ]));
     let app = TestApp::spawn_authenticated_with_runner(runner).await;
+    set_hitl_all_on(&app).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
     let (_, body) = app
@@ -2110,6 +2162,7 @@ async fn subagent_run_cli_smoke() {
         plan_script("vertical"),
     ]));
     let app = TestApp::spawn_authenticated_with_runner(runner).await;
+    set_hitl_all_on(&app).await;
     let (session_id, target_node_id) = create_session_and_pick_target(&app).await;
     let mut rx = app.state.coordinator.subscribe(&session_id);
     let (_, body) = app

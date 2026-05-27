@@ -66,8 +66,14 @@ async fn per_user_settings_isolated() {
     let (status, body) =
         authenticated_empty_request(&app.router, &cookie_b, "GET", "/api/partition-settings").await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["coordinator"]["model"]["id"].as_str().unwrap(), "model-b");
-    assert_ne!(body["coordinator"]["model"]["id"].as_str().unwrap(), "model-a");
+    assert_eq!(
+        body["coordinator"]["model"]["id"].as_str().unwrap(),
+        "model-b"
+    );
+    assert_ne!(
+        body["coordinator"]["model"]["id"].as_str().unwrap(),
+        "model-a"
+    );
 }
 
 #[tokio::test]
@@ -92,7 +98,9 @@ async fn coordinator_model_params_round_trip() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
-        body["coordinator"]["model"]["params"][0]["value"].as_str().unwrap(),
+        body["coordinator"]["model"]["params"][0]["value"]
+            .as_str()
+            .unwrap(),
         "false"
     );
 
@@ -139,6 +147,42 @@ async fn global_settings_file_not_read() {
         .unwrap();
     assert_ne!(settings.coordinator.model.id, "global-should-not-apply");
     assert!(user_path.is_file());
+}
+
+#[tokio::test]
+async fn human_in_the_loop_defaults_false_and_patches() {
+    let app = TestApp::spawn().await;
+    let cookie = login(&app.router, "hitl-setting", TEST_CURSOR_KEY).await;
+
+    let (status, body) =
+        authenticated_empty_request(&app.router, &cookie, "GET", "/api/partition-settings").await;
+    assert_eq!(status, StatusCode::OK);
+    let hitl = &body["coordinator"]["humanInTheLoop"];
+    assert_eq!(hitl["afterPlanning"].as_bool(), Some(false));
+    assert_eq!(hitl["afterConstruct"].as_bool(), Some(false));
+    assert_eq!(hitl["afterIndivisible"].as_bool(), Some(false));
+
+    let (status, body) = authenticated_json_request(
+        &app.router,
+        &cookie,
+        "PATCH",
+        "/api/partition-settings",
+        serde_json::json!({
+            "coordinator": {
+                "humanInTheLoop": {
+                    "afterPlanning": true,
+                    "afterConstruct": true,
+                    "afterIndivisible": true
+                }
+            }
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let hitl = &body["coordinator"]["humanInTheLoop"];
+    assert_eq!(hitl["afterPlanning"].as_bool(), Some(true));
+    assert_eq!(hitl["afterConstruct"].as_bool(), Some(true));
+    assert_eq!(hitl["afterIndivisible"].as_bool(), Some(true));
 }
 
 #[tokio::test]

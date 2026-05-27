@@ -162,7 +162,7 @@ Pending partitions expose a **candidate view** (2-node during plan, 3-node at co
 
 Two subagents under a **Coordinator**: Planner (strategy + two edge descriptions) → Constructor (writes partition worktree; returns `OK` or `BLOCKED: reason`).
 
-HITL gates: `afterPlanning`, `afterConstruct`, and `afterIndivisible` — all default on. Forward-only except re-plan from construct review or `BLOCKED`.
+HITL gates: `afterPlanning`, `afterConstruct`, and `afterIndivisible` — all default off. Forward-only except re-plan from construct review or `BLOCKED`.
 
 Partition row fields include `phase`, `phase_state`, accepted plan JSON, candidate slice tree+commit SHA, and `worktree_path`. Row deleted on accept or abandon.
 
