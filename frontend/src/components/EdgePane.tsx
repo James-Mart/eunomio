@@ -28,7 +28,6 @@ import {
   buildLookup,
   decorateFileContainer,
   FILEDIFF_CSS,
-  type SpanLookup,
 } from "@/lib/decorateSynthesized";
 import {
   ResizableHandle,
@@ -96,12 +95,6 @@ export default function EdgePane(props: Props) {
   );
   const [pendingScrollTo, setPendingScrollTo] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
-  // Held in a ref so onPostRender callbacks always read the freshest lookup
-  // without forcing FileDiff option identity to change across edge fetches.
-  const lookupRef = useRef<{ child: SpanLookup; parent: SpanLookup }>({
-    child: new Map(),
-    parent: new Map(),
-  });
 
   const toggleCollapsed = useCallback((path: string) => {
     setCollapsedFiles((prev) => {
@@ -214,23 +207,24 @@ export default function EdgePane(props: Props) {
       .sort((a, b) => compareTreePaths(a.name, b.name));
   }, [edge]);
 
-  useEffect(() => {
-    lookupRef.current = {
+  const synthesizedLookup = useMemo(
+    () => ({
       child: buildLookup(edge?.synthesized.child ?? []),
       parent: buildLookup(edge?.synthesized.parent ?? []),
-    };
-  }, [edge]);
+    }),
+    [edge],
+  );
 
   const onFileDiffPostRender = useCallback(
     (file: FileDiffMetadata) => (node: HTMLElement) => {
-      const childForFile = lookupRef.current.child.get(file.name);
-      const parentForFile = lookupRef.current.parent.get(
+      const childForFile = synthesizedLookup.child.get(file.name);
+      const parentForFile = synthesizedLookup.parent.get(
         file.prevName ?? file.name,
       );
       if (!childForFile && !parentForFile) return;
       decorateFileContainer(node, childForFile, parentForFile);
     },
-    [],
+    [synthesizedLookup],
   );
 
   const paths = useMemo(() => fileDiffs.map((f) => f.name), [fileDiffs]);
